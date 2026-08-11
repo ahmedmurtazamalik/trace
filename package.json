@@ -12,7 +12,7 @@
     "lint": "eslint .",
     "typecheck": "tsc -b",
     "test": "vitest run",
-    "build": "tsc -b"
+    "build": "tsc -b && pnpm --filter @trace/web build"
   },
   "devDependencies": {
     "@eslint/js": "^9.0.0",

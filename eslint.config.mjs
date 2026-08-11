@@ -6,6 +6,8 @@ export default tseslint.config(
     ignores: [
       "**/dist/**",
       "**/coverage/**",
+      "**/.next/**",
+      "**/postcss.config.mjs",
       "**/node_modules/**",
       "eslint.config.mjs",
     ],

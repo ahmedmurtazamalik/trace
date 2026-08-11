@@ -169,8 +169,56 @@ This section is append-only. Every completed task or block records its plan refe
 - `apps/cli/src/queue/event-store.ts`
 - `apps/cli/tests/queue/event-store.test.ts`
 
+### Day 2 — Task 2.3: Fixture-backed report UI
+
+**Status:** First browser-visible report experience implemented and verified locally.
+
+**Done**
+
+- Established the shared Next.js 16, React 19, and Tailwind CSS web shell with pinned dependency versions.
+- Added a deterministic report fixture shared by the page and component tests.
+- Added a report-scope form with date, account, repository, and privacy controls.
+- Added a responsive evidence report grouped by account and repository.
+- Displayed all required lifecycle labels: Work in progress, Committed locally, Pushed to GitHub, and Merged.
+- Kept pusher and commit-author attribution separate.
+- Added expandable evidence, changed-path disclosures, and clear generating, empty, and error states.
+- Added a visible fixture warning so demo data cannot be mistaken for live GitHub data.
+
+**Problems and resolutions**
+
+- Port 3000 was already occupied by CoachConnect. Trace was started on port 3100 without stopping or changing the other application.
+- Generated `.next` files were initially scanned by Prettier and ESLint. `.next` was added to the formatter, linter, and Git ignore rules.
+- The new fixtures package was initially outside ESLint's TypeScript project graph. A package `tsconfig.json` and root project reference fixed the boundary without disabling source linting.
+- The browser automation click did not submit the native form, although its DOM action and method were correct. A real `requestSubmit()` navigation verified the complete scope-form-to-report route.
+
+**Verification:** 2 focused report UI tests passed; the complete suite passed with 13 tests. Format, lint, typecheck, and the optimized Next.js production build passed. Browser verification confirmed HTTP 200, correct report content, working scope-form navigation, readable hierarchy, and no clipping or overlap at desktop size.
+
+**Files**
+
+- `.gitignore`
+- `.prettierignore`
+- `eslint.config.mjs`
+- `package.json`
+- `pnpm-lock.yaml`
+- `tsconfig.json`
+- `apps/web/package.json`
+- `apps/web/tsconfig.json`
+- `apps/web/next-env.d.ts`
+- `apps/web/postcss.config.mjs`
+- `apps/web/app/globals.css`
+- `apps/web/app/layout.tsx`
+- `apps/web/app/page.tsx`
+- `apps/web/app/reports/[id]/page.tsx`
+- `apps/web/app/reports/new/page.tsx`
+- `apps/web/components/reports/report-view.tsx`
+- `apps/web/tests/reports/report-view.test.tsx`
+- `packages/fixtures/package.json`
+- `packages/fixtures/tsconfig.json`
+- `packages/fixtures/reports/demo.ts`
+- `README.md`
+
 ### Next planned work
 
 1. Connect `trace status` to actual queue counts and standard Linux data/config paths.
 2. Add fake batch transport with independent acknowledgements.
-3. Implement Day 2 Task 2.3, the fixture-backed report UI, after establishing the shared Next.js web shell.
+3. Replace report fixture inputs with shared server-backed report facts after the integration contract is approved.

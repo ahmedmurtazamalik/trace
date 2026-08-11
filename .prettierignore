@@ -1,6 +1,7 @@
 node_modules
 dist
 coverage
+.next
 pnpm-lock.yaml
 TRACE_MASTER_PLAN.md
 ALI_PLAN.md
