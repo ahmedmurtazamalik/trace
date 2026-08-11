@@ -352,8 +352,34 @@ This section is append-only. Every completed task or block records its plan refe
 - `packages/contracts/package.json`
 - `README.md`
 
+### Day 2 — Task 2.1 follow-up: Test-only saved-event sender
+
+**Status:** A saved-event sender can now be tested without claiming a real server connection.
+
+**Done**
+
+- Added a sender that reads a small group of pending events.
+- Let the test decide the result for each event separately.
+- Moved accepted events into accepted storage.
+- Moved permanently rejected events into rejected storage with a readable reason.
+- Left temporary failures in pending storage so they can be tried again later.
+- Rejected duplicate or unknown test results instead of changing the wrong event.
+
+**Problems and resolutions**
+
+- The first full lint check found an unnecessary `async` marker in the test helper. It was removed and all checks were rerun.
+- This is only a controlled test sender. It does not contact GitHub, a Trace server, or any external service.
+
+**Verification:** The focused sender test passed. It proved that one event was accepted, one was rejected with a reason, and one stayed pending. The complete suite passed with 15 tests. Format, lint, typecheck, and the optimized Next.js build passed.
+
+**Files**
+
+- `apps/cli/src/queue/sender.ts`
+- `apps/cli/tests/queue/sender.test.ts`
+- `README.md`
+
 ### Next planned work
 
-1. Complete the remaining Day 2 fake transport/batch-acknowledgement seam without claiming real server connectivity.
-2. Start Day 3 Task 3.1 Git repository discovery and safe remote normalization.
-3. Replace report fixture inputs with shared server-backed report facts only after the integration contract is approved.
+1. Start Day 3 Task 3.1: find the Git repository root, current branch, current commit, and configured remotes.
+2. Convert GitHub HTTPS and SSH addresses into one consistent `owner/repository` format.
+3. Detect detached-branch and unsupported repository situations with clear messages.
