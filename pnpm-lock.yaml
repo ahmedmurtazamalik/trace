@@ -44,6 +44,9 @@ importers:
       '@trace/shared':
         specifier: workspace:*
         version: link:../../packages/shared
+      argon2:
+        specifier: 0.44.0
+        version: 0.44.0
       class-transformer:
         specifier: 0.5.1
         version: 0.5.1
