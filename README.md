@@ -49,3 +49,128 @@ Use short-lived branches and small commits. Do not keep separate long-running �
 ## Scope-change rule
 
 A new feature may enter the MVP only by removing work of equal or greater effort. Record the exchange in the master plan before implementation.
+
+## Implementation task log
+
+This section is append-only. Every completed task or block records its plan reference, outcome, problems, verification, files, and next dependency.
+
+### Day 1 — Block 1: Baseline tooling
+
+**Status:** Implemented on `feat/cli-foundation`.
+
+**Done**
+
+- Configured pnpm workspaces, TypeScript project references, Prettier, ESLint, Vitest, and GitHub Actions CI.
+- Added environment-variable names without values.
+- Added the contracts package shell.
+
+**Problems and resolutions**
+
+- ESLint initially had no TypeScript target and reported that every file was ignored. The first contract test supplied a real target; all gates now pass.
+- pnpm existed only in the Hermes tool path. A Corepack shim was exposed through `~/.local/bin` so normal terminals can run it without `sudo`.
+
+**Verification:** format, lint, typecheck, tests, build, and GitHub CI passed.
+
+**Files**
+
+- `.env.example`
+- `.github/workflows/ci.yml`
+- `.gitignore`
+- `.prettierignore`
+- `.prettierrc.json`
+- `eslint.config.mjs`
+- `package.json`
+- `pnpm-lock.yaml`
+- `pnpm-workspace.yaml`
+- `tsconfig.base.json`
+- `tsconfig.json`
+- `packages/contracts/package.json`
+- `packages/contracts/tsconfig.json`
+- `README.md`
+
+### Day 1 — Block 2: Draft shared CLI event envelope
+
+**Status:** Implemented as a draft; both developers still need to approve the shared contract before integration.
+
+**Done**
+
+- Added the version-1 Zod event envelope.
+- Restricted event types to `STAGED_SNAPSHOT`, `LOCAL_COMMIT`, and `PUSH_ATTEMPT`.
+- Validated UUIDs, timestamps, optional 40-character Git SHAs, and required repository/device/workspace fields.
+
+**Problems and resolutions**
+
+- Detailed payload variants, byte limits, batch acknowledgements, discard representation, and secret-redaction responses are not frozen yet. They remain explicit shared decisions rather than client-only assumptions.
+
+**Verification:** 3 contract tests passed.
+
+**Files**
+
+- `packages/contracts/src/cli-events.ts`
+- `packages/contracts/src/index.ts`
+- `packages/contracts/tests/cli-events.test.ts`
+
+### Day 2 — Task 2.1: CLI command shell
+
+**Status:** Foundation behavior implemented; commands that depend on later tasks fail safely with guidance.
+
+**Done**
+
+- Added `login`, `init`, `status`, `start`, `stop`, `remove`, and `doctor` command entries.
+- Added help text explaining collected and excluded data.
+- Added fresh-install status output that clearly reports an inactive watcher and empty queue.
+- Added black-box subprocess tests and a buildable CLI executable.
+
+**Problems and resolutions**
+
+- Initial status guidance did not contain the promised direct `trace start` instruction. Production wording was corrected without weakening the test.
+- Real authentication, repository binding, watcher control, cleanup, and diagnostics are intentionally not claimed as implemented yet.
+
+**Verification:** built CLI help/status executed successfully; 2 CLI black-box tests passed.
+
+**Files**
+
+- `apps/cli/package.json`
+- `apps/cli/tsconfig.json`
+- `apps/cli/src/index.ts`
+- `apps/cli/src/commands/doctor.ts`
+- `apps/cli/src/commands/init.ts`
+- `apps/cli/src/commands/login.ts`
+- `apps/cli/src/commands/remove.ts`
+- `apps/cli/src/commands/start.ts`
+- `apps/cli/src/commands/status.ts`
+- `apps/cli/src/commands/stop.ts`
+- `apps/cli/src/commands/unavailable.ts`
+- `apps/cli/tests/commands/shell.test.ts`
+- `package.json`
+- `pnpm-lock.yaml`
+- `tsconfig.json`
+
+### Day 2 — Task 2.2: Durable local event queue
+
+**Status:** Internal queue implemented; watcher and upload transport are not connected yet.
+
+**Done**
+
+- Added one immutable JSON event file per UUID with owner-only permissions.
+- Added pending, accepted, and dead-letter states.
+- Preserved event IDs and content across process restarts and retries.
+- Stored useful dead-letter reasons separately from immutable evidence.
+- Rejected reused UUIDs carrying different content.
+
+**Problems and resolutions**
+
+- A concurrency regression proved that two processes could overwrite conflicting content under the same UUID. The final implementation uses an atomic no-replace filesystem operation so one writer succeeds and the conflict is rejected.
+
+**Verification:** 6 queue tests passed; complete suite passed with 11 tests. Format, lint, typecheck, and build also passed.
+
+**Files**
+
+- `apps/cli/src/queue/event-store.ts`
+- `apps/cli/tests/queue/event-store.test.ts`
+
+### Next planned work
+
+1. Connect `trace status` to actual queue counts and standard Linux data/config paths.
+2. Add fake batch transport with independent acknowledgements.
+3. Implement Day 2 Task 2.3, the fixture-backed report UI, after establishing the shared Next.js web shell.
