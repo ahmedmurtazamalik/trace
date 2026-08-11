@@ -23,11 +23,14 @@ const rawEnvironmentSchema = z
     STORAGE_SECRET_KEY: z.string().min(1).optional(),
   })
   .superRefine((environment, context) => {
-    if (environment.NODE_ENV === 'production' && environment.SESSION_SECRET === undefined) {
+    if (
+      environment.NODE_ENV === 'production' &&
+      (environment.SESSION_SECRET === undefined || /^(replace|change-?me)/i.test(environment.SESSION_SECRET))
+    ) {
       context.addIssue({
         code: 'custom',
         path: ['SESSION_SECRET'],
-        message: 'SESSION_SECRET is required in production and must contain at least 32 characters',
+        message: 'SESSION_SECRET is required in production, must contain at least 32 characters, and cannot be a placeholder',
       });
     }
   });
