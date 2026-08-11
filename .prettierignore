@@ -1,0 +1,7 @@
+node_modules
+dist
+coverage
+pnpm-lock.yaml
+TRACE_MASTER_PLAN.md
+ALI_PLAN.md
+MURTAZA_PLAN.md

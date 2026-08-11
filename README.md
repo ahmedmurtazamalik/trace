@@ -2,7 +2,7 @@
 
 Trace is an on-demand engineering activity and reporting system that combines authorized GitHub activity, opt-in local Git observations, repository context, and editable LaTeX/PDF reports.
 
-This directory currently contains planning documents only. Application code, package installation, Git initialization, and provider setup have intentionally not been started.
+The repository now has its Phase 0 pnpm/TypeScript/Vitest baseline. Application features are developed on short-lived branches and shared contracts remain drafts until both developers approve them.
 
 ## Read in this order
 
