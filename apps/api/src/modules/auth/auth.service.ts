@@ -98,10 +98,8 @@ export class AuthService {
   async login(input: unknown, context: RequestContext): Promise<SessionResult> {
     const parsed = this.parse(loginRequestSchema, input);
     const normalizedUsername = parsed.username.trim().toLowerCase();
-    await Promise.all([
-      this.rateLimits.consume('login-ip', context.clientAddress, 20, RATE_WINDOW_MS),
-      this.rateLimits.consume('login-account', normalizedUsername, 10, RATE_WINDOW_MS),
-    ]);
+    await this.rateLimits.consume('login-ip', context.clientAddress, 20, RATE_WINDOW_MS);
+    await this.rateLimits.consume('login-account', normalizedUsername, 10, RATE_WINDOW_MS);
 
     const user = await this.prisma.user.findFirst({
       where: { username: { equals: parsed.username.trim(), mode: 'insensitive' } },
@@ -188,10 +186,8 @@ export class AuthService {
   async forgotPassword(input: unknown, context: RequestContext): Promise<ForgotPasswordResponse> {
     const parsed = this.parse(forgotPasswordRequestSchema, input);
     const identifier = parsed.identifier.trim().toLowerCase();
-    await Promise.all([
-      this.rateLimits.consume('forgot-ip', context.clientAddress, 10, RATE_WINDOW_MS),
-      this.rateLimits.consume('forgot-identifier', identifier, 5, RATE_WINDOW_MS),
-    ]);
+    await this.rateLimits.consume('forgot-ip', context.clientAddress, 10, RATE_WINDOW_MS);
+    await this.rateLimits.consume('forgot-identifier', identifier, 5, RATE_WINDOW_MS);
 
     const user = await this.prisma.user.findFirst({
       where: {
@@ -232,10 +228,8 @@ export class AuthService {
 
   async resetPassword(input: unknown, context: RequestContext): Promise<void> {
     const parsed = this.parse(resetPasswordRequestSchema, input);
-    await Promise.all([
-      this.rateLimits.consume('reset-ip', context.clientAddress, 10, RATE_WINDOW_MS),
-      this.rateLimits.consume('reset-token', hashResetToken(parsed.token), 5, RATE_WINDOW_MS),
-    ]);
+    await this.rateLimits.consume('reset-ip', context.clientAddress, 10, RATE_WINDOW_MS);
+    await this.rateLimits.consume('reset-token', hashResetToken(parsed.token), 5, RATE_WINDOW_MS);
     const passwordHash = await argon2.hash(parsed.password, ARGON_OPTIONS);
     const tokenHash = hashResetToken(parsed.token);
     const now = new Date();

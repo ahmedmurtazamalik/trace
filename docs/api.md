@@ -50,7 +50,7 @@ Healthy response:
 
 If a required dependency is unavailable, the endpoint returns HTTP `503` through the centralized error envelope without exposing the underlying connection error.
 
-## Frozen authentication contract for Day 2
+## Implemented authentication API
 
 Schemas, inferred TypeScript types, and the closed auth error-code enum live in `packages/shared/src/auth.ts`. JSON request/response fixtures live in `packages/shared/test/fixtures/auth/`.
 
@@ -127,6 +127,38 @@ All failures use the common envelope. Example:
 
 Request and success-response fixtures for all six auth endpoints are validated by `packages/shared/test/auth.spec.ts`.
 
+### Session and reset semantics
+
+- Registration and login set `trace_session` as an opaque HTTP-only cookie with `SameSite=Lax`, path `/api/v1`, a seven-day maximum age, and `Secure` in production.
+- Only keyed session-token hashes and CSRF-token hashes are persisted. `GET /auth/me` deterministically reissues the CSRF token from the HTTP-only session credential.
+- Disabled, revoked, and expired sessions are rejected. Password reset revokes every active session and consumes all outstanding reset tokens.
+- Trace usernames and optional emails are owned case-insensitively, enforced by PostgreSQL functional unique indexes as well as API checks.
+- Registration, login, forgot-password, and reset-password are protected by Redis-backed direct-address and normalized-principal rate limits. The API does not trust `X-Forwarded-For` unless deployment architecture is changed and reviewed later.
+- Reset tokens are opaque, single-use, expire after 30 minutes, and are stored only as SHA-256 hashes. The endpoint calls an injectable delivery boundary; no outbound email provider or raw-token logging is included in the repository.
+
+## Frozen GitHub connection contract for Day 3
+
+Day 2 freezes the browser/backend handoff only. No GitHub controller, OAuth exchange, GitHub App installation behavior, or repository synchronization is implemented on this branch.
+
+Schemas and types live in `packages/shared/src/github.ts`; frozen fixtures live under `packages/shared/test/fixtures/github/`.
+
+| Method | Path | Success | Request | Success behavior | Documented errors |
+| --- | --- | --- | --- | --- | --- |
+| `POST` | `/api/v1/github/connect` | `200` | authenticated session + `X-CSRF-Token`; no body | `GithubConnectResponse` containing a backend-generated HTTPS `github.com` authorization URL | `401 UNAUTHENTICATED`; `403 CSRF_INVALID`; `429 RATE_LIMITED` |
+| `GET` | `/api/v1/github/callback?code=...&state=...` | `302` | `GithubCallbackQuery`; browser session cookie | Redirect to the configured frontend GitHub settings route with a closed `GithubCallbackResult` query result | `GITHUB_STATE_INVALID`; `GITHUB_CALLBACK_FAILED` are converted to safe closed callback results, never raw provider text |
+| `GET` | `/api/v1/github/status` | `200` | authenticated session | `GithubConnectionStatus` | `401 UNAUTHENTICATED` |
+| `POST` | `/api/v1/github/reconnect` | `200` | authenticated session + `X-CSRF-Token`; no body | `GithubConnectResponse` | `401 UNAUTHENTICATED`; `403 CSRF_INVALID`; `429 RATE_LIMITED` |
+| `POST` | `/api/v1/github/disconnect` | `200` | authenticated session + `X-CSRF-Token`; no body | `GithubDisconnectResponse` with `historyRetained: true` | `401 UNAUTHENTICATED`; `403 CSRF_INVALID`; `409 GITHUB_NOT_CONNECTED` |
+
+`GithubConnectionStatus` deliberately separates:
+
+1. **Trace account connection:** `DISCONNECTED`, `CONNECTED`, or `RECONNECT_REQUIRED`, with the linked GitHub user when known.
+2. **GitHub App installation authorization:** `NOT_INSTALLED`, `ACTIVE`, or `SUSPENDED`, with the personal/organization installation owner when known.
+
+Disconnect never deletes historical activity. The frontend may show local `connecting`/`redirecting` progress, but must render callback and provider failures only through the closed result/reason enums. Installation tokens, OAuth tokens, state values, and raw provider errors never appear in these DTOs.
+
+The frozen contract fixtures cover connected, disconnected, reconnect-required plus suspended installation, callback success/error, connect URL, and disconnect history retention.
+
 ## Provisional later-day contracts
 
-`packages/shared` also contains provisional schemas for GitHub connection status, repositories, activity, pagination, and reports. These preserve current compatibility decisions—generic activity `source`, generic activity `type`, opaque IDs, and valid report statuses—but are not frozen until their scheduled backend day.
+Repository, activity, pagination, and report schemas remain provisional. They preserve current compatibility decisions—generic activity `source`, generic activity `type`, opaque IDs, and valid report statuses—but are not frozen until their scheduled backend day.

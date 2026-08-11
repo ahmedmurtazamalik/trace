@@ -157,10 +157,13 @@ describe('authentication API', () => {
       },
     });
 
-    await request(server)
-      .post('/api/v1/auth/password/reset')
-      .send({ token: rawToken, password: replacementPassword })
-      .expect(200, { success: true });
+    const resetResponses = await Promise.all([
+      request(server).post('/api/v1/auth/password/reset').send({ token: rawToken, password: replacementPassword }),
+      request(server).post('/api/v1/auth/password/reset').send({ token: rawToken, password: replacementPassword }),
+    ]);
+    expect(resetResponses.map((response) => response.status).sort()).toEqual([200, 400]);
+    const rejectedReset = resetResponses.find((response) => response.status === 400);
+    expect(rejectedReset?.body).toEqual(expect.objectContaining({ code: 'INVALID_OR_EXPIRED_RESET_TOKEN' }));
 
     await request(server).get('/api/v1/auth/me').set('Cookie', oldCookie).expect(401);
     await request(server).post('/api/v1/auth/login').send({ username, password }).expect(401);
@@ -194,12 +197,29 @@ describe('authentication API', () => {
     await request(server).post('/api/v1/auth/register').send({ username, email, password }).expect(201);
 
     for (let attempt = 0; attempt < 10; attempt += 1) {
-      await request(server).post('/api/v1/auth/login').send({ username, password: 'wrong-password-value' }).expect(401);
+      await request(server)
+        .post('/api/v1/auth/login')
+        .set('X-Forwarded-For', `203.0.113.${attempt + 1}`)
+        .send({ username, password: 'wrong-password-value' })
+        .expect(401);
     }
     const limited = await request(server)
       .post('/api/v1/auth/login')
+      .set('X-Forwarded-For', '198.51.100.200')
       .send({ username: username.toUpperCase(), password: 'wrong-password-value' })
       .expect(429);
     expect(limited.body).toEqual(expect.objectContaining({ code: 'RATE_LIMITED' }));
+  });
+
+  it('does not create principal limiter keys after the direct-address limit is exhausted', async () => {
+    for (let attempt = 0; attempt < 25; attempt += 1) {
+      const response = await request(server)
+        .post('/api/v1/auth/login')
+        .send({ username: `missing.user.${attempt}`, password: 'wrong-password-value' });
+      expect(response.status).toBe(attempt < 20 ? 401 : 429);
+    }
+
+    const principalKeys = await redis.keys('trace:auth-limit:login-account:*');
+    expect(principalKeys).toHaveLength(20);
   });
 });

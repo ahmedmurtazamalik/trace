@@ -56,6 +56,39 @@ describe('database foundation', () => {
     ]);
   });
 
+  it('enforces case-insensitive Trace username and email ownership in PostgreSQL', async () => {
+    const ids = ['test_ci_identity_owner', 'test_ci_username_conflict', 'test_ci_email_conflict'];
+    await prisma.user.create({
+      data: {
+        id: ids[0],
+        username: 'Case.Owner',
+        email: 'case.owner@example.test',
+        passwordHash: 'test-only-hash',
+      },
+    });
+
+    try {
+      await expect(prisma.user.create({
+        data: {
+          id: ids[1],
+          username: 'CASE.OWNER',
+          passwordHash: 'test-only-hash',
+        },
+      })).rejects.toMatchObject({ code: 'P2002' });
+
+      await expect(prisma.user.create({
+        data: {
+          id: ids[2],
+          username: 'different.owner',
+          email: 'CASE.OWNER@EXAMPLE.TEST',
+          passwordHash: 'test-only-hash',
+        },
+      })).rejects.toMatchObject({ code: 'P2002' });
+    } finally {
+      await prisma.user.deleteMany({ where: { id: { in: ids } } });
+    }
+  });
+
   it('prevents an artifact from referencing another report’s revision', async () => {
     const otherReport = await prisma.report.create({
       data: {
