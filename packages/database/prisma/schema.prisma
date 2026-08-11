@@ -1,0 +1,364 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum GithubAccountType {
+  USER
+  ORGANIZATION
+}
+
+enum ActivitySource {
+  github
+  cli
+}
+
+enum ActivityType {
+  commit
+  push
+  pull_request
+  working_tree_snapshot
+  staged_change
+  untracked_file
+  local_commit
+}
+
+enum ReportStatus {
+  pending
+  processing
+  completed
+  failed
+}
+
+enum ReportRevisionSource {
+  ai
+  manual
+}
+
+enum ReportArtifactKind {
+  latex
+  pdf
+}
+
+enum WebhookDeliveryStatus {
+  pending
+  processing
+  completed
+  failed
+}
+
+model User {
+  id                  String               @id @default(cuid())
+  username            String               @unique @db.VarChar(39)
+  displayName         String?              @map("display_name") @db.VarChar(100)
+  email               String?              @unique @db.VarChar(254)
+  passwordHash        String               @map("password_hash")
+  createdAt           DateTime             @default(now()) @map("created_at")
+  updatedAt           DateTime             @updatedAt @map("updated_at")
+  disabledAt          DateTime?            @map("disabled_at")
+  sessions            UserSession[]
+  passwordResetTokens PasswordResetToken[]
+  githubAccount       GithubAccount?
+  githubOauthStates   GithubOauthState[]
+  repositories        UserRepository[]
+  reports             Report[]
+  auditLogs            AuditLog[]
+
+  @@map("users")
+}
+
+model UserSession {
+  id               String    @id @default(cuid())
+  userId           String    @map("user_id")
+  sessionTokenHash String    @unique @map("session_token_hash")
+  createdAt        DateTime  @default(now()) @map("created_at")
+  expiresAt        DateTime  @map("expires_at")
+  revokedAt        DateTime? @map("revoked_at")
+  lastUsedAt       DateTime  @default(now()) @map("last_used_at")
+  user             User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, expiresAt])
+  @@map("user_sessions")
+}
+
+model PasswordResetToken {
+  id        String    @id @default(cuid())
+  userId    String    @map("user_id")
+  tokenHash String    @unique @map("token_hash")
+  createdAt DateTime  @default(now()) @map("created_at")
+  expiresAt DateTime  @map("expires_at")
+  consumedAt DateTime? @map("consumed_at")
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, expiresAt])
+  @@map("password_reset_tokens")
+}
+
+model GithubAccount {
+  id             String               @id @default(cuid())
+  userId         String               @unique @map("user_id")
+  githubUserId   BigInt               @unique @map("github_user_id")
+  githubUsername String               @map("github_username")
+  displayName    String?              @map("display_name")
+  avatarUrl      String?              @map("avatar_url")
+  createdAt      DateTime             @default(now()) @map("created_at")
+  updatedAt      DateTime             @updatedAt @map("updated_at")
+  unlinkedAt     DateTime?            @map("unlinked_at")
+  user           User                 @relation(fields: [userId], references: [id], onDelete: Restrict)
+  installations  GithubInstallation[]
+
+  @@map("github_accounts")
+}
+
+model GithubInstallation {
+  id                   String            @id @default(cuid())
+  githubInstallationId BigInt            @unique @map("github_installation_id")
+  githubAccountId      String            @map("github_account_id")
+  accountType          GithubAccountType @map("account_type")
+  accountLogin         String            @map("account_login")
+  createdAt            DateTime          @default(now()) @map("created_at")
+  updatedAt            DateTime          @updatedAt @map("updated_at")
+  suspendedAt          DateTime?         @map("suspended_at")
+  githubAccount        GithubAccount     @relation(fields: [githubAccountId], references: [id], onDelete: Restrict)
+  repositories         Repository[]
+  webhookDeliveries    GithubWebhookDelivery[]
+
+  @@index([githubAccountId, suspendedAt])
+  @@map("github_installations")
+}
+
+model Repository {
+  id                 String                    @id @default(cuid())
+  githubRepositoryId BigInt                    @unique @map("github_repository_id")
+  githubInstallationId String                  @map("github_installation_id")
+  owner              String
+  name               String
+  fullName           String                    @map("full_name")
+  private            Boolean
+  defaultBranch      String                    @map("default_branch")
+  htmlUrl            String?                   @map("html_url")
+  createdAt          DateTime                  @default(now()) @map("created_at")
+  updatedAt          DateTime                  @updatedAt @map("updated_at")
+  installation       GithubInstallation        @relation(fields: [githubInstallationId], references: [id], onDelete: Restrict)
+  users              UserRepository[]
+  commits            Commit[]
+  pushEvents         PushEvent[]
+  activityEvents     ActivityEvent[]
+  webhookDeliveries  GithubWebhookDelivery[]
+
+  @@index([githubInstallationId])
+  @@index([owner, name])
+  @@map("repositories")
+}
+
+model UserRepository {
+  id              String     @id @default(cuid())
+  userId          String     @map("user_id")
+  repositoryId    String     @map("repository_id")
+  trackingEnabled Boolean    @default(false) @map("tracking_enabled")
+  createdAt       DateTime   @default(now()) @map("created_at")
+  updatedAt       DateTime   @updatedAt @map("updated_at")
+  user            User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  repository      Repository @relation(fields: [repositoryId], references: [id], onDelete: Restrict)
+
+  @@unique([userId, repositoryId])
+  @@index([userId, trackingEnabled])
+  @@map("user_repositories")
+}
+
+model Contributor {
+  id               String          @id @default(cuid())
+  githubUserId     BigInt?         @unique @map("github_user_id")
+  username         String?
+  displayName      String?         @map("display_name")
+  avatarUrl        String?         @map("avatar_url")
+  createdAt        DateTime        @default(now()) @map("created_at")
+  updatedAt        DateTime        @updatedAt @map("updated_at")
+  authoredCommits  Commit[]        @relation("CommitAuthor")
+  committedCommits Commit[]        @relation("CommitCommitter")
+  sentPushes       PushEvent[]
+  activityEvents   ActivityEvent[]
+
+  @@index([username])
+  @@map("contributors")
+}
+
+model Commit {
+  id                     String       @id @default(cuid())
+  repositoryId           String       @map("repository_id")
+  sha                    String       @db.VarChar(64)
+  message                String
+  authorContributorId    String?      @map("author_contributor_id")
+  committerContributorId String?      @map("committer_contributor_id")
+  authoredAt             DateTime     @map("authored_at")
+  committedAt            DateTime     @map("committed_at")
+  branch                 String?
+  additions              Int?
+  deletions              Int?
+  changedFiles           Int?         @map("changed_files")
+  createdAt              DateTime     @default(now()) @map("created_at")
+  repository             Repository   @relation(fields: [repositoryId], references: [id], onDelete: Restrict)
+  authorContributor      Contributor? @relation("CommitAuthor", fields: [authorContributorId], references: [id], onDelete: SetNull)
+  committerContributor   Contributor? @relation("CommitCommitter", fields: [committerContributorId], references: [id], onDelete: SetNull)
+  files                  CommitFile[]
+
+  @@unique([repositoryId, sha])
+  @@index([repositoryId, committedAt])
+  @@index([authorContributorId, authoredAt])
+  @@map("commits")
+}
+
+model CommitFile {
+  id           String  @id @default(cuid())
+  commitId     String  @map("commit_id")
+  path         String
+  status       String
+  additions    Int?
+  deletions    Int?
+  previousPath String? @map("previous_path")
+  commit       Commit  @relation(fields: [commitId], references: [id], onDelete: Cascade)
+
+  @@unique([commitId, path])
+  @@map("commit_files")
+}
+
+model PushEvent {
+  id                    String       @id @default(cuid())
+  repositoryId          String       @map("repository_id")
+  githubDeliveryId      String       @unique @map("github_delivery_id")
+  ref                   String
+  beforeSha             String       @map("before_sha") @db.VarChar(64)
+  afterSha              String       @map("after_sha") @db.VarChar(64)
+  senderContributorId   String?      @map("sender_contributor_id")
+  createdAt             DateTime     @default(now()) @map("created_at")
+  repository            Repository   @relation(fields: [repositoryId], references: [id], onDelete: Restrict)
+  senderContributor     Contributor? @relation(fields: [senderContributorId], references: [id], onDelete: SetNull)
+
+  @@index([repositoryId, createdAt])
+  @@map("push_events")
+}
+
+model ActivityEvent {
+  id            String         @id @default(cuid())
+  repositoryId  String         @map("repository_id")
+  contributorId String?        @map("contributor_id")
+  source        ActivitySource
+  type          ActivityType
+  occurredAt    DateTime       @map("occurred_at")
+  metadata      Json
+  createdAt     DateTime       @default(now()) @map("created_at")
+  repository    Repository     @relation(fields: [repositoryId], references: [id], onDelete: Restrict)
+  contributor   Contributor?   @relation(fields: [contributorId], references: [id], onDelete: SetNull)
+
+  @@index([repositoryId, occurredAt])
+  @@index([contributorId, occurredAt])
+  @@index([source, type, occurredAt])
+  @@map("activity_events")
+}
+
+model GithubOauthState {
+  id               String    @id @default(cuid())
+  userId           String    @map("user_id")
+  stateTokenHash   String    @unique @map("state_token_hash")
+  intendedRedirect String?   @map("intended_redirect")
+  createdAt        DateTime  @default(now()) @map("created_at")
+  expiresAt        DateTime  @map("expires_at")
+  consumedAt       DateTime? @map("consumed_at")
+  user             User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, expiresAt])
+  @@map("github_oauth_states")
+}
+
+model GithubWebhookDelivery {
+  id                   String                   @id @default(cuid())
+  githubDeliveryId     String                   @unique @map("github_delivery_id")
+  eventName            String                   @map("event_name")
+  githubInstallationId BigInt?                  @map("external_installation_id")
+  githubRepositoryId   BigInt?                  @map("external_repository_id")
+  installationId       String?                  @map("installation_id")
+  repositoryId         String?                  @map("repository_id")
+  payloadHash          String                   @map("payload_hash")
+  status               WebhookDeliveryStatus    @default(pending)
+  receivedAt           DateTime                 @default(now()) @map("received_at")
+  processingStartedAt  DateTime?                @map("processing_started_at")
+  processedAt          DateTime?                @map("processed_at")
+  processingError      String?                  @map("processing_error")
+  installation         GithubInstallation?      @relation(fields: [installationId], references: [id], onDelete: SetNull)
+  repository           Repository?              @relation(fields: [repositoryId], references: [id], onDelete: SetNull)
+
+  @@index([status, receivedAt])
+  @@map("github_webhook_deliveries")
+}
+
+model Report {
+  id            String        @id @default(cuid())
+  userId        String        @map("user_id")
+  reportDate    DateTime      @map("report_date") @db.Date
+  timezone      String        @default("UTC")
+  status        ReportStatus  @default(pending)
+  inputSnapshot Json          @map("input_snapshot")
+  aiOutput      Json?         @map("ai_output")
+  latexPath     String?       @map("latex_path")
+  pdfPath       String?       @map("pdf_path")
+  createdAt     DateTime      @default(now()) @map("created_at")
+  completedAt   DateTime?     @map("completed_at")
+  error         String?
+  user          User          @relation(fields: [userId], references: [id], onDelete: Restrict)
+  revisions     ReportRevision[]
+  artifacts     ReportArtifact[]
+
+  @@unique([userId, reportDate])
+  @@index([userId, reportDate, createdAt])
+  @@map("reports")
+}
+
+model ReportRevision {
+  id        String               @id @default(cuid())
+  reportId  String               @map("report_id")
+  revision  Int
+  source    ReportRevisionSource
+  content   Json
+  createdAt DateTime             @default(now()) @map("created_at")
+  report    Report               @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  artifacts ReportArtifact[]
+
+  @@unique([reportId, revision])
+  @@map("report_revisions")
+}
+
+model ReportArtifact {
+  id         String             @id @default(cuid())
+  reportId   String             @map("report_id")
+  revisionId String?            @map("revision_id")
+  kind       ReportArtifactKind
+  storageKey String             @unique @map("storage_key")
+  sizeBytes  Int                @map("size_bytes")
+  checksum   String
+  createdAt  DateTime           @default(now()) @map("created_at")
+  report     Report             @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  revision   ReportRevision?    @relation(fields: [revisionId], references: [id], onDelete: SetNull)
+
+  @@index([reportId, createdAt])
+  @@map("report_artifacts")
+}
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  actorUserId String?  @map("actor_user_id")
+  action     String
+  targetType String?  @map("target_type")
+  targetId   String?  @map("target_id")
+  requestId  String?  @map("request_id")
+  metadata   Json?
+  createdAt  DateTime @default(now()) @map("created_at")
+  actorUser  User?    @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
+
+  @@index([actorUserId, createdAt])
+  @@index([action, createdAt])
+  @@map("audit_logs")
+}

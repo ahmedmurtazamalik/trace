@@ -4,14 +4,12 @@
   "private": true,
   "main": "dist/src/index.js",
   "types": "dist/src/index.d.ts",
-  "prisma": {
-    "seed": "tsx prisma/seed.ts"
-  },
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "eslint src prisma",
-    "test": "vitest run",
+    "test": "vitest run --exclude 'test/**/*.integration.spec.ts'",
+    "test:integration": "vitest run test/database.integration.spec.ts",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate deploy",
     "db:migrate:dev": "prisma migrate dev",
@@ -21,6 +19,7 @@
   "dependencies": {
     "@nestjs/common": "11.1.6",
     "@prisma/client": "6.15.0",
+    "argon2": "0.44.0",
     "reflect-metadata": "0.2.2",
     "rxjs": "7.8.2"
   },
