@@ -1,0 +1,34 @@
+{
+  "name": "@trace/api",
+  "version": "0.1.0",
+  "private": true,
+  "main": "dist/src/main.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "start": "node dist/src/main.js",
+    "dev": "tsx watch src/main.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "eslint src test",
+    "test": "vitest run --exclude 'test/**/*.integration.spec.ts'",
+    "test:integration": "vitest run test/**/*.integration.spec.ts"
+  },
+  "dependencies": {
+    "@nestjs/common": "11.1.6",
+    "@nestjs/core": "11.1.6",
+    "@nestjs/platform-express": "11.1.6",
+    "@trace/config": "workspace:*",
+    "@trace/database": "workspace:*",
+    "@trace/shared": "workspace:*",
+    "ioredis": "5.7.0",
+    "reflect-metadata": "0.2.2",
+    "rxjs": "7.8.2"
+  },
+  "devDependencies": {
+    "@types/express": "5.0.3",
+    "@types/node": "22.18.0",
+    "@types/supertest": "6.0.3",
+    "supertest": "7.1.4",
+    "tsx": "4.20.5",
+    "vitest": "3.2.4"
+  }
+}
