@@ -1,0 +1,29 @@
+# Dependencies
+node_modules/
+
+# Build and test output
+.next/
+dist/
+build/
+coverage/
+test-results/
+playwright-report/
+
+# Environment and secrets
+.env
+.env.*
+!.env.example
+
+# Logs
+*.log
+
+# Local tooling
+.DS_Store
+.vscode/
+.idea/
+
+# Generated reports and temporary files
+*.pdf
+*.tex
+.tmp/
+tmp/
