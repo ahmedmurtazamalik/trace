@@ -85,6 +85,28 @@ describe("EventStore", () => {
     expect(await store.list("pending")).toEqual([stagedEvent]);
   });
 
+  it("rejects concurrent conflicting writes for the same event ID", async () => {
+    const root = await temporaryQueueRoot();
+    const firstProcess = new EventStore(root);
+    const secondProcess = new EventStore(root);
+
+    const results = await Promise.allSettled([
+      firstProcess.enqueue(stagedEvent),
+      secondProcess.enqueue({
+        ...stagedEvent,
+        payload: { fingerprint: "concurrent-conflict" },
+      }),
+    ]);
+
+    expect(results.filter(({ status }) => status === "fulfilled")).toHaveLength(
+      1,
+    );
+    expect(results.filter(({ status }) => status === "rejected")).toHaveLength(
+      1,
+    );
+    expect(await firstProcess.list("pending")).toHaveLength(1);
+  });
+
   it("moves an acknowledged event to accepted without changing it", async () => {
     const root = await temporaryQueueRoot();
     const store = new EventStore(root);

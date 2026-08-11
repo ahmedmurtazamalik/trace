@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import {
+  link,
   mkdir,
   readFile,
   readdir,
@@ -50,7 +51,19 @@ export class EventStore {
         flag: "wx",
         mode: 0o600,
       });
-      await rename(temporaryPath, targetPath);
+      try {
+        await link(temporaryPath, targetPath);
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "EEXIST") {
+          throw error;
+        }
+        const existingEvent = await readFile(targetPath, "utf8");
+        if (existingEvent !== serializedEvent) {
+          throw new Error(
+            `Event ${validatedEvent.eventId} already exists with different content.`,
+          );
+        }
+      }
     } finally {
       await rm(temporaryPath, { force: true });
     }
