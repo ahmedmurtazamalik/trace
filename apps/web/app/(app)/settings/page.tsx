@@ -1,0 +1,3 @@
+import { Card } from "@trace/ui";
+import { PageShell } from "@/components/page-shell";
+export default function SettingsPage() { return <PageShell eyebrow="Workspace" title="Settings" description="Manage account and workspace preferences as features become available." upcoming="Account settings are intentionally unavailable during frontend foundation work."><div className="settings-grid"><Card><span>Account</span><h2>Profile and security</h2><p>Username, password, and session settings will follow the authenticated contract.</p></Card><Card><span>Preferences</span><h2>Display and reports</h2><p>Timezone and reporting preferences will be added with their respective contracts.</p></Card></div></PageShell>; }
