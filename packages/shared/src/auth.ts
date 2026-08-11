@@ -8,6 +8,8 @@ export const usernameSchema = z
   .regex(/^[a-zA-Z0-9](?:[a-zA-Z0-9._-]*[a-zA-Z0-9])?$/, 'Username contains unsupported characters');
 
 export const passwordSchema = z.string().min(12).max(256);
+export const csrfHeaderName = 'x-csrf-token' as const;
+export const csrfTokenSchema = z.string().min(1);
 
 export const authErrorCodeSchema = z.enum([
   'VALIDATION_ERROR',
@@ -43,7 +45,7 @@ export const loginRequestSchema = z.object({
 
 export const authSessionResponseSchema = z.object({
   user: publicUserSchema,
-  csrfToken: z.string().min(1),
+  csrfToken: csrfTokenSchema,
 });
 
 export const logoutResponseSchema = z.object({ success: z.literal(true) });

@@ -77,14 +77,14 @@ The deterministic seed is blocked in production and requires an explicit opt-in:
 ALLOW_DEMO_SEED=true corepack pnpm db:seed
 ```
 
-It creates only fictional `.test` users and fake GitHub identifiers. The development-only password is `TraceDevOnly!2026`. Never enable the demo seed in a shared or production environment. Running the seed repeatedly converges on the same records rather than adding duplicates.
+It creates only fictional `.test` users and fake GitHub identifiers. The development-only password is `TraceDevOnly!2026`. Never enable the demo seed in a shared or production environment. The seed addresses records only through reserved `seed_*` IDs. Reruns leave existing records unchanged, and natural-key collisions fail rather than overwriting unrelated data.
 
 ## API
 
 Start in development:
 
 ```bash
-corepack pnpm dev:api
+corepack pnpm --filter @trace/api dev
 ```
 
 Build and run compiled output:

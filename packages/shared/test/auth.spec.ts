@@ -12,6 +12,7 @@ import registerResponseFixture from './fixtures/auth/register.success.json';
 import {
   authErrorCodeSchema,
   authSessionResponseSchema,
+  csrfHeaderName,
   forgotPasswordRequestSchema,
   forgotPasswordResponseSchema,
   loginRequestSchema,
@@ -36,6 +37,10 @@ describe('auth contracts', () => {
   it('accepts the frozen current-user and logout response fixtures', () => {
     expect(authSessionResponseSchema.parse(meResponseFixture)).toEqual(meResponseFixture);
     expect(logoutResponseSchema.parse(logoutResponseFixture)).toEqual(logoutResponseFixture);
+  });
+
+  it('freezes the CSRF transport header for state-changing authenticated requests', () => {
+    expect(csrfHeaderName).toBe('x-csrf-token');
   });
 
   it('accepts the frozen non-enumerating password-forgot fixtures', () => {

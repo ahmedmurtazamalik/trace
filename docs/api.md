@@ -58,12 +58,12 @@ Schemas, inferred TypeScript types, and the closed auth error-code enum live in 
 | --- | --- | --- | --- | --- | --- |
 | `POST` | `/api/v1/auth/register` | `201` | `RegisterRequest` | `AuthSessionResponse` | `400 VALIDATION_ERROR`; `409 USERNAME_TAKEN`; `409 EMAIL_TAKEN`; `429 RATE_LIMITED` |
 | `POST` | `/api/v1/auth/login` | `200` | `LoginRequest` | `AuthSessionResponse` | `400 VALIDATION_ERROR`; `401 INVALID_CREDENTIALS`; `403 ACCOUNT_DISABLED`; `429 RATE_LIMITED` |
-| `POST` | `/api/v1/auth/logout` | `200` | none | `{ "success": true }` | `401 UNAUTHENTICATED`; `403 CSRF_INVALID` |
+| `POST` | `/api/v1/auth/logout` | `200` | header `X-CSRF-Token: <csrfToken>`; no body | `{ "success": true }` | `401 UNAUTHENTICATED`; `403 CSRF_INVALID` |
 | `GET` | `/api/v1/auth/me` | `200` | none | `AuthSessionResponse` | `401 UNAUTHENTICATED` |
 | `POST` | `/api/v1/auth/password/forgot` | `202` | `ForgotPasswordRequest` | `ForgotPasswordResponse` | `400 VALIDATION_ERROR`; `429 RATE_LIMITED` |
 | `POST` | `/api/v1/auth/password/reset` | `200` | `ResetPasswordRequest` | `{ "success": true }` | `400 VALIDATION_ERROR`; `400 INVALID_OR_EXPIRED_RESET_TOKEN`; `429 RATE_LIMITED` |
 
-`AuthSessionResponse` contains public user data plus a CSRF token. It never contains a session token or password material. Registration and login establish the session through a secure HTTP-only cookie in Day 2.
+`AuthSessionResponse` contains public user data plus a CSRF token. It never contains a session token or password material. Registration and login establish the session through a secure HTTP-only cookie in Day 2. Clients submit the returned token on every state-changing authenticated request in the `X-CSRF-Token` HTTP header (canonical lowercase contract constant: `csrfHeaderName = "x-csrf-token"`). The token is not sent in a request body or a separate cookie.
 
 ### Endpoint examples
 
@@ -90,7 +90,7 @@ Register:
 }
 ```
 
-Login uses `{ "username": "alice.dev", "password": "correct-horse-battery-staple" }` and returns the same `AuthSessionResponse`. `GET /auth/me` also returns `AuthSessionResponse`. Logout returns `{ "success": true }`.
+Login uses `{ "username": "alice.dev", "password": "correct-horse-battery-staple" }` and returns the same `AuthSessionResponse`. `GET /auth/me` also returns `AuthSessionResponse`. Logout sends `X-CSRF-Token: csrf_opaque_value` with no body and returns `{ "success": true }`.
 
 Password forgot is intentionally non-enumerating. Known and unknown identifiers receive the same `202` response:
 

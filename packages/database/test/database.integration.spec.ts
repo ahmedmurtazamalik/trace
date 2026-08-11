@@ -1,5 +1,6 @@
 
 import { PrismaClient } from '@prisma/client';
+import { seed } from '../prisma/seed';
 
 const prisma = new PrismaClient();
 
@@ -82,6 +83,54 @@ describe('database foundation', () => {
       ).rejects.toMatchObject({ code: 'P2003' });
     } finally {
       await prisma.report.delete({ where: { id: otherReport.id } });
+    }
+  });
+
+  it('never resets credentials or reassigns identities on a seed rerun', async () => {
+    const originalUser = await prisma.user.findUniqueOrThrow({ where: { id: 'seed_user_alice' } });
+    const originalGithub = await prisma.githubAccount.findUniqueOrThrow({ where: { id: 'seed_github_alice' } });
+    const disabledAt = new Date('2026-08-11T18:00:00.000Z');
+    const unlinkedAt = new Date('2026-08-11T18:01:00.000Z');
+
+    await prisma.user.update({
+      where: { id: originalUser.id },
+      data: { passwordHash: 'sentinel-password-hash', disabledAt },
+    });
+    await prisma.githubAccount.update({
+      where: { id: originalGithub.id },
+      data: { userId: 'seed_user_bob', unlinkedAt },
+    });
+
+    const previousNodeEnv = process.env.NODE_ENV;
+    const previousSeedFlag = process.env.ALLOW_DEMO_SEED;
+    process.env.NODE_ENV = 'test';
+    process.env.ALLOW_DEMO_SEED = 'true';
+
+    try {
+      await seed(prisma);
+
+      await expect(prisma.user.findUniqueOrThrow({ where: { id: originalUser.id } })).resolves.toMatchObject({
+        passwordHash: 'sentinel-password-hash',
+        disabledAt,
+      });
+      await expect(prisma.githubAccount.findUniqueOrThrow({ where: { id: originalGithub.id } })).resolves.toMatchObject({
+        userId: 'seed_user_bob',
+        unlinkedAt,
+      });
+    } finally {
+      if (previousNodeEnv === undefined) delete process.env.NODE_ENV;
+      else process.env.NODE_ENV = previousNodeEnv;
+      if (previousSeedFlag === undefined) delete process.env.ALLOW_DEMO_SEED;
+      else process.env.ALLOW_DEMO_SEED = previousSeedFlag;
+
+      await prisma.githubAccount.update({
+        where: { id: originalGithub.id },
+        data: { userId: originalGithub.userId, unlinkedAt: originalGithub.unlinkedAt },
+      });
+      await prisma.user.update({
+        where: { id: originalUser.id },
+        data: { passwordHash: originalUser.passwordHash, disabledAt: originalUser.disabledAt },
+      });
     }
   });
 });

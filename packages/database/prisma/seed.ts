@@ -1,11 +1,11 @@
-import { ActivitySource, ActivityType, GithubAccountType, Prisma, PrismaClient, ReportRevisionSource, ReportStatus } from '@prisma/client';
+import { ActivitySource, ActivityType, GithubAccountType, PrismaClient, ReportRevisionSource, ReportStatus } from '@prisma/client';
 import { argon2id, hash } from 'argon2';
 
 const prisma = new PrismaClient();
 const seedDate = new Date('2026-08-11T09:00:00.000Z');
 const reportDate = new Date('2026-08-11T00:00:00.000Z');
 
-async function seed(): Promise<void> {
+export async function seed(client: PrismaClient = prisma): Promise<void> {
   if (process.env.NODE_ENV === 'production') {
     throw new Error('Development seed is disabled in production.');
   }
@@ -21,9 +21,9 @@ async function seed(): Promise<void> {
     salt: Buffer.from('trace-seed-salt!'),
   });
 
-  const alice = await prisma.user.upsert({
-    where: { username: 'alice.dev' },
-    update: { displayName: 'Alice Developer', email: 'alice@example.test', passwordHash, disabledAt: null },
+  const alice = await client.user.upsert({
+    where: { id: 'seed_user_alice' },
+    update: {},
     create: {
       id: 'seed_user_alice',
       username: 'alice.dev',
@@ -33,9 +33,9 @@ async function seed(): Promise<void> {
     },
   });
 
-  const bob = await prisma.user.upsert({
-    where: { username: 'bob.dev' },
-    update: { displayName: 'Bob Developer', email: 'bob@example.test', passwordHash, disabledAt: null },
+  const bob = await client.user.upsert({
+    where: { id: 'seed_user_bob' },
+    update: {},
     create: {
       id: 'seed_user_bob',
       username: 'bob.dev',
@@ -45,9 +45,9 @@ async function seed(): Promise<void> {
     },
   });
 
-  const aliceGithub = await prisma.githubAccount.upsert({
-    where: { githubUserId: 10_001n },
-    update: { userId: alice.id, githubUsername: 'alice-dev', displayName: 'Alice Developer', unlinkedAt: null },
+  const aliceGithub = await client.githubAccount.upsert({
+    where: { id: 'seed_github_alice' },
+    update: {},
     create: {
       id: 'seed_github_alice',
       userId: alice.id,
@@ -58,9 +58,9 @@ async function seed(): Promise<void> {
     },
   });
 
-  const installation = await prisma.githubInstallation.upsert({
-    where: { githubInstallationId: 20_001n },
-    update: { githubAccountId: aliceGithub.id, accountLogin: 'trace-demo', suspendedAt: null },
+  const installation = await client.githubInstallation.upsert({
+    where: { id: 'seed_installation_trace_demo' },
+    update: {},
     create: {
       id: 'seed_installation_trace_demo',
       githubInstallationId: 20_001n,
@@ -70,17 +70,9 @@ async function seed(): Promise<void> {
     },
   });
 
-  const apiRepository = await prisma.repository.upsert({
-    where: { githubRepositoryId: 30_001n },
-    update: {
-      githubInstallationId: installation.id,
-      owner: 'trace-demo',
-      name: 'api',
-      fullName: 'trace-demo/api',
-      private: true,
-      defaultBranch: 'main',
-      htmlUrl: 'https://github.com/trace-demo/api',
-    },
+  const apiRepository = await client.repository.upsert({
+    where: { id: 'seed_repository_api' },
+    update: {},
     create: {
       id: 'seed_repository_api',
       githubRepositoryId: 30_001n,
@@ -94,17 +86,9 @@ async function seed(): Promise<void> {
     },
   });
 
-  const webRepository = await prisma.repository.upsert({
-    where: { githubRepositoryId: 30_002n },
-    update: {
-      githubInstallationId: installation.id,
-      owner: 'trace-demo',
-      name: 'web',
-      fullName: 'trace-demo/web',
-      private: false,
-      defaultBranch: 'main',
-      htmlUrl: 'https://github.com/trace-demo/web',
-    },
+  const webRepository = await client.repository.upsert({
+    where: { id: 'seed_repository_web' },
+    update: {},
     create: {
       id: 'seed_repository_web',
       githubRepositoryId: 30_002n,
@@ -123,16 +107,16 @@ async function seed(): Promise<void> {
     { userId: alice.id, repositoryId: webRepository.id, trackingEnabled: true },
     { userId: bob.id, repositoryId: webRepository.id, trackingEnabled: false },
   ]) {
-    await prisma.userRepository.upsert({
+    await client.userRepository.upsert({
       where: { userId_repositoryId: { userId: membership.userId, repositoryId: membership.repositoryId } },
-      update: { trackingEnabled: membership.trackingEnabled },
+      update: {},
       create: membership,
     });
   }
 
-  const aliceContributor = await prisma.contributor.upsert({
-    where: { githubUserId: 10_001n },
-    update: { username: 'alice-dev', displayName: 'Alice Developer' },
+  const aliceContributor = await client.contributor.upsert({
+    where: { id: 'seed_contributor_alice' },
+    update: {},
     create: {
       id: 'seed_contributor_alice',
       githubUserId: 10_001n,
@@ -142,9 +126,9 @@ async function seed(): Promise<void> {
     },
   });
 
-  const externalContributor = await prisma.contributor.upsert({
-    where: { githubUserId: 10_002n },
-    update: { username: 'external-dev', displayName: 'External Contributor' },
+  const externalContributor = await client.contributor.upsert({
+    where: { id: 'seed_contributor_external' },
+    update: {},
     create: {
       id: 'seed_contributor_external',
       githubUserId: 10_002n,
@@ -154,16 +138,9 @@ async function seed(): Promise<void> {
     },
   });
 
-  const commit = await prisma.commit.upsert({
-    where: { repositoryId_sha: { repositoryId: apiRepository.id, sha: 'a'.repeat(40) } },
-    update: {
-      message: 'Establish Trace API foundation',
-      authorContributorId: aliceContributor.id,
-      committerContributorId: aliceContributor.id,
-      additions: 240,
-      deletions: 12,
-      changedFiles: 8,
-    },
+  const commit = await client.commit.upsert({
+    where: { id: 'seed_commit_api_foundation' },
+    update: {},
     create: {
       id: 'seed_commit_api_foundation',
       repositoryId: apiRepository.id,
@@ -180,9 +157,9 @@ async function seed(): Promise<void> {
     },
   });
 
-  await prisma.commitFile.upsert({
-    where: { commitId_path: { commitId: commit.id, path: 'apps/api/src/main.ts' } },
-    update: { status: 'added', additions: 42, deletions: 0 },
+  await client.commitFile.upsert({
+    where: { id: 'seed_commit_file_main' },
+    update: {},
     create: {
       id: 'seed_commit_file_main',
       commitId: commit.id,
@@ -193,9 +170,9 @@ async function seed(): Promise<void> {
     },
   });
 
-  await prisma.pushEvent.upsert({
-    where: { githubDeliveryId: 'seed-delivery-0001' },
-    update: { senderContributorId: externalContributor.id },
+  await client.pushEvent.upsert({
+    where: { id: 'seed_push_api' },
+    update: {},
     create: {
       id: 'seed_push_api',
       repositoryId: apiRepository.id,
@@ -208,9 +185,9 @@ async function seed(): Promise<void> {
     },
   });
 
-  await prisma.activityEvent.upsert({
+  await client.activityEvent.upsert({
     where: { id: 'seed_activity_commit' },
-    update: { metadata: { sha: commit.sha, message: commit.message } },
+    update: {},
     create: {
       id: 'seed_activity_commit',
       repositoryId: apiRepository.id,
@@ -222,18 +199,9 @@ async function seed(): Promise<void> {
     },
   });
 
-  const report = await prisma.report.upsert({
-    where: { userId_reportDate: { userId: alice.id, reportDate } },
-    update: {
-      timezone: 'UTC',
-      status: ReportStatus.pending,
-      inputSnapshot: { date: '2026-08-11', repositories: ['trace-demo/api'] },
-      aiOutput: Prisma.DbNull,
-      latexPath: null,
-      pdfPath: null,
-      completedAt: null,
-      error: null,
-    },
+  const report = await client.report.upsert({
+    where: { id: 'seed_report_alice_2026_08_11' },
+    update: {},
     create: {
       id: 'seed_report_alice_2026_08_11',
       userId: alice.id,
@@ -244,9 +212,9 @@ async function seed(): Promise<void> {
     },
   });
 
-  await prisma.reportRevision.upsert({
-    where: { reportId_revision: { reportId: report.id, revision: 1 } },
-    update: { content: { executiveSummary: 'Seed report awaiting generation.' } },
+  await client.reportRevision.upsert({
+    where: { id: 'seed_report_revision_1' },
+    update: {},
     create: {
       id: 'seed_report_revision_1',
       reportId: report.id,
@@ -256,9 +224,9 @@ async function seed(): Promise<void> {
     },
   });
 
-  await prisma.auditLog.upsert({
+  await client.auditLog.upsert({
     where: { id: 'seed_audit_tracking_enabled' },
-    update: { metadata: { repositoryId: apiRepository.id } },
+    update: {},
     create: {
       id: 'seed_audit_tracking_enabled',
       actorUserId: alice.id,
@@ -285,4 +253,6 @@ async function run(): Promise<void> {
   }
 }
 
-void run();
+if (require.main === module) {
+  void run();
+}

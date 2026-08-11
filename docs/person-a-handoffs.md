@@ -23,7 +23,7 @@ Frozen paths:
 - `POST /api/v1/auth/password/forgot`
 - `POST /api/v1/auth/password/reset`
 
-The password-forgot response is non-enumerating. Session tokens remain cookie-only and never appear in DTOs. The response contains public user data and a CSRF token only.
+The password-forgot response is non-enumerating. Session tokens remain cookie-only and never appear in DTOs. The response contains public user data and a CSRF token only. State-changing authenticated requests send that token in the frozen `X-CSRF-Token` header.
 
 ### Provisional contracts
 
@@ -69,9 +69,10 @@ Actual results:
 - committed initial migration applied successfully to a newly created empty PostgreSQL volume
 - repeatable seed completed twice with no duplicate deterministic entities
 - Jest harness matched the required backend test stack
-- 20 unit/contract tests passed
-- 7 database/API integration tests passed
+- 21 unit/contract tests passed
+- 8 database/API integration tests passed
 - cross-report artifact/revision ownership was rejected by PostgreSQL
+- seed reruns were verified not to reset credentials, re-enable users, relink GitHub identities, or reassign ownership
 - lint passed for all backend packages
 - TypeScript typecheck passed for all backend packages
 - all backend packages built successfully
