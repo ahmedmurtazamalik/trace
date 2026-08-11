@@ -1,5 +1,5 @@
+
 import { PrismaClient } from '@prisma/client';
-import { afterAll, describe, expect, it } from 'vitest';
 
 const prisma = new PrismaClient();
 
@@ -53,5 +53,35 @@ describe('database foundation', () => {
       { userId: 'seed_user_alice', trackingEnabled: true },
       { userId: 'seed_user_bob', trackingEnabled: false },
     ]);
+  });
+
+  it('prevents an artifact from referencing another report’s revision', async () => {
+    const otherReport = await prisma.report.create({
+      data: {
+        id: 'test_cross_report_artifact_owner',
+        userId: 'seed_user_bob',
+        reportDate: new Date('2026-08-12T00:00:00.000Z'),
+        timezone: 'UTC',
+        inputSnapshot: { test: true },
+      },
+    });
+
+    try {
+      await expect(
+        prisma.reportArtifact.create({
+          data: {
+            id: 'test_cross_report_artifact',
+            reportId: otherReport.id,
+            revisionId: 'seed_report_revision_1',
+            kind: 'pdf',
+            storageKey: 'test/cross-report.pdf',
+            sizeBytes: 10,
+            checksum: 'test-checksum',
+          },
+        }),
+      ).rejects.toMatchObject({ code: 'P2003' });
+    } finally {
+      await prisma.report.delete({ where: { id: otherReport.id } });
+    }
   });
 });

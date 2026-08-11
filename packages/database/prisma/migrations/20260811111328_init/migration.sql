@@ -379,6 +379,9 @@ CREATE UNIQUE INDEX "reports_user_id_report_date_key" ON "public"."reports"("use
 CREATE UNIQUE INDEX "report_revisions_report_id_revision_key" ON "public"."report_revisions"("report_id", "revision");
 
 -- CreateIndex
+CREATE UNIQUE INDEX "report_revisions_id_report_id_key" ON "public"."report_revisions"("id", "report_id");
+
+-- CreateIndex
 CREATE UNIQUE INDEX "report_artifacts_storage_key_key" ON "public"."report_artifacts"("storage_key");
 
 -- CreateIndex
@@ -454,7 +457,7 @@ ALTER TABLE "public"."report_revisions" ADD CONSTRAINT "report_revisions_report_
 ALTER TABLE "public"."report_artifacts" ADD CONSTRAINT "report_artifacts_report_id_fkey" FOREIGN KEY ("report_id") REFERENCES "public"."reports"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "public"."report_artifacts" ADD CONSTRAINT "report_artifacts_revision_id_fkey" FOREIGN KEY ("revision_id") REFERENCES "public"."report_revisions"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+ALTER TABLE "public"."report_artifacts" ADD CONSTRAINT "report_artifacts_revision_id_report_id_fkey" FOREIGN KEY ("revision_id", "report_id") REFERENCES "public"."report_revisions"("id", "report_id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "public"."audit_logs" ADD CONSTRAINT "audit_logs_actor_user_id_fkey" FOREIGN KEY ("actor_user_id") REFERENCES "public"."users"("id") ON DELETE SET NULL ON UPDATE CASCADE;

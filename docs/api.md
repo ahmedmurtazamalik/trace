@@ -52,20 +52,80 @@ If a required dependency is unavailable, the endpoint returns HTTP `503` through
 
 ## Frozen authentication contract for Day 2
 
-The schemas and inferred TypeScript types live in `packages/shared/src/auth.ts`. JSON fixtures live in `packages/shared/test/fixtures/auth/`.
+Schemas, inferred TypeScript types, and the closed auth error-code enum live in `packages/shared/src/auth.ts`. JSON request/response fixtures live in `packages/shared/test/fixtures/auth/`.
 
-| Method | Path | Request | Success response |
-| --- | --- | --- | --- |
-| `POST` | `/api/v1/auth/register` | `RegisterRequest` | `AuthSessionResponse` |
-| `POST` | `/api/v1/auth/login` | `LoginRequest` | `AuthSessionResponse` |
-| `POST` | `/api/v1/auth/logout` | none | `{ "success": true }` |
-| `GET` | `/api/v1/auth/me` | none | `AuthSessionResponse` |
-| `POST` | `/api/v1/auth/forgot-password` | `ForgotPasswordRequest` | `{ "accepted": true }` |
-| `POST` | `/api/v1/auth/reset-password` | `ResetPasswordRequest` | `{ "success": true }` |
+| Method | Path | Success | Request | Success response | Documented errors |
+| --- | --- | --- | --- | --- | --- |
+| `POST` | `/api/v1/auth/register` | `201` | `RegisterRequest` | `AuthSessionResponse` | `400 VALIDATION_ERROR`; `409 USERNAME_TAKEN`; `409 EMAIL_TAKEN`; `429 RATE_LIMITED` |
+| `POST` | `/api/v1/auth/login` | `200` | `LoginRequest` | `AuthSessionResponse` | `400 VALIDATION_ERROR`; `401 INVALID_CREDENTIALS`; `403 ACCOUNT_DISABLED`; `429 RATE_LIMITED` |
+| `POST` | `/api/v1/auth/logout` | `200` | none | `{ "success": true }` | `401 UNAUTHENTICATED`; `403 CSRF_INVALID` |
+| `GET` | `/api/v1/auth/me` | `200` | none | `AuthSessionResponse` | `401 UNAUTHENTICATED` |
+| `POST` | `/api/v1/auth/password/forgot` | `202` | `ForgotPasswordRequest` | `ForgotPasswordResponse` | `400 VALIDATION_ERROR`; `429 RATE_LIMITED` |
+| `POST` | `/api/v1/auth/password/reset` | `200` | `ResetPasswordRequest` | `{ "success": true }` | `400 VALIDATION_ERROR`; `400 INVALID_OR_EXPIRED_RESET_TOKEN`; `429 RATE_LIMITED` |
 
-`AuthSessionResponse` contains public user data plus a CSRF token. It does not contain a session token or password material. Registration and login establish the session through a cookie in Day 2.
+`AuthSessionResponse` contains public user data plus a CSRF token. It never contains a session token or password material. Registration and login establish the session through a secure HTTP-only cookie in Day 2.
 
-The forgot-password response is intentionally non-enumerating: known and unknown identifiers receive the same accepted response.
+### Endpoint examples
+
+Register:
+
+```json
+{
+  "request": {
+    "username": "alice.dev",
+    "displayName": "Alice Developer",
+    "email": "alice@example.com",
+    "password": "correct-horse-battery-staple"
+  },
+  "response": {
+    "user": {
+      "id": "usr_01HXYZ",
+      "username": "alice.dev",
+      "displayName": "Alice Developer",
+      "email": "alice@example.com",
+      "createdAt": "2026-08-11T12:00:00.000Z"
+    },
+    "csrfToken": "csrf_opaque_value"
+  }
+}
+```
+
+Login uses `{ "username": "alice.dev", "password": "correct-horse-battery-staple" }` and returns the same `AuthSessionResponse`. `GET /auth/me` also returns `AuthSessionResponse`. Logout returns `{ "success": true }`.
+
+Password forgot is intentionally non-enumerating. Known and unknown identifiers receive the same `202` response:
+
+```json
+{
+  "request": { "identifier": "alice@example.com" },
+  "response": {
+    "message": "If the account exists, password reset instructions have been sent."
+  }
+}
+```
+
+Password reset:
+
+```json
+{
+  "request": {
+    "token": "opaque-reset-token",
+    "password": "correct-horse-battery-staple"
+  },
+  "response": { "success": true }
+}
+```
+
+All failures use the common envelope. Example:
+
+```json
+{
+  "code": "INVALID_CREDENTIALS",
+  "message": "The supplied credentials are invalid.",
+  "requestId": "request-123"
+}
+```
+
+Request and success-response fixtures for all six auth endpoints are validated by `packages/shared/test/auth.spec.ts`.
 
 ## Provisional later-day contracts
 

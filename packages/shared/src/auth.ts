@@ -9,6 +9,18 @@ export const usernameSchema = z
 
 export const passwordSchema = z.string().min(12).max(256);
 
+export const authErrorCodeSchema = z.enum([
+  'VALIDATION_ERROR',
+  'USERNAME_TAKEN',
+  'EMAIL_TAKEN',
+  'INVALID_CREDENTIALS',
+  'ACCOUNT_DISABLED',
+  'UNAUTHENTICATED',
+  'CSRF_INVALID',
+  'INVALID_OR_EXPIRED_RESET_TOKEN',
+  'RATE_LIMITED',
+]);
+
 export const publicUserSchema = z.object({
   id: z.string().min(1),
   username: usernameSchema,
@@ -52,8 +64,12 @@ export const resetPasswordRequestSchema = z.object({
 export const resetPasswordResponseSchema = z.object({ success: z.literal(true) });
 
 export type PublicUser = z.infer<typeof publicUserSchema>;
+export type AuthErrorCode = z.infer<typeof authErrorCodeSchema>;
 export type RegisterRequest = z.infer<typeof registerRequestSchema>;
 export type LoginRequest = z.infer<typeof loginRequestSchema>;
 export type AuthSessionResponse = z.infer<typeof authSessionResponseSchema>;
+export type LogoutResponse = z.infer<typeof logoutResponseSchema>;
 export type ForgotPasswordRequest = z.infer<typeof forgotPasswordRequestSchema>;
+export type ForgotPasswordResponse = z.infer<typeof forgotPasswordResponseSchema>;
 export type ResetPasswordRequest = z.infer<typeof resetPasswordRequestSchema>;
+export type ResetPasswordResponse = z.infer<typeof resetPasswordResponseSchema>;

@@ -43,11 +43,16 @@ export class ApiExceptionFilter implements ExceptionFilter {
       this.logger.error(`Unhandled request exception (requestId=${requestId})`, exception instanceof Error ? exception.stack : undefined);
     }
 
+    const requestedCode = body.code ?? defaultCodes[status] ?? 'INTERNAL_SERVER_ERROR';
+    const code = status >= 500 && requestedCode !== 'DEPENDENCIES_UNAVAILABLE'
+      ? defaultCodes[status] ?? 'INTERNAL_SERVER_ERROR'
+      : requestedCode;
+
     response.status(status).json({
-      code: body.code ?? defaultCodes[status] ?? 'INTERNAL_SERVER_ERROR',
-      message: this.messageFor(status, body.message),
+      code,
+      message: this.messageFor(status, code, body.message),
       requestId,
-      ...(body.fieldErrors === undefined ? {} : { fieldErrors: body.fieldErrors }),
+      ...(status < 500 && body.fieldErrors !== undefined ? { fieldErrors: body.fieldErrors } : {}),
     });
   }
 
@@ -61,9 +66,11 @@ export class ApiExceptionFilter implements ExceptionFilter {
     return {};
   }
 
-  private messageFor(status: number, message: string | string[] | undefined): string {
+  private messageFor(status: number, code: string, message: string | string[] | undefined): string {
     if (status >= 500) {
-      return message !== undefined && !Array.isArray(message) ? message : 'An internal server error occurred.';
+      return code === 'DEPENDENCIES_UNAVAILABLE'
+        ? 'Required dependencies are unavailable.'
+        : 'An internal server error occurred.';
     }
     if (Array.isArray(message)) {
       return 'Request validation failed.';

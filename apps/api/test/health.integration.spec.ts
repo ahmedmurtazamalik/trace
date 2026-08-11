@@ -1,7 +1,7 @@
 import type { Server } from 'node:http';
 import type { INestApplication } from '@nestjs/common';
 import request from 'supertest';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+
 import { createApplication } from '../src/bootstrap';
 
 describe('API health endpoints', () => {

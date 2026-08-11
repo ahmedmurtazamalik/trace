@@ -2,8 +2,10 @@ import { Inject, Injectable } from '@nestjs/common';
 import { PrismaService } from '@trace/database';
 import { RedisService } from '../../common/redis/redis.service';
 
+const PROBE_TIMEOUT_MS = 2_000;
+
 export interface DatabaseProbe {
-  $queryRawUnsafe<T = unknown>(query: string): Promise<T>;
+  $queryRaw<T = unknown>(query: TemplateStringsArray): Promise<T>;
 }
 
 export interface RedisProbe {
@@ -18,6 +20,26 @@ export interface ReadinessResult {
   };
 }
 
+function runBoundedProbe<T>(operation: () => Promise<T>): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error('Dependency probe timed out')), PROBE_TIMEOUT_MS);
+    timer.unref();
+
+    Promise.resolve()
+      .then(operation)
+      .then(
+        (value) => {
+          clearTimeout(timer);
+          resolve(value);
+        },
+        (error: unknown) => {
+          clearTimeout(timer);
+          reject(error instanceof Error ? error : new Error('Dependency probe failed'));
+        },
+      );
+  });
+}
+
 @Injectable()
 export class DependencyHealthService {
   constructor(
@@ -27,8 +49,8 @@ export class DependencyHealthService {
 
   async check(): Promise<ReadinessResult> {
     const [postgres, redis] = await Promise.allSettled([
-      Promise.resolve().then(() => this.database.$queryRawUnsafe('SELECT 1')),
-      Promise.resolve().then(() => this.redis.ping()),
+      runBoundedProbe(() => this.database.$queryRaw`SELECT 1`),
+      runBoundedProbe(() => this.redis.ping()),
     ]);
     const dependencies: ReadinessResult['dependencies'] = {
       postgres: postgres.status === 'fulfilled' ? 'up' : 'down',

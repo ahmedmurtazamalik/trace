@@ -328,6 +328,7 @@ model ReportRevision {
   artifacts ReportArtifact[]
 
   @@unique([reportId, revision])
+  @@unique([id, reportId])
   @@map("report_revisions")
 }
 
@@ -341,7 +342,7 @@ model ReportArtifact {
   checksum   String
   createdAt  DateTime           @default(now()) @map("created_at")
   report     Report             @relation(fields: [reportId], references: [id], onDelete: Cascade)
-  revision   ReportRevision?    @relation(fields: [revisionId], references: [id], onDelete: SetNull)
+  revision   ReportRevision?    @relation(fields: [revisionId, reportId], references: [id, reportId], onDelete: Restrict)
 
   @@index([reportId, createdAt])
   @@map("report_artifacts")

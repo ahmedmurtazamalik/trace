@@ -8,7 +8,7 @@
     "typecheck": "pnpm -r --if-present typecheck",
     "lint": "pnpm -r --if-present lint",
     "test": "pnpm -r --if-present test",
-    "test:integration": "pnpm --filter @trace/api test:integration",
+    "test:integration": "pnpm --filter @trace/database test:integration && pnpm --filter @trace/api test:integration",
     "infra:up": "docker compose up -d postgres redis",
     "infra:down": "docker compose down",
     "db:generate": "pnpm --filter @trace/database db:generate",
