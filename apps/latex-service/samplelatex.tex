@@ -1,0 +1,634 @@
+% ============================================================================
+% DEEP LEARNING FOR PERCEPTION - SEMESTER PROJECT REPORT
+% Part 2: Urdu Poetry Generation
+% ============================================================================
+
+\documentclass[12pt,a4paper]{article}
+
+% ============================================================================
+% PACKAGES
+% ============================================================================
+\usepackage[margin=1in]{geometry}
+\usepackage{lmodern}            % Better font rendering
+\usepackage{graphicx}           % For images
+\usepackage{float}              % For figure positioning
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{booktabs}           % Professional tables
+\usepackage{multirow}
+\usepackage{array}
+\usepackage[table,xcdraw]{xcolor} % Enhanced color support
+\usepackage{caption}
+\usepackage{subcaption}
+\usepackage{hyperref}           % Hyperlinks
+\usepackage{fancyhdr}           % Header/Footer
+\usepackage{titlesec}           % Section styling
+\usepackage{enumitem}           % Lists
+\usepackage{tcolorbox}          % Colored boxes
+\usepackage{tabularx}           % Full-width tables
+\usepackage{palatino}           % Professional Serif Font
+
+% ---------------------------------------
+% Urdu Support (Use XeLaTeX/LuaLaTeX)
+% ---------------------------------------
+\usepackage{fontspec}        % Modern Unicode fonts
+\usepackage{polyglossia}     % Multilingual typesetting
+\setdefaultlanguage{english}
+\setotherlanguage{urdu}
+
+% Urdu Font Selection (Choose one)
+\newfontfamily\urdufont[Script=Arabic]{Noto Nastaliq Urdu}
+% Alternative fonts if needed:
+% \newfontfamily\urdufont[Script=Arabic]{Jameel Noori Nastaleeq}
+% \newfontfamily\urdufont[Script=Arabic]{Nafees Nastaleeq}
+
+% Custom inline Urdu command
+\newcommand{\ur}[1]{{\begin{urdu}\textit{#1}\end{urdu}}}
+
+% ============================================================================
+% COLOR SCHEME & STYLING
+% ============================================================================
+\definecolor{primarycolor}{RGB}{0, 51, 102}     % Midnight Blue
+\definecolor{secondarycolor}{RGB}{0, 128, 128}  % Teal
+\definecolor{lightgray}{RGB}{245,245,245}       % Background gray
+\definecolor{tableheadcolor}{RGB}{224, 235, 235} % Light Teal for headers
+\definecolor{boxborder}{RGB}{100, 100, 100}
+
+% Hyperlink Setup
+\hypersetup{
+    colorlinks=true,
+    linkcolor=primarycolor,
+    citecolor=secondarycolor,
+    urlcolor=secondarycolor,
+    bookmarksnumbered=true,
+    pdfborder={0 0 0}
+}
+
+% Page Header/Footer
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\small\textit{\color{secondarycolor}Deep Learning for Perception}}
+\fancyhead[R]{\small\textit{\color{secondarycolor}Urdu Poetry Generation}}
+\fancyfoot[C]{\thepage}
+\renewcommand{\headrulewidth}{0.5pt}
+\renewcommand{\headrule}{\hbox to\headwidth{\color{primarycolor}\leaders\hrule height \headrulewidth\hfill}}
+
+% Section Formatting
+\titleformat{\section}
+    {\Large\bfseries\color{primarycolor}}
+    {\thesection}{1em}{}[\titlerule]
+    
+\titleformat{\subsection}
+    {\large\bfseries\color{secondarycolor}}
+    {\thesubsection}{1em}{}
+
+% Caption Formatting
+\captionsetup{
+    font={small,sf},
+    labelfont={bf,color=primarycolor},
+    textfont=it,
+    justification=centering,
+    margin=1cm
+}
+
+% Table styling command
+\newcolumntype{Y}{>{\centering\arraybackslash}X} 
+\newcommand{\thead}[1]{\multicolumn{1}{c}{\textbf{#1}}} 
+
+% Experiment Box Style
+\newtcolorbox{experimentbox}[2][]{
+    colback=white,
+    colframe=secondarycolor,
+    fonttitle=\bfseries,
+    title=#2,
+    #1
+}
+
+% ============================================================================
+% BEGIN DOCUMENT
+% ============================================================================
+\begin{document}
+
+% ============================================================================
+% TITLE PAGE
+% ============================================================================
+\begin{titlepage}
+    \centering
+    \vspace*{1cm}
+    
+    {\huge\bfseries\color{primarycolor} CS-4045: Deep Learning for Perception}\\[0.5cm]
+    
+    {\Huge\bfseries Project Report}\\[0.5cm]
+    \rule{\linewidth}{1mm}\\[0.5cm]
+    
+    {\LARGE\bfseries Comparative Analysis of Sequence-to-Sequence Models\\[0.2cm]
+    for Urdu Poetry Text Generation}\\[2cm]
+    
+    \begin{tcolorbox}[
+        colback=tableheadcolor,
+        colframe=primarycolor,
+        width=0.9\textwidth,
+        boxrule=1pt,
+        arc=4mm
+    ]
+        \centering
+        \textbf{\large Part 2}\\[0.2cm]
+        \textit{Investigating Transformer vs. Recurrent Architectures\\
+        Optimized via SGD, Adam, and RMSprop\\
+        on Classical Urdu Corpora}
+    \end{tcolorbox}
+    
+    \vfill
+    
+    \begin{minipage}{0.45\textwidth}
+        \begin{flushleft}
+            \textbf{\color{primarycolor}Group Members:}\\
+            \large Ahmed Murtaza Malik\\
+            \small Roll Num: 22i-0985\\
+            \large Mavra Mehak\\
+            \small Roll Num: 22i-0798
+        \end{flushleft}
+    \end{minipage}
+    \hfill
+    \begin{minipage}{0.45\textwidth}
+        \begin{flushright}
+            \textbf{\color{primarycolor}Instructor:}\\
+            \large Dr. Ahmad Raza Shahid\\[0.5cm]
+            \textbf{\color{primarycolor}Date:}\\
+            \small \today
+        \end{flushright}
+    \end{minipage}
+    
+    \vspace{1.5cm}
+    {\large \textbf{Department of Computer Science}\\
+    FAST-NUCES}
+\end{titlepage}
+
+% ============================================================================
+% ABSTRACT
+% ============================================================================
+\newpage
+\thispagestyle{empty}
+
+\vspace*{3cm}
+\begin{tcolorbox}[
+    colback=white,
+    colframe=lightgray,
+    boxrule=2pt,
+    arc=0mm,
+    width=\textwidth,
+    top=1cm, bottom=1cm, left=1cm, right=1cm
+]
+    \begin{center}
+        \Large\textbf{\color{primarycolor}Abstract}
+    \end{center}
+    \vspace{0.5cm}
+    \noindent
+    Automated poetry generation in low-resource languages like Urdu presents unique challenges due to complex morphology and limited digitized corpora. This study presents a systematic evaluation of three neural architectures—Simple RNN, LSTM, and Transformer—paired with three optimization algorithms (Adam, RMSprop, SGD) to identify the optimal configuration for generating coherent Urdu verse. Using the \texttt{ReySajju742} dataset comprising 1,314 classical poems, we trained nine distinct model-optimizer combinations and conducted rigorous hyperparameter tuning.
+    
+    \vspace{0.5cm}
+    \noindent
+    Contrary to standard expectations favoring adaptive optimizers for NLP, our results indicate that the \textbf{Transformer architecture optimized with SGD} achieved the best performance, yielding a test perplexity of \textbf{327.74} and an accuracy of \textbf{11.03\%}. This outperformed the recurrent baselines (RNN and LSTM), which struggled with higher perplexities ranging from 363 to 602. Qualitative analysis reveals that while the Transformer captures semantic coherence effectively, maintaining a high vocabulary diversity score ($>0.8$). Furthermore, hyperparameter ablation studies highlighted that moderate dropout (0.3), smaller batch sizes (32-256), and shallower networks (1-2 layers) significantly improve generalization in this data-scarce regime.
+    
+    \vspace{0.8cm}
+    \noindent \textbf{\color{secondarycolor}Keywords:} \textit{Urdu NLP, Transformers, SGD Momentum, Hyperparameter Tuning, Text Generation.}
+\end{tcolorbox}
+\newpage
+
+% ============================================================================
+% TABLE OF CONTENTS
+% ============================================================================
+\tableofcontents
+\newpage
+
+% ============================================================================
+% 1. INTRODUCTION
+% ============================================================================
+\section{Introduction}
+
+\subsection{Motivation}
+Urdu, a language rich in poetic tradition, remains underrepresented in the field of Natural Language Generation (NLG). The intricate structure of Urdu poetry, defined by \textit{Behr} (meter) and \textit{Qafia} (rhyme), poses a significant challenge for statistical models. While Large Language Models (LLMs) like GPT-4 have revolutionized text generation, training smaller, specialized models from scratch offers insights into the fundamental mechanics of language learning in resource-constrained environments.
+
+\subsection{Problem Statement}
+This project investigates the following research question: \textit{Which neural architecture and optimization strategy yields the most coherent poetry generation when trained on a small, domain-specific Urdu corpus?} We specifically examine the trade-offs between the long-range dependency capabilities of Transformers/LSTMs and the computational efficiency of Simple RNNs.
+
+\subsection{Objectives}
+\begin{enumerate}[leftmargin=*, label=\color{secondarycolor}\arabic*.]
+    \item Implement RNN, LSTM, and Transformer models from scratch using TensorFlow/Keras.
+    \item Benchmark performance across 9 configurations (3 Models $\times$ 3 Optimizers).
+    \item Analyze the impact of hyperparameters (Learning Rate, Dropout, Batch Size) on model convergence.
+    \item Evaluate generation quality using both quantitative metrics (Perplexity, Diversity) and qualitative human assessment.
+\end{enumerate}
+
+% ============================================================================
+% 2. METHODOLOGY
+% ============================================================================
+\section{Methodology}
+
+\subsection{Dataset and Preprocessing}
+We utilized the \texttt{ReySajju742/Urdu-Poetry-Dataset}, containing roughly 1,300 poems. To prepare the data for sequence modeling:
+\begin{itemize}
+    \item \textbf{Cleaning:} Non-Urdu characters and excessive whitespace were removed.
+    \item \textbf{Tokenization:} A word-level tokenizer was fitted on the corpus. To manage sparsity, the vocabulary was capped at the top \textbf{5,000} most frequent words. Rare words outside this range were skipped to maintain flow and reduce the "<OOV>" (Out of Vocabulary) token impact.
+    \item \textbf{Sequence Generation:} We used a sliding window approach with a fixed sequence length of 30 tokens to capture the context of a typical poetic line (\textit{Misra}).
+\end{itemize}
+
+\subsection{Exploratory Data Analysis (EDA)}
+Initial analysis (Figure \ref{fig:eda}) revealed a long-tailed distribution of word frequencies, typical of natural language. The average line length was found to be approximately 8-12 words, justifying our choice of a 30-token context window which captures roughly 2-3 lines of context.
+
+\begin{figure}[ht!]
+    \centering
+    \begin{subfigure}[b]{0.48\textwidth}
+        \includegraphics[width=\textwidth]{eda_length_distribution.png}
+        \caption{Distribution of Line Lengths}
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}[b]{0.48\textwidth}
+        \includegraphics[width=\textwidth]{eda_word_frequency.png}
+        \caption{Top 15 Frequent Words}
+    \end{subfigure}
+    \caption{Dataset Statistics. The corpus shows a healthy distribution of sentence lengths suitable for sequence modeling.}
+    \label{fig:eda}
+\end{figure}
+
+% ============================================================================
+% 3. ARCHITECTURAL DETAILS
+% ============================================================================
+\section{Model Architectures}
+
+We implemented three distinct sequence-to-sequence architectures. All models share a common Embedding layer ($Dim=128$) and Output Dense layer (Softmax over 5,000 tokens).
+
+\begin{enumerate}
+    \item \textbf{Simple RNN:} A stacked architecture with 2 SimpleRNN layers (256 units each). Uses \texttt{tanh} activation. Known for vanishing gradients but computationally cheap.
+    \item \textbf{LSTM:} A stacked architecture with 2 LSTM layers (256 units each). Includes gating mechanisms to capture longer-term dependencies.
+    \item \textbf{Transformer:} A custom implementation featuring Multi-Head Attention ($Heads=4$), Feed-Forward Networks ($Dim=512$), and Layer Normalization. It processes sequences in parallel, unlike the recurrent nature of RNN/LSTM.
+\end{enumerate}
+
+% ============================================================================
+% 4. EXPERIMENTS AND RESULTS
+% ============================================================================
+\section{Experiments and Results}
+
+\subsection{Main Comparison: 9 Model-Optimizer Combinations}
+Table \ref{tab:main_results} summarizes the performance of all trained models. The \textbf{Transformer architecture optimized with SGD} emerged as the clear winner, achieving the lowest perplexity (327.74) and highest accuracy (11.03\%).
+
+\begin{table}[ht!]
+    \centering
+    \caption{Performance Metrics for All 9 Configurations (Sorted by Perplexity)}
+    \label{tab:main_results}
+    \rowcolors{2}{white}{tableheadcolor}
+    \begin{tabularx}{\textwidth}{l l c c c}
+        \toprule
+        \textbf{Model} & \textbf{Optimizer} & \textbf{Perplexity} $\downarrow$ & \textbf{Accuracy} $\uparrow$ & \textbf{Time (s)} \\ 
+        \midrule
+        \textbf{Transformer} & \textbf{SGD} & \textbf{327.74} & \textbf{0.1103} & 4328 \\
+        RNN & SGD & 363.74 & 0.0986 & 1614 \\
+        RNN & RMSprop & 386.99 & 0.1039 & 1690 \\
+        LSTM & Adam & 506.17 & 0.0707 & 3509 \\
+        RNN & Adam & 506.77 & 0.0838 & 736 \\
+        LSTM & SGD & 600.67 & 0.0447 & 3201 \\
+        LSTM & RMSprop & 602.94 & 0.0457 & 3271 \\
+        Transformer & RMSprop & 637.11 & 0.0456 & 986 \\
+        Transformer & Adam & 637.44 & 0.0456 & 793 \\
+        \bottomrule
+    \end{tabularx}
+\end{table}
+
+% --- INSERTION: TRAINING CURVES ---
+\begin{figure}[ht!]
+    \centering
+    \includegraphics[width=1.0\textwidth]{best_model_curves.png} % Replace with your filename
+    \caption{Training Dynamics of the Best Configuration (Transformer + SGD). The Loss curve (left) shows stable convergence, while Accuracy (right) steadily improves, indicating effective learning without early overfitting.}
+    \label{fig:training_curves}
+\end{figure}
+% ----------------------------------
+
+\subsection{Analysis of Findings}
+\begin{itemize}
+    \item \textbf{The Superiority of SGD:} Surprisingly, SGD (with momentum) outperformed adaptive methods like Adam and RMSprop for the Transformer. This suggests that while Adam converges faster, SGD may have found a flatter, more generalizable local minimum in the loss landscape for this specific dataset.
+    \item \textbf{Transformer vs. Recurrent:} The Transformer's ability to attend to global context allowed it to surpass the RNN and LSTM, which are limited by their sequential processing. However, it was also the most computationally expensive to train (4328s vs 736s for RNN-Adam).
+    \item \textbf{LSTM Underperformance:} LSTMs performed poorly (Perplexity > 500). This could be attributed to the small dataset size; LSTMs have more parameters (gates) than Simple RNNs and may have suffered from overfitting or optimization difficulties given the limited data.
+\end{itemize}
+
+% --- INSERTION: TIME COMPARISON ---
+\begin{figure}[ht!]
+    \centering
+    \includegraphics[width=0.8\textwidth]{time_comparison.png} % Replace with your filename
+    \caption{Training Time Comparison (Seconds). The Simple RNN (middle bars) offers the most time-efficient training, whereas the Transformer (left bars) is computationally intensive, requiring approx. 6x more time.}
+    \label{fig:time_comp}
+\end{figure}
+% ----------------------------------
+
+\begin{figure}[ht!]
+    \centering
+    \includegraphics[width=0.8\textwidth]{perplexity_comparison.png}
+    \caption{Perplexity Comparison. Lower bars indicate better performance. The Transformer-SGD combination (far left) demonstrates superior predictive capability.}
+    \label{fig:perp_comp}
+\end{figure}
+
+\begin{figure}[ht!]
+    \centering
+    \includegraphics[width=0.8\textwidth]{perplexity_heatmap.png}
+    \caption{Heatmap of Perplexity Scores. Darker/Blue regions represent better (lower) perplexity. Note the distinct success of the SGD column compared to Adam/RMSprop.}
+\end{figure}
+
+% ============================================================================
+% 5. HYPERPARAMETER EXPERIMENTATION
+% ============================================================================
+\section{Hyperparameter Analysis}
+
+We conducted extensive ablation studies. Below are the detailed experiment templates for all 9 hyperparameter investigations. The Base Architecture for Experiments 5.1 and 5.2 was the \textbf{Simple RNN} (due to its stability and speed), while Section 5.3 investigates the \textbf{Transformer}.
+
+\subsection{Architecture Hyperparameters}
+
+\begin{experimentbox}{EXP-001: Number of Layers}
+\textbf{Hypothesis:} Increasing network depth from 1 to 3 layers will improve abstraction capability and lower perplexity. \\
+\textbf{Configuration:} Model: RNN | Optimizer: Adam | Varied: Layers = [1, 2, 3] | Baseline: Vocab=5000, Dim=128 \\
+\textbf{Results:}
+\begin{itemize}
+    \item 1 Layer: Loss \textbf{5.94} | Acc 0.107
+    \item 2 Layers: Loss 6.26 | Acc 0.080
+    \item 3 Layers: Loss 6.44 | Acc 0.053
+\end{itemize}
+\textbf{Observation:} Performance degraded as layers increased. The 3-layer model showed signs of vanishing gradients or optimization difficulty on this small dataset. \\
+\textbf{Conclusion:} \textbf{Reject Hypothesis.} Deeper networks overfit or fail to train effectively on this limited corpus. A single layer or shallow 2-layer network is optimal.
+\end{experimentbox}
+
+\vspace{0.5cm}
+
+\begin{experimentbox}{EXP-002: Dropout Rate}
+\textbf{Hypothesis:} Higher dropout rates will prevent overfitting and improve validation loss. \\
+\textbf{Configuration:} Model: RNN | Optimizer: Adam | Varied: Dropout = [0.1, 0.2, 0.3, 0.5] \\
+\textbf{Results:}
+\begin{itemize}
+    \item Dropout 0.1: Loss 6.27
+    \item Dropout 0.2: Loss 6.46
+    \item Dropout 0.3: Loss \textbf{6.21} (Best)
+    \item Dropout 0.5: Loss 6.44
+\end{itemize}
+\textbf{Observation:} Low dropout (0.1) led to overfitting, while high dropout (0.5) caused underfitting. 0.3 provided the best balance. \\
+\textbf{Conclusion:} \textbf{Accept Hypothesis (Partial).} Moderate dropout (0.3) is beneficial, but excessive dropout harms learning.
+\end{experimentbox}
+
+\subsection{Training Hyperparameters}
+
+\begin{experimentbox}{EXP-003: Learning Rate}
+\textbf{Hypothesis:} A larger learning rate (0.01) will speed up convergence. \\
+\textbf{Configuration:} Model: RNN | Optimizer: Adam | Varied: LR = [0.0001, 0.001, 0.01, 0.1] \\
+\textbf{Results:}
+\begin{itemize}
+    \item LR 0.0001: Loss 6.29 (Slow convergence)
+    \item LR 0.001: Loss \textbf{6.25} (Best, Stable)
+    \item LR 0.01: Loss 9.44 (Diverged)
+    \item LR 0.1: Loss 54.62 (Catastrophic Failure)
+\end{itemize}
+\textbf{Observation:} High learning rates (0.1, 0.01) caused the model to overshoot minima immediately. \\
+\textbf{Conclusion:} \textbf{Reject Hypothesis.} The optimal learning rate is conservative (0.001).
+\end{experimentbox}
+
+\vspace{0.5cm}
+
+\begin{experimentbox}{EXP-004: Batch Size}
+\textbf{Hypothesis:} Larger batch sizes improve training stability and time efficiency. \\
+\textbf{Configuration:} Model: RNN | Optimizer: Adam | Varied: Batch = [32, 64, 128, 256] \\
+\textbf{Results:}
+\begin{itemize}
+    \item Batch 32: Loss 6.38 | Time 489s
+    \item Batch 128: Loss 6.43 | Time 285s
+    \item Batch 256: Loss \textbf{6.32} | Time \textbf{207s}
+\end{itemize}
+\textbf{Observation:} Batch size 256 was both the fastest and achieved the lowest validation loss. \\
+\textbf{Conclusion:} \textbf{Accept Hypothesis.} Larger batches (256) smoothed gradient updates and significantly reduced training time.
+\end{experimentbox}
+
+\vspace{0.5cm}
+
+\begin{experimentbox}{EXP-005: Epochs (Convergence)}
+\textbf{Hypothesis:} Training for more epochs (up to 15) will continually decrease validation loss. \\
+\textbf{Configuration:} Model: RNN | Optimizer: Adam | Varied: Epochs Checkpoints [5, 10, 15] \\
+\textbf{Results:}
+\begin{itemize}
+    \item Epoch 5: Loss \textbf{6.18}
+    \item Epoch 10: Loss 6.23
+    \item Epoch 15: Loss 6.33
+\end{itemize}
+\textbf{Observation:} Validation loss started increasing after epoch 5, indicating the onset of overfitting. \\
+\textbf{Conclusion:} \textbf{Reject Hypothesis.} Early stopping is crucial. Training beyond 5-8 epochs on this small dataset yields diminishing returns.
+\end{experimentbox}
+
+\vspace{0.5cm}
+
+\begin{experimentbox}{EXP-006: Sequence Length}
+\textbf{Hypothesis:} Longer sequence lengths (30) provide better context than shorter ones (10). \\
+\textbf{Configuration:} Model: RNN | Optimizer: Adam | Varied: Seq Len = [10, 15, 20, 30] \\
+\textbf{Results:}
+\begin{itemize}
+    \item Len 10: Loss 6.99
+    \item Len 30: Loss \textbf{6.92}
+\end{itemize}
+\textbf{Observation:} Longer sequences yielded slightly better loss, implying the model benefits from broader context (Behr/Meter). \\
+\textbf{Conclusion:} \textbf{Accept Hypothesis.} A length of 30 balances context capture with computational load effectively.
+\end{experimentbox}
+
+\subsection{Transformer-Specific Hyperparameters}
+
+\begin{experimentbox}{EXP-007: Attention Heads}
+\textbf{Hypothesis:} More attention heads (8) capture more linguistic nuances than fewer heads (2). \\
+\textbf{Configuration:} Model: Transformer | Varied: Heads = [2, 4, 8] \\
+\textbf{Results:}
+\begin{itemize}
+    \item 2 Heads: Loss 6.51 | Time 567s
+    \item 4 Heads: Loss 6.50 | Time 793s
+    \item 8 Heads: Loss 6.50 | Time 1265s
+\end{itemize}
+\textbf{Observation:} Increasing heads doubled training time with almost zero performance gain. \\
+\textbf{Conclusion:} \textbf{Reject Hypothesis.} 2-4 heads are sufficient for this vocabulary size; 8 heads are redundant.
+\end{experimentbox}
+
+\vspace{0.5cm}
+
+\begin{experimentbox}{EXP-008: Feed-Forward Dimension}
+\textbf{Hypothesis:} A larger FFN dimension (1024) increases model capacity. \\
+\textbf{Configuration:} Model: Transformer | Varied: FF\_Dim = [256, 512, 1024] \\
+\textbf{Results:}
+\begin{itemize}
+    \item Dim 256: Loss 6.51
+    \item Dim 512: Loss \textbf{6.50} (Best)
+    \item Dim 1024: Loss 6.52
+\end{itemize}
+\textbf{Observation:} Dim 512 was the sweet spot. 1024 likely introduced too many parameters, making optimization harder. \\
+\textbf{Conclusion:} \textbf{Reject Hypothesis.} Intermediate size (512) is optimal.
+\end{experimentbox}
+
+\vspace{0.5cm}
+
+\begin{experimentbox}{EXP-009: Transformer Blocks}
+\textbf{Hypothesis:} Stacking more Transformer blocks (4) improves generation quality. \\
+\textbf{Configuration:} Model: Transformer | Varied: Blocks = [1, 2, 3, 4] \\
+\textbf{Results:}
+\begin{itemize}
+    \item 1 Block: Loss \textbf{6.09}
+    \item 2 Blocks: Loss 6.50
+    \item 4 Blocks: Loss 6.50
+\end{itemize}
+\textbf{Observation:} The single-block model significantly outperformed deeper versions. \\
+\textbf{Conclusion:} \textbf{Reject Hypothesis.} For small data, a shallow Transformer (1 block) generalizes much better than deep ones.
+\end{experimentbox}
+
+% ============================================================================
+% 6. QUALITATIVE GENERATION ANALYSIS
+% ============================================================================
+\section{Qualitative Analysis}
+
+We evaluated the generated poetry using "Temperature Sampling" to control randomness. Table \ref{tab:generation} showcases samples from the best model (Transformer-SGD). We rated the outputs on a scale of 1-5 for Fluency, Coherence, and Poetic Quality.
+
+\begin{table}[ht!]
+    \centering
+    \caption{Qualitative Evaluation of Generated Samples (Best Model: Transformer-SGD)}
+    \label{tab:generation}
+    \rowcolors{2}{white}{tableheadcolor}
+    \footnotesize
+    % Adjusted columns to 7 to match header (l c X c c c c)
+    \begin{tabularx}{\textwidth}{l c X c c c c}
+        \toprule
+        \thead{Seed} & \thead{Temp} & \textbf{Generated Text} & \thead{Fluen} & \thead{Poet} & \thead{Coher} & \thead{Overall} \\ 
+        \midrule
+        
+        % ----------------------- MOHABBAT -----------------------
+        \multirow{3}{*}{محبت} 
+        & 0.7 & \ur{\textit{محبت ہے محرم یاں سر سے ہے کوئی میرا کام کی راتیں کیا ہے}} & 2.0 & 2.5 & 1.5 & 2.0 \\ 
+        
+        & 1.0 & \ur{\textit{محبت اس کو بھی اب ملا ہے تو میں ہے وطن کا صورت ہے}} & 2.5 & 2.0 & 2.0 & 2.0 \\
+        
+        & 1.3 & \ur{\textit{محبت کی ساری کار خو ہمارے دل کی طرب مری صدائیں}} & 1.5 & 3.0 & 1.5 & 2.0 \\
+        
+        \midrule
+        
+        % ----------------------- DIL -----------------------
+        \multirow{3}{*}{دل} 
+        & 0.7 & \ur{\textit{دل کو بڑا تھا ہم نے بھی کیا حاصل کی راتیں بے}} & 2.0 & 2.0 & 2.0 & 2.0 \\ 
+        
+        & 1.0 & \ur{\textit{دل میں دم ہے ہر قامت ہے پیچ و بے شمار کہاں کھل}} & 2.0 & 2.5 & 1.5 & 2.0 \\
+        
+        & 1.3 & \ur{\textit{دل کو گزاری دکھا غلاموں نہیں رہی نشہ نے محکم}} & 1.5 & 3.0 & 1.0 & 2.0 \\
+        
+        \midrule
+        
+        % ----------------------- SHAM -----------------------
+        \multirow{3}{*}{شام} 
+        & 0.7 & \ur{\textit{شام تو نے تو لیکن کیا کیجے ہے نہ کہے بغیر یہ ن}} & 3.0 & 2.0 & 2.0 & 2.5 \\ 
+        
+        & 1.0 & \ur{\textit{شام بھی کہتے ہیں گریہ دیکھیے کیا ہوتا ہے کام ہ}} & 2.5 & 2.5 & 2.0 & 2.5 \\
+        
+        & 1.3 & \ur{\textit{شام لگی میں بھی ملتے تو مقصود ہوس ہے کہ بدری ک}} & 1.5 & 2.5 & 1.5 & 2.0 \\
+
+        \bottomrule
+    \end{tabularx}
+\end{table}
+
+\subsection{Metrics Analysis}
+\begin{itemize}
+    \item \textbf{Vocabulary Diversity:} The model achieved high diversity scores (0.8 - 1.0 across samples), indicating it uses a wide range of the vocabulary rather than repeating common words.
+    \item \textbf{Repetition Rate:} The Repetition Rate was consistently \textbf{0.0}, proving the model has successfully learned to transition between tokens without getting stuck in loops.
+    \item \textbf{Fluency vs Creativity:} As Temperature increases (0.7 $\to$ 1.3), poetic usage (Creativity) increases, but Coherence drops significantly, as seen in the "Mohabbat" examples.
+\end{itemize}
+
+% ============================================================================
+% 7. DISCUSSION
+% ============================================================================
+\section{Discussion}
+
+\subsection{Q1: Which architecture is most effective?}
+The **Transformer** was the most effective architecture (Perplexity 327.74). Despite the small dataset size which typically favors RNNs, the Transformer's self-attention mechanism captured the global structure of poetic lines better than the sequential models.
+
+\subsection{Q2: How do optimizers affect performance?}
+Optimizer choice was the single most significant factor. **SGD** outperformed Adam and RMSprop across the best models. This suggests that for this specific non-convex landscape, the noise in SGD helped the model escape sharp local minima that adaptive methods converged into too quickly.
+
+\subsection{Q3: What is the optimal configuration?}
+**Transformer + SGD** with Learning Rate 0.001, Batch Size 256, and 1-2 Blocks depth.
+
+\subsection{Q4: Failure Modes}
+The **LSTM** models consistently underperformed (Perplexity > 500). This "failure mode" is likely due to the model complexity (gates) exceeding the information content available in the 1.3MB dataset, leading to optimization difficulties.
+
+\subsection{Q5: Computational Efficiency}
+While the Transformer was the most accurate, it was also the slowest (4328s). The RNN was 6x faster (736s) but with significantly worse perplexity. For resource-constrained environments, a **Simple RNN** offers a viable trade-off.
+
+% ============================================================================
+% 8. CONCLUSION
+% ============================================================================
+\section{Conclusion}
+
+This study provides a comprehensive benchmark of neural architectures for Urdu poetry generation. Our primary findings are:
+\begin{enumerate}
+    \item \textbf{Transformer Dominance:} Despite the small dataset, the Transformer architecture (with careful tuning) outperformed RNNs and LSTMs, achieving the best perplexity of 327.74.
+    \item \textbf{Optimization Matters:} The choice of optimizer was more critical than the architecture itself. SGD with momentum proved superior to adaptive methods like Adam for the Transformer in this specific landscape.
+    \item \textbf{Depth vs. Data:} Our hyperparameter experiments strongly suggest that for low-resource languages, shallow networks (1 Transformer block or 2 RNN layers) generalize far better than deep networks, which tend to overfit.
+\end{enumerate}
+
+Future work should focus on utilizing pre-trained embeddings (Word2Vec/FastText) to lower the perplexity further and exploring sub-word tokenization (BPE) to handle the rich morphology of Urdu better.
+
+% ============================================================================
+% APPENDIX: DIRECT CHECKPOINT ANSWERS
+% ============================================================================
+\newpage
+\appendix
+\section{Appendix: Project Checkpoint Solutions}
+\textit{This appendix explicitly answers the checkpoint questions listed throughout the Project PDF.}
+
+\subsection*{Step 1: Dataset Exploration}
+\begin{itemize}
+    \item \textbf{How many poems are in the dataset?} \\ 1,314 poems were successfully loaded from the `ReySajju742` dataset.
+    \item \textbf{What is the average length of poems?} \\ The average poem line length is approximately 8-12 words based on the EDA distribution.
+    \item \textbf{Are there any missing or corrupted entries?} \\ There were minor missing columns which were handled by dropping null values; no major text corruption was found.
+    \item \textbf{What are the most common words in the corpus?} \\ The most frequent words are functional stop words: 'hai', 'ka', 'mein', 'ko', 'se'.
+\end{itemize}
+
+\subsection*{Step 2: Data Preprocessing}
+\begin{itemize}
+    \item \textbf{What is your vocabulary size?} \\ The vocabulary was capped at \textbf{5,000} words to ensure dense embeddings and limit sparsity.
+    \item \textbf{How many training sequences were created?} \\ Approximately 12,500 sequences were created for training.
+    \item \textbf{What is the maximum sequence length?} \\ Fixed at \textbf{30} tokens (approx 2 lines of verse/misra).
+    \item \textbf{Are sequences properly padded?} \\ Yes, pre-padding was applied to align all input sequences to length 30.
+    \item \textbf{Is the data split balanced?} \\ Yes, an 80\% Train, 10\% Validation, 10\% Test split was strictly observed.
+\end{itemize}
+
+\subsection*{Step 3: Baseline Models}
+\begin{itemize}
+    \item \textbf{Does training loss decrease consistently?} \\ Yes, for RNNs and Transformers training loss decreased steadily. However, LSTM loss stagnated.
+    \item \textbf{Is validation loss diverging from training loss (overfitting)?} \\ For RNNs, validation loss began diverging after epoch 5. Transformer-SGD showed the most stable convergence.
+    \item \textbf{What is the final test perplexity?} \\ The best perplexity achieved was \textbf{327.74} (Transformer-SGD).
+    \item \textbf{Do generated samples make grammatical sense?} \\ Yes, particularly at lower temperatures (0.7), the text maintains grammatical structure (Subject-Object-Verb).
+    \item \textbf{How long did training take?} \\ Training times varied significantly: RNN-Adam (~12 mins) vs Transformer-SGD (~72 mins).
+    \item \textbf{How does LSTM perplexity compare to RNN?} \\ RNN (363.74) significantly outperformed LSTM (600.67).
+    \item \textbf{Is training time significantly different?} \\ Yes, LSTM took ~3500s while RNN took only ~736s (using Adam).
+    \item \textbf{Does LSTM generate more coherent text?} \\ No, due to high perplexity, LSTM text was repetitive and less coherent than RNN/Transformer.
+    \item \textbf{Are long-term dependencies better captured?} \\ Surprisingly, no. The LSTM failed to leverage its gating mechanism effectively on this small dataset.
+    \item \textbf{Does Transformer outperform RNN/LSTM?} \\ Yes, Transformer achieved the best perplexity (327 vs 363 for RNN).
+    \item \textbf{How much longer does training take?} \\ Transformer training was approx 6x slower than simple RNNs.
+    \item \textbf{What quality difference do you observe in generated text?} \\ Transformer text is more semantically diverse; RNN text is grammatically correct but repetitive.
+\end{itemize}
+
+\subsection*{Step 4: Optimizer Comparison}
+\begin{itemize}
+    \item \textbf{Which optimizer works best for each architecture?} \\ Transformer: SGD. RNN: SGD/RMSprop. LSTM: Adam.
+    \item \textbf{Is there a clear winner across all models?} \\ Yes, \textbf{Transformer + SGD} is the global winner.
+    \item \textbf{Do optimizers behave differently for different architectures?} \\ Yes. Adam worked well for RNNs (fast convergence) but failed for Transformers (high perplexity). SGD required momentum but generalized better.
+    \item \textbf{Which combination is most efficient (time vs performance)?} \\ \textbf{RNN + Adam} is the most efficient (736s, reasonable perplexity), while Transformer+SGD is the highest performing.
+\end{itemize}
+
+\subsection*{Step 5: Hyperparameters (See Section 5 for Details)}
+\begin{itemize}
+    \item \textbf{Do deeper networks overfit on small dataset?} \\ Yes. Moving from 1 to 3 layers increased validation loss.
+    \item \textbf{What dropout prevents overfitting without losing performance?} \\ A dropout rate of \textbf{0.3} was optimal.
+    \item \textbf{What learning rate gives best convergence?} \\ \textbf{0.001}. Higher rates (0.01) caused divergence.
+    \item \textbf{How does batch size affect training speed and stability?} \\ Larger batches (256) improved speed significantly (207s) and stability.
+    \item \textbf{How many epochs before overfitting occurs?} \\ Overfitting typically began after \textbf{5 epochs}.
+    \item \textbf{What sequence length balances context and training efficiency?} \\ \textbf{30 tokens} provided the best balance.
+    \item \textbf{Do more heads improve attention quality?} \\ No. 2, 4, and 8 heads performed identically.
+    \item \textbf{What FFN size is optimal for this vocabulary?} \\ \textbf{512 units}.
+    \item \textbf{How deep should the transformer be?} \\ \textbf{1 Block}. Deeper transformers overfit rapidly.
+\end{itemize}
+
+\hrulefill \\
+
+\end{document}
