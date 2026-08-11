@@ -19,4 +19,9 @@ describe("AppShell", () => {
     await user.tab();
     expect(screen.getByRole("link", { name: "Skip to content" })).toHaveFocus();
   });
+
+  it("keeps ambient brand visuals hidden from assistive technology", () => {
+    render(<AppShell><h1>Dashboard</h1></AppShell>);
+    expect(screen.getByTestId("ambient-grid")).toHaveAttribute("aria-hidden", "true");
+  });
 });
