@@ -12,6 +12,89 @@ The repository now has its Phase 0 pnpm/TypeScript/Vitest baseline. Application 
 
 If an individual plan conflicts with the master plan, the master plan wins until both developers explicitly update the decision together.
 
+## Tools and schemas
+
+### Implemented toolchain
+
+| Area                                  | Tool                       | Current version or role                              |
+| ------------------------------------- | -------------------------- | ---------------------------------------------------- |
+| Runtime                               | Node.js                    | `>=22.13.0`                                          |
+| Monorepo/package manager              | pnpm workspaces            | `10.15.1`                                            |
+| Language                              | TypeScript                 | `5.9.x`                                              |
+| Runtime validation                    | Zod                        | Shared CLI contract validation                       |
+| Unit/contract/browser-component tests | Vitest                     | `3.x`                                                |
+| UI component tests                    | Testing Library + jsdom    | `16.3.0` + `26.1.0`                                  |
+| Web application                       | Next.js                    | `16.2.6`                                             |
+| UI runtime                            | React + React DOM          | `19.2.6`                                             |
+| Styling                               | Tailwind CSS + PostCSS     | `4.2.1` + `8.5.6`                                    |
+| Linting                               | ESLint + typescript-eslint | `9.x` + `8.x`                                        |
+| Formatting                            | Prettier                   | `3.x`                                                |
+| CI                                    | GitHub Actions             | Format, lint, typecheck, tests, and production build |
+
+### Planned tools not integrated yet
+
+The 15-day master plan also calls for Auth.js, a GitHub App with Octokit, Supabase PostgreSQL with Prisma, Gemini structured output, isolated Tectonic LaTeX compilation, and Docker Compose. Their presence in the plan does not mean they are already implemented.
+
+### Implemented schemas and state models
+
+#### CLI event envelope — schema version 1
+
+Source: `packages/contracts/src/cli-events.ts`
+
+| Field                          | Validation                                             |
+| ------------------------------ | ------------------------------------------------------ |
+| `eventId`                      | UUID                                                   |
+| `schemaVersion`                | Literal `1`                                            |
+| `workspaceId`                  | Non-empty string                                       |
+| `deviceId`                     | Non-empty string                                       |
+| `repository.remoteUrl`         | Non-empty string                                       |
+| `repository.gitDirFingerprint` | Non-empty string                                       |
+| `repository.headSha`           | Optional 40-character hexadecimal Git SHA              |
+| `repository.branch`            | Optional non-empty string                              |
+| `type`                         | `STAGED_SNAPSHOT`, `LOCAL_COMMIT`, or `PUSH_ATTEMPT`   |
+| `observedAt`                   | ISO date-time with timezone offset                     |
+| `payload`                      | Draft unknown payload pending frozen per-event schemas |
+
+#### Local queue states
+
+Source: `apps/cli/src/queue/event-store.ts`
+
+- `pending` — stored locally and waiting for acknowledgement.
+- `accepted` — acknowledged and retained separately.
+- `dead-letter` — permanently rejected, with a readable reason.
+
+These are storage states, not claims about whether engineering work was pushed or merged.
+
+#### Activity lifecycle language
+
+The authoritative master-plan states are `STAGED`, `LOCAL_COMMIT`, `PUSHED`, `MERGED`, `DISCARDED`, and `UNKNOWN`. The current report fixture demonstrates the first four using these user-facing labels:
+
+| State          | User-facing label    |
+| -------------- | -------------------- |
+| `STAGED`       | Work in progress     |
+| `LOCAL_COMMIT` | Committed locally    |
+| `PUSHED`       | Pushed to GitHub     |
+| `MERGED`       | Merged               |
+| `DISCARDED`    | Discarded/superseded |
+| `UNKNOWN`      | Unknown              |
+
+#### Report fixture model
+
+Source: `packages/fixtures/reports/demo.ts`
+
+The current report UI uses deterministic fixture data grouped by account, repository, and evidence item. It includes lifecycle state, title, factual detail, actor/author disclosure, timestamp, paths, and evidence references. It is a UI fixture—not the final server API schema.
+
+### Schemas still requiring shared approval
+
+- Per-event payload variants and byte limits.
+- Normalized GitHub activity.
+- Batch acknowledgement and error envelopes.
+- Final deterministic report-facts and Gemini-output schemas.
+- Connection and activity read models.
+- Discarded/unknown representation and redaction outcomes.
+
+These remain drafts until both developers approve the shared contracts.
+
 ## Planning assumptions
 
 - Team: Murtaza and Ali, both fresh graduates/new hires.
@@ -215,6 +298,29 @@ This section is append-only. Every completed task or block records its plan refe
 - `packages/fixtures/package.json`
 - `packages/fixtures/tsconfig.json`
 - `packages/fixtures/reports/demo.ts`
+- `README.md`
+
+### Day 2 — Documentation block: Tools and schemas
+
+**Status:** README inventory added and checked against the current code and the authoritative 15-day plan.
+
+**Done**
+
+- Documented implemented tools with current versions.
+- Separated planned-but-unimplemented tools from working dependencies.
+- Documented the version-1 CLI event envelope fields and validation.
+- Explained local queue states versus activity lifecycle states.
+- Documented the report fixture model and schemas still awaiting shared approval.
+
+**Problems and resolutions**
+
+- Planned technologies could be mistaken for completed integrations. The README now labels them explicitly as not integrated yet.
+- Queue storage states and engineering lifecycle states could be confused. They are now documented separately.
+
+**Verification:** README values were checked against `package.json`, `apps/web/package.json`, `packages/contracts/src/cli-events.ts`, `TRACE_MASTER_PLAN.md`, and `ALI_PLAN.md`; formatting passed.
+
+**Files**
+
 - `README.md`
 
 ### Next planned work
