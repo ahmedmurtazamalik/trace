@@ -323,8 +323,37 @@ This section is append-only. Every completed task or block records its plan refe
 
 - `README.md`
 
+### Day 2 — Task 2.2 follow-up: XDG queue integration and live status counts
+
+**Status:** The durable queue now uses standard Linux data paths and `trace status` reads actual queue files instead of printing fixed zeroes.
+
+**Done**
+
+- Added XDG-aware Trace configuration and data paths with safe `HOME` fallbacks.
+- Located queue files under `$XDG_DATA_HOME/trace/events` or `~/.local/share/trace/events`.
+- Added event-store counts for pending, accepted, and dead-letter JSON events.
+- Changed `trace status` to display all three real counts.
+- Kept fresh-install status and inactive-watcher guidance unchanged.
+
+**Problems and resolutions**
+
+- The previous status command displayed hardcoded queue counts, so it could mislead users after events existed. A black-box test reproduced that mismatch before implementation.
+- While adding the integration test, the existing fresh-install test was displaced by an edit. It was restored before running RED so coverage did not regress.
+- The first manual compiled-CLI run failed because `@trace/contracts` exported TypeScript source instead of its compiled package output. The package now exports `dist` JavaScript and declaration files; the built CLI then executed successfully.
+
+**Verification:** The focused command-shell suite passed with 3 tests, including a temporary XDG home containing one event in each queue state. The complete suite passed with 14 tests. Format, lint, typecheck, and the optimized Next.js build passed. The compiled `node apps/cli/dist/src/index.js status` command also ran successfully against an isolated temporary home.
+
+**Files**
+
+- `apps/cli/src/config/paths.ts`
+- `apps/cli/src/commands/status.ts`
+- `apps/cli/src/queue/event-store.ts`
+- `apps/cli/tests/commands/shell.test.ts`
+- `packages/contracts/package.json`
+- `README.md`
+
 ### Next planned work
 
-1. Connect `trace status` to actual queue counts and standard Linux data/config paths.
-2. Add fake batch transport with independent acknowledgements.
-3. Replace report fixture inputs with shared server-backed report facts after the integration contract is approved.
+1. Complete the remaining Day 2 fake transport/batch-acknowledgement seam without claiming real server connectivity.
+2. Start Day 3 Task 3.1 Git repository discovery and safe remote normalization.
+3. Replace report fixture inputs with shared server-backed report facts only after the integration contract is approved.

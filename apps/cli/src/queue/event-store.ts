@@ -90,6 +90,14 @@ export class EventStore {
     return (await readFile(this.deadLetterReasonPath(eventId), "utf8")).trim();
   }
 
+  public async count(state: QueueState): Promise<number> {
+    const directory = this.stateDirectory(state);
+    await mkdir(directory, { recursive: true, mode: 0o700 });
+    return (await readdir(directory)).filter((filename) =>
+      filename.endsWith(".json"),
+    ).length;
+  }
+
   public async list(state: QueueState): Promise<CliEventEnvelope[]> {
     const directory = this.stateDirectory(state);
     await mkdir(directory, { recursive: true, mode: 0o700 });
