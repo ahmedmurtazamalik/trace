@@ -15,5 +15,7 @@ ALTER COLUMN "payload" SET NOT NULL;
 ALTER TABLE "github_webhook_deliveries"
 ADD COLUMN "published_at" TIMESTAMP(3);
 
+DROP INDEX "github_webhook_deliveries_status_received_at_idx";
+
 CREATE INDEX "github_webhook_deliveries_status_published_at_received_at_idx"
 ON "github_webhook_deliveries"("status", "published_at", "received_at");

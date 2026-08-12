@@ -1,6 +1,10 @@
 import { randomUUID } from 'node:crypto';
 import { Queue } from 'bullmq';
-import { GithubWebhookWorker } from '../../../src/queues/github/github-webhook.worker';
+import {
+  GithubWebhookWorker,
+  type WebhookQueueResource,
+  type WebhookWorkerResource,
+} from '../../../src/queues/github/github-webhook.worker';
 
 const redisUrl = process.env.REDIS_URL ?? 'redis://localhost:6379/0';
 
@@ -87,6 +91,85 @@ describe('GitHub webhook worker lifecycle', () => {
 
     await expect(worker.close()).resolves.toBeUndefined();
     await processorFinished;
+  });
+
+  it.each(['pause', 'count', 'close'] as const)(
+    'bounds shutdown when the %s lifecycle phase stalls',
+    async (stalledPhase) => {
+      const never = new Promise<never>(() => undefined);
+      const queueDisconnect = jest.fn().mockResolvedValue(undefined);
+      const workerDisconnect = jest.fn().mockResolvedValue(undefined);
+      const queueResource: WebhookQueueResource = {
+        on: jest.fn(),
+        waitUntilReady: jest.fn().mockResolvedValue(undefined),
+        getJobCounts: jest.fn().mockReturnValue(
+          stalledPhase === 'count' ? never : Promise.resolve({ active: 0 }),
+        ),
+        close: jest.fn().mockReturnValue(
+          stalledPhase === 'close' ? never : Promise.resolve(),
+        ),
+        disconnect: queueDisconnect,
+      };
+      const workerResource: WebhookWorkerResource = {
+        on: jest.fn(),
+        run: jest.fn().mockReturnValue(never),
+        waitUntilReady: jest.fn().mockResolvedValue(undefined),
+        pause: jest.fn().mockReturnValue(
+          stalledPhase === 'pause' ? never : Promise.resolve(),
+        ),
+        close: jest.fn().mockReturnValue(
+          stalledPhase === 'close' ? never : Promise.resolve(),
+        ),
+        disconnect: workerDisconnect,
+      };
+      worker = new GithubWebhookWorker({
+        redisUrl,
+        queueName,
+        shutdownTimeoutMs: 50,
+        processDelivery: jest.fn().mockResolvedValue(undefined),
+        recordTerminalFailure: jest.fn().mockResolvedValue(undefined),
+        createQueue: () => queueResource,
+        createWorker: () => workerResource,
+      });
+      await worker.start();
+
+      const startedAt = Date.now();
+      await worker.close();
+
+      expect(Date.now() - startedAt).toBeLessThan(200);
+      expect(workerDisconnect).toHaveBeenCalledTimes(1);
+      expect(queueDisconnect).toHaveBeenCalledTimes(1);
+      worker = undefined;
+    },
+  );
+
+  it('bounds failed-start cleanup when every resource cleanup operation stalls', async () => {
+    const never = new Promise<never>(() => undefined);
+    const queueClose = jest.fn().mockReturnValue(never);
+    const queueDisconnect = jest.fn().mockReturnValue(never);
+    const queueResource: WebhookQueueResource = {
+      on: jest.fn(),
+      waitUntilReady: jest.fn().mockRejectedValue(new Error('unavailable')),
+      getJobCounts: jest.fn(),
+      close: queueClose,
+      disconnect: queueDisconnect,
+    };
+    worker = new GithubWebhookWorker({
+      redisUrl,
+      queueName,
+      shutdownTimeoutMs: 50,
+      processDelivery: jest.fn().mockResolvedValue(undefined),
+      recordTerminalFailure: jest.fn().mockResolvedValue(undefined),
+      createQueue: () => queueResource,
+    });
+
+    const startedAt = Date.now();
+    await expect(worker.start()).rejects.toThrow('Webhook worker startup failed.');
+
+    expect(Date.now() - startedAt).toBeLessThan(200);
+    expect(queueClose).toHaveBeenCalledTimes(1);
+    expect(queueDisconnect).toHaveBeenCalledTimes(1);
+    worker = undefined;
   });
 
   it('sanitizes a terminal observability failure before BullMQ persistence', async () => {

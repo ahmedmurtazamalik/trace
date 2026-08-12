@@ -8,17 +8,38 @@ export interface GithubWebhookWorkerOptions {
   shutdownTimeoutMs?: number;
   processDelivery(deliveryId: string): Promise<void>;
   recordTerminalFailure(deliveryId: string, code: 'WEBHOOK_PROCESSING_FAILED'): Promise<void>;
+  createQueue?: () => WebhookQueueResource;
+  createWorker?: (processor: (job: Job<GithubWebhookJob>) => Promise<void>) => WebhookWorkerResource;
 }
 
-interface GithubWebhookJob {
+export interface GithubWebhookJob {
   deliveryId: string;
+}
+
+type WebhookJobState = 'active' | 'waiting' | 'delayed' | 'prioritized';
+
+export interface WebhookQueueResource {
+  on(event: 'error', listener: () => void): unknown;
+  waitUntilReady(): Promise<unknown>;
+  getJobCounts(...states: WebhookJobState[]): Promise<Partial<Record<WebhookJobState, number>>>;
+  close(): Promise<void>;
+  disconnect(): Promise<void>;
+}
+
+export interface WebhookWorkerResource {
+  on(event: 'error', listener: () => void): unknown;
+  run(): Promise<void>;
+  waitUntilReady(): Promise<unknown>;
+  pause(doNotWaitActive?: boolean): Promise<void>;
+  close(force?: boolean): Promise<void>;
+  disconnect(): Promise<void>;
 }
 
 export class GithubWebhookWorker {
   private readonly queueName: string;
   private readonly concurrency: number;
-  private queue: Queue<GithubWebhookJob> | undefined;
-  private worker: Worker<GithubWebhookJob> | undefined;
+  private queue: WebhookQueueResource | undefined;
+  private worker: WebhookWorkerResource | undefined;
   private closing: Promise<void> | undefined;
   private runPromise: Promise<void> | undefined;
 
@@ -44,7 +65,7 @@ export class GithubWebhookWorker {
       maxRetriesPerRequest: null,
       retryStrategy: (): null => null,
     };
-    this.queue = new Queue<GithubWebhookJob>(this.queueName, { connection });
+    this.queue = this.options.createQueue?.() ?? new Queue<GithubWebhookJob>(this.queueName, { connection });
     this.queue.on('error', () => undefined);
     try {
       await this.withTimeout(
@@ -52,21 +73,34 @@ export class GithubWebhookWorker {
         this.options.startupTimeoutMs ?? 5_000,
         'Webhook worker startup timed out.',
       );
-      this.worker = new Worker<GithubWebhookJob>(
+      this.worker = this.options.createWorker?.((job) => this.process(job)) ?? new Worker<GithubWebhookJob>(
         this.queueName,
         async (job) => this.process(job),
         { connection, concurrency: this.concurrency, autorun: false },
       );
       this.worker.on('error', () => undefined);
       this.runPromise = this.worker.run();
-      await this.withTimeout(this.worker.waitUntilReady(), this.options.startupTimeoutMs ?? 5_000, 'Webhook worker startup timed out.');
+      await this.withTimeout(
+        this.worker.waitUntilReady().then(() => undefined),
+        this.options.startupTimeoutMs ?? 5_000,
+        'Webhook worker startup timed out.',
+      );
     } catch (error) {
       const worker = this.worker;
       const queue = this.queue;
       this.worker = undefined;
       this.queue = undefined;
-      await Promise.allSettled([worker?.close(true), queue?.close()]);
-      await Promise.allSettled([worker?.disconnect(), queue?.disconnect()]);
+      const cleanup = Promise.allSettled([
+        this.attempt(() => worker?.close(true)),
+        this.attempt(() => queue?.close()),
+        this.attempt(() => worker?.disconnect()),
+        this.attempt(() => queue?.disconnect()),
+      ]).then(() => undefined);
+      await this.withTimeout(
+        cleanup,
+        this.options.shutdownTimeoutMs ?? 10_000,
+        'Webhook worker startup cleanup timed out.',
+      ).catch(() => undefined);
       this.runPromise = undefined;
       throw new Error('Webhook worker startup failed.', { cause: error });
     }
@@ -90,21 +124,35 @@ export class GithubWebhookWorker {
       const queue = this.queue;
       this.worker = undefined;
       this.queue = undefined;
-      await worker?.pause(true);
       const deadline = Date.now() + (this.options.shutdownTimeoutMs ?? 10_000);
       let drained = worker === undefined;
-      while (!drained && Date.now() < deadline) {
-        const counts = await queue?.getJobCounts('active');
-        drained = (counts?.active ?? 0) === 0;
-        if (!drained) await new Promise((resolve) => setTimeout(resolve, 10));
-      }
-      await Promise.allSettled([
-        worker?.close(!drained),
-        queue?.close(),
-      ]);
-      if (drained) {
-        await this.runPromise?.catch(() => undefined);
-      } else {
+      try {
+        if (worker !== undefined) {
+          await this.beforeDeadline(this.attempt(() => worker.pause(true)), deadline);
+        }
+        while (!drained) {
+          const counts = await this.beforeDeadline(
+            this.attempt(() => queue?.getJobCounts('active')),
+            deadline,
+          );
+          drained = (counts?.active ?? 0) === 0;
+          if (!drained) {
+            await this.beforeDeadline(new Promise((resolve) => setTimeout(resolve, 10)), deadline);
+          }
+        }
+        await this.beforeDeadline(
+          Promise.all([
+            this.attempt(() => worker?.close(false)),
+            this.attempt(() => queue?.close()),
+            this.runPromise?.catch(() => undefined) ?? Promise.resolve(),
+          ]).then(() => undefined),
+          deadline,
+        );
+      } catch {
+        void this.attempt(() => worker?.close(true)).catch(() => undefined);
+        void this.attempt(() => queue?.close()).catch(() => undefined);
+        void this.attempt(() => worker?.disconnect()).catch(() => undefined);
+        void this.attempt(() => queue?.disconnect()).catch(() => undefined);
         void this.runPromise?.catch(() => undefined);
       }
       this.runPromise = undefined;
@@ -130,6 +178,26 @@ export class GithubWebhookWorker {
     return typeof data.deliveryId === 'string' && /^[A-Za-z0-9_-]{1,128}$/.test(data.deliveryId)
       ? data.deliveryId
       : null;
+  }
+
+  private async attempt<T>(operation: () => Promise<T> | undefined): Promise<T | undefined> {
+    return operation();
+  }
+
+  private async beforeDeadline<T>(operation: Promise<T>, deadline: number): Promise<T> {
+    const remainingMs = deadline - Date.now();
+    if (remainingMs <= 0) throw new Error('Webhook worker shutdown timed out.');
+    let timer: NodeJS.Timeout | undefined;
+    try {
+      return await Promise.race([
+        operation,
+        new Promise<never>((_resolve, reject) => {
+          timer = setTimeout(() => reject(new Error('Webhook worker shutdown timed out.')), remainingMs);
+        }),
+      ]);
+    } finally {
+      if (timer !== undefined) clearTimeout(timer);
+    }
   }
 
   private async withTimeout(operation: Promise<void>, timeoutMs: number, message: string): Promise<void> {

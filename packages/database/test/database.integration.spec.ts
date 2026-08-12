@@ -75,9 +75,11 @@ describe('database foundation', () => {
         published_at: null,
       }]);
       const indexes = await isolated.$queryRawUnsafe<Array<{ indexname: string }>>(
-        "SELECT indexname FROM pg_indexes WHERE schemaname = current_schema() AND indexname = 'github_webhook_deliveries_status_published_at_received_at_idx'",
+        "SELECT indexname FROM pg_indexes WHERE schemaname = current_schema() AND tablename = 'github_webhook_deliveries' AND indexname LIKE 'github_webhook_deliveries_status_%' ORDER BY indexname",
       );
-      expect(indexes).toHaveLength(1);
+      expect(indexes).toEqual([{
+        indexname: 'github_webhook_deliveries_status_published_at_received_at_idx',
+      }]);
     } finally {
       await isolated.$disconnect();
       await prisma.$executeRawUnsafe(`DROP SCHEMA IF EXISTS "${schema}" CASCADE`);
