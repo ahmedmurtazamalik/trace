@@ -137,8 +137,12 @@ export class GithubService {
   }
 
   async disconnect(userId: string): Promise<void> {
-    const result = await this.prisma.githubAccount.updateMany({ where: { userId, unlinkedAt: null }, data: { unlinkedAt: new Date() } });
-    if (result.count === 0) throw new HttpException({ code: 'GITHUB_NOT_CONNECTED', message: 'GitHub is not connected.' }, HttpStatus.CONFLICT);
+    const disconnected = await this.prisma.$transaction(async (transaction) => {
+      await transaction.$queryRaw`SELECT id FROM users WHERE id = ${userId} FOR UPDATE`;
+      const result = await transaction.githubAccount.updateMany({ where: { userId, unlinkedAt: null }, data: { unlinkedAt: new Date() } });
+      return result.count === 1;
+    });
+    if (!disconnected) throw new HttpException({ code: 'GITHUB_NOT_CONNECTED', message: 'GitHub is not connected.' }, HttpStatus.CONFLICT);
   }
 
   private async persistInstallation(userId: string, installation: GithubInstallationAccess): Promise<boolean> {
@@ -209,8 +213,8 @@ export class GithubService {
 
   private async repositoryCounts(userId: string, installationId: string): Promise<{ accessible: number; tracked: number }> {
     const [accessible, tracked] = await Promise.all([
-      this.prisma.repository.count({ where: { githubInstallationId: installationId } }),
-      this.prisma.userRepository.count({ where: { userId, trackingEnabled: true, repository: { githubInstallationId: installationId } } }),
+      this.prisma.repository.count({ where: { githubInstallationId: installationId, accessRemovedAt: null } }),
+      this.prisma.userRepository.count({ where: { userId, trackingEnabled: true, repository: { githubInstallationId: installationId, accessRemovedAt: null } } }),
     ]);
     return { accessible, tracked };
   }

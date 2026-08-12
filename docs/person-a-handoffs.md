@@ -150,3 +150,52 @@ Final recorded results:
 - Shared GitHub contract fixtures and closed error/result enums passed.
 - Lint, typecheck, build, production dependency audit, and whitespace checks passed.
 - No Day 3 implementation or Person B-owned files were changed.
+
+---
+
+## Day 4 — Person A
+
+### Done
+
+- Added installation-authorized repository enumeration to the GitHub adapter while keeping App JWTs and installation tokens method-local.
+- Implemented authenticated, CSRF-protected repository synchronization by stable GitHub repository ID.
+- Added installation-local generation fencing plus a global claim sequence and deterministic stable-ID locks, so stale same-installation or cross-installation provider snapshots cannot overwrite a newer synchronization or repository transfer.
+- Added global repository access-removal metadata while preserving repository/activity history and per-user memberships.
+- Implemented user-authorized repository list/detail with bounded search, filter-bound opaque cursor pagination, latest activity, and distinct contributor summaries.
+- Implemented canonical idempotent `POST` enable and `DELETE` disable tracking routes with per-user state and fail-closed removed-access handling.
+- Froze strict Day 5–7 activity/dashboard filters, source/type enums, cursor responses, factual summaries, dashboard states/metrics, and fixtures.
+- Updated backend API documentation; no Person B-owned frontend files were changed.
+
+### Contracts published or changed
+
+- Implemented repository routes: `POST /api/v1/repositories/sync`, `GET /api/v1/repositories`, `GET /api/v1/repositories/:id`, `POST /api/v1/repositories/:id/tracking`, and `DELETE /api/v1/repositories/:id/tracking`.
+- Preserved the frozen Day 3 repository DTOs, including `lastActivityAt`, `contributorCount`, separate `accessible` and `trackingEnabled`, and canonical `POST` enablement.
+- Frozen Day 5–7 schemas: `ActivityListQuery`, `ActivityListResponse`, `DashboardQuery`, and `DashboardResponse`.
+- Fixtures: `packages/shared/test/fixtures/activity/**` and `packages/shared/test/fixtures/dashboard/**`.
+- The report contract remains provisional until its scheduled Day 7 freeze.
+
+### Database/migrations
+
+- Migration: `20260812130000_repository_access_state`.
+- Adds nullable global and per-user `access_removed_at` cutoffs to retain history without exposing activity imported after access ends.
+- Adds `github_installations.sync_generation` for synchronization fencing.
+- Does not move tracking state onto global repository rows; `UserRepository.trackingEnabled` remains authoritative per user.
+
+### Verification record
+
+- Clean disposable PostgreSQL database: all five migrations applied, guarded deterministic seed passed, 6 database integrations passed, and the database was removed.
+- API integration: 26 passed, including 7 repository synchronization/list/detail/tracking cases.
+- Shared/provider contracts: 19 shared tests and 4 GitHub adapter tests passed.
+- Workspace unit/component tests passed, including 50 web tests.
+- Workspace lint and typecheck passed.
+- Production API/web builds passed.
+- Production dependency audit reported no known vulnerabilities.
+- Production-server Playwright passed 38/38 desktop/mobile tests.
+- `git diff --check` passed.
+
+### Deferred by plan
+
+- Webhook acceptance and ingestion remain Day 5.
+- GitHub activity normalization/processing remains Day 6.
+- Activity/dashboard endpoint implementation remains Day 7; Day 4 publishes only their frozen contracts and fixtures.
+- The GitHub App installation-start frontend action remains outside Person A ownership and was not implemented.
