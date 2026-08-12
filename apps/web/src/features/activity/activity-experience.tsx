@@ -7,18 +7,22 @@ import type { ActivityListQuery, ActivityListResponse, ActivitySummary, Activity
 
 export type ActivityFilters = Pick<ActivityListQuery, "date" | "repositoryId" | "contributorId" | "source" | "type">;
 export type LoadActivity = (query: Partial<ActivityListQuery>) => Promise<ActivityListResponse>;
-interface ActivityExperienceProps { loadActivity: LoadActivity; initialFilters?: ActivityFilters; onFiltersChange?: (filters: ActivityFilters) => void }
+interface ActivityExperienceProps { loadActivity: LoadActivity; initialFilters?: ActivityFilters; timezone?: string; onFiltersChange?: (filters: ActivityFilters) => void }
 
 const labels: Record<string, string> = { commit: "Commit", push: "Push", pull_request: "Pull request", working_tree_snapshot: "Working tree snapshot", staged_change: "Staged change", untracked_file: "Untracked file", local_commit: "Local commit" };
 const typeOptions: Array<{ value: ActivityType; label: string }> = Object.entries(labels).map(([value, label]) => ({ value: value as ActivityType, label }));
 const repositoryOptions = [{ id: "repo-01", label: "trace-fixture-org/trace" }, { id: "repo-02", label: "trace-fixture-org/api" }];
 const contributorOptions = [{ id: "contributor-01", label: "Maya Chen" }, { id: "external-01", label: "external-contributor" }];
+const validTypesBySource: Record<ActivitySource, Set<ActivityType>> = {
+  github: new Set(["commit", "push", "pull_request"]),
+  cli: new Set(["working_tree_snapshot", "staged_change", "untracked_file", "local_commit"]),
+};
 
 function contributorName(item: ActivitySummary) { return item.contributor?.displayName ?? item.contributor?.username ?? "Unknown contributor"; }
 function icon(type: string) { if (type === "push") return <Upload aria-hidden="true" size={18} />; if (type === "pull_request") return <GitPullRequest aria-hidden="true" size={18} />; return <GitCommitHorizontal aria-hidden="true" size={18} />; }
 function filtered(filters: ActivityFilters) { return Object.fromEntries(Object.entries(filters).filter(([, value]) => value !== undefined && value !== "")) as ActivityFilters; }
 
-export function ActivityExperience({ loadActivity, initialFilters = {}, onFiltersChange }: ActivityExperienceProps) {
+export function ActivityExperience({ loadActivity, initialFilters = {}, timezone = "UTC", onFiltersChange }: ActivityExperienceProps) {
   const [filters, setFilters] = useState<ActivityFilters>(filtered(initialFilters));
   const [items, setItems] = useState<ActivitySummary[]>([]);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
@@ -26,7 +30,7 @@ export function ActivityExperience({ loadActivity, initialFilters = {}, onFilter
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string>();
   const [pageError, setPageError] = useState<string>();
-  const query = useMemo(() => ({ ...filters, limit: 25, timezone: "UTC" }), [filters]);
+  const query = useMemo(() => ({ ...filters, limit: 25, timezone }), [filters, timezone]);
 
   const reload = useCallback(() => {
     setLoading(true); setError(undefined);
@@ -37,7 +41,11 @@ export function ActivityExperience({ loadActivity, initialFilters = {}, onFilter
   useEffect(() => { void reload(); }, [reload]);
 
   function change<K extends keyof ActivityFilters>(key: K, value: ActivityFilters[K] | "") {
-    const next = filtered({ ...filters, [key]: value || undefined }); setFilters(next); onFiltersChange?.(next);
+    let next = filtered({ ...filters, [key]: value || undefined });
+    if (key === "source" && next.source && next.type && !validTypesBySource[next.source].has(next.type)) {
+      next = filtered({ ...next, type: undefined });
+    }
+    setFilters(next); onFiltersChange?.(next);
   }
   function clear() { setFilters({}); onFiltersChange?.({}); }
   async function loadMore() {

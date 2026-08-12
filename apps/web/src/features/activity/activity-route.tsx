@@ -24,19 +24,27 @@ export function ActivityRoute() {
   const searchParams = useSearchParams();
   const initialFilters: ActivityFilters = {
     date: searchParams.get("date") || undefined,
-    repositoryId: searchParams.get("repository") || undefined,
-    contributorId: searchParams.get("contributor") || undefined,
+    repositoryId: searchParams.get("repositoryId") || undefined,
+    contributorId: searchParams.get("contributorId") || undefined,
     source: (searchParams.get("source") as ActivityFilters["source"]) || undefined,
     type: (searchParams.get("type") as ActivityFilters["type"]) || undefined,
   };
   function update(filters: ActivityFilters) {
-    const next = new URLSearchParams();
-    if (filters.date) next.set("date", filters.date);
-    if (filters.repositoryId) next.set("repository", filters.repositoryId);
-    if (filters.contributorId) next.set("contributor", filters.contributorId);
-    if (filters.source) next.set("source", filters.source);
-    if (filters.type) next.set("type", filters.type);
+    const next = new URLSearchParams(searchParams.toString());
+    next.delete("cursor");
+    const values = {
+      date: filters.date,
+      repositoryId: filters.repositoryId,
+      contributorId: filters.contributorId,
+      source: filters.source,
+      type: filters.type,
+    };
+    for (const [key, value] of Object.entries(values)) {
+      if (value) next.set(key, value);
+      else next.delete(key);
+    }
     router.replace(next.size === 0 ? pathname : `${pathname}?${next.toString()}`, { scroll: false });
   }
-  return <ActivityExperience loadActivity={loadFixtureActivity} initialFilters={initialFilters} onFiltersChange={update} />;
+  const timezone = searchParams.get("timezone") || "UTC";
+  return <ActivityExperience loadActivity={loadFixtureActivity} initialFilters={initialFilters} timezone={timezone} onFiltersChange={update} />;
 }

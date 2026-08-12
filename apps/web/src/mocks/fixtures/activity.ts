@@ -1,4 +1,4 @@
-import type { ActivityListResponse, ActivitySummary } from "@trace/shared";
+import { activityListResponseSchema, type ActivityListResponse, type ActivitySummary } from "@trace/shared";
 
 const commit: ActivitySummary = {
   id: "activity-01",
@@ -30,9 +30,21 @@ const localCommit: ActivitySummary = {
   facts: { sha: "c3d4e5f6", message: "Draft activity filters", branch: "day5", filesChanged: 2, additions: 31, deletions: 4, url: null },
 };
 
-export const activityFixturePages: { first: ActivityListResponse; second: ActivityListResponse } = {
-  first: { items: [commit, push], pageInfo: { nextCursor: "activity-page-2", hasNextPage: true } },
-  second: { items: [push, localCommit], pageInfo: { nextCursor: null, hasNextPage: false } },
+const firstPage: ActivityListResponse = {
+  items: [commit, push],
+  pageInfo: { nextCursor: "activity-page-2", hasNextPage: true },
+};
+const secondPage: ActivityListResponse = {
+  items: [push, localCommit],
+  pageInfo: { nextCursor: null, hasNextPage: false },
 };
 
-export const activityFixtureItems = [commit, push, localCommit];
+export const activityFixturePages: { first: ActivityListResponse; second: ActivityListResponse } = {
+  first: activityListResponseSchema.parse(firstPage),
+  second: activityListResponseSchema.parse(secondPage),
+};
+
+export const activityFixtureItems = activityListResponseSchema.parse({
+  items: [commit, push, localCommit],
+  pageInfo: { nextCursor: null, hasNextPage: false },
+}).items;

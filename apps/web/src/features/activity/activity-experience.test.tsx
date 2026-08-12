@@ -33,6 +33,9 @@ describe("Day 5 activity experience", () => {
     await userEvent.selectOptions(screen.getByLabelText("Activity type"), "push");
     await waitFor(() => expect(props.loadActivity).toHaveBeenLastCalledWith(expect.objectContaining({ repositoryId: "repo-02", source: "github", type: "push", limit: 25, timezone: "UTC" })));
     expect(props.onFiltersChange).toHaveBeenLastCalledWith(expect.objectContaining({ repositoryId: "repo-02", source: "github", type: "push" }));
+    await userEvent.selectOptions(screen.getByLabelText("Source"), "cli");
+    expect(screen.getByLabelText("Activity type")).toHaveValue("");
+    expect(props.onFiltersChange).toHaveBeenLastCalledWith({ repositoryId: "repo-02", source: "cli" });
     await userEvent.click(screen.getByRole("button", { name: "Clear filters" }));
     expect(props.onFiltersChange).toHaveBeenLastCalledWith({});
   });
