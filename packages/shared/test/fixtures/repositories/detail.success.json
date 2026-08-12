@@ -1,0 +1,13 @@
+{
+  "repository": {
+    "id": "repo_01",
+    "owner": "trace-fixture-org",
+    "name": "trace",
+    "fullName": "trace-fixture-org/trace",
+    "private": true,
+    "defaultBranch": "main",
+    "url": "https://github.com/trace-fixture-org/trace",
+    "accessible": true,
+    "trackingEnabled": false
+  }
+}
