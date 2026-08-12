@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { GitCommitHorizontal, GitPullRequest, Upload } from "lucide-react";
 import { Badge, Button, Card } from "@trace/ui";
 import type { ActivityListQuery, ActivityListResponse, ActivitySummary, ActivitySource, ActivityType } from "@trace/shared";
@@ -30,32 +30,45 @@ export function ActivityExperience({ loadActivity, initialFilters = {}, timezone
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string>();
   const [pageError, setPageError] = useState<string>();
+  const requestGeneration = useRef(0);
   const query = useMemo(() => ({ ...filters, limit: 25, timezone }), [filters, timezone]);
+  const availableTypes = useMemo(() => filters.source === undefined ? typeOptions : typeOptions.filter((option) => validTypesBySource[filters.source!].has(option.value)), [filters.source]);
 
   const reload = useCallback(() => {
-    setLoading(true); setError(undefined);
-    return loadActivity(query).then((response) => { setItems(response.items); setNextCursor(response.pageInfo.nextCursor); })
-      .catch((cause: unknown) => setError(cause instanceof Error ? cause.message : "Trace could not load activity."))
-      .finally(() => setLoading(false));
+    const generation = ++requestGeneration.current;
+    setLoading(true); setError(undefined); setPageError(undefined); setItems([]); setNextCursor(null);
+    return loadActivity(query).then((response) => {
+      if (generation !== requestGeneration.current) return;
+      setItems(response.items); setNextCursor(response.pageInfo.nextCursor);
+    }).catch((cause: unknown) => {
+      if (generation !== requestGeneration.current) return;
+      setError(cause instanceof Error ? cause.message : "Trace could not load activity.");
+    }).finally(() => {
+      if (generation === requestGeneration.current) setLoading(false);
+    });
   }, [loadActivity, query]);
-  useEffect(() => { void reload(); }, [reload]);
+  useEffect(() => { void reload(); return () => { requestGeneration.current += 1; }; }, [reload]);
 
   function change<K extends keyof ActivityFilters>(key: K, value: ActivityFilters[K] | "") {
+    requestGeneration.current += 1;
     let next = filtered({ ...filters, [key]: value || undefined });
-    if (key === "source" && next.source && next.type && !validTypesBySource[next.source].has(next.type)) {
+    if (next.source && next.type && !validTypesBySource[next.source].has(next.type)) {
       next = filtered({ ...next, type: undefined });
     }
     setFilters(next); onFiltersChange?.(next);
   }
-  function clear() { setFilters({}); onFiltersChange?.({}); }
+  function clear() { requestGeneration.current += 1; setFilters({}); onFiltersChange?.({}); }
   async function loadMore() {
-    if (nextCursor === null) return; setLoadingMore(true); setPageError(undefined);
+    if (nextCursor === null) return;
+    const generation = requestGeneration.current;
+    setLoadingMore(true); setPageError(undefined);
     try {
       const response = await loadActivity({ ...query, cursor: nextCursor });
+      if (generation !== requestGeneration.current) return;
       setItems((current) => { const byId = new Map(current.map((item) => [item.id, item])); response.items.forEach((item) => byId.set(item.id, item)); return [...byId.values()]; });
       setNextCursor(response.pageInfo.nextCursor);
-    } catch (cause) { setPageError(cause instanceof Error ? cause.message : "Trace could not load more activity."); }
-    finally { setLoadingMore(false); }
+    } catch (cause) { if (generation === requestGeneration.current) setPageError(cause instanceof Error ? cause.message : "Trace could not load more activity."); }
+    finally { if (generation === requestGeneration.current) setLoadingMore(false); }
   }
 
   return <div className="activity-experience">
@@ -66,7 +79,7 @@ export function ActivityExperience({ loadActivity, initialFilters = {}, timezone
         <label>Repository<select value={filters.repositoryId ?? ""} onChange={(event) => change("repositoryId", event.target.value)}><option value="">All repositories</option>{repositoryOptions.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}</select></label>
         <label>Contributor<select value={filters.contributorId ?? ""} onChange={(event) => change("contributorId", event.target.value)}><option value="">All contributors</option>{contributorOptions.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}</select></label>
         <label>Source<select value={filters.source ?? ""} onChange={(event) => change("source", event.target.value as ActivitySource | "")}><option value="">All sources</option><option value="github">GitHub</option><option value="cli">CLI</option></select></label>
-        <label>Activity type<select value={filters.type ?? ""} onChange={(event) => change("type", event.target.value as ActivityType | "")}><option value="">All types</option>{typeOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
+        <label>Activity type<select value={filters.type ?? ""} onChange={(event) => change("type", event.target.value as ActivityType | "")}><option value="">All types</option>{availableTypes.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
       </div>
       <Button className="trace-button-secondary" onClick={clear} disabled={Object.keys(filters).length === 0}>Clear filters</Button>
     </Card>

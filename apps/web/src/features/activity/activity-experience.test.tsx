@@ -50,6 +50,22 @@ describe("Day 5 activity experience", () => {
     expect(screen.getAllByRole("heading", { name: "Publish webhook acceptance" })).toHaveLength(1);
   });
 
+  it("does not append an old cursor page after filters change", async () => {
+    let resolveSecondPage!: (value: ActivityListResponse) => void;
+    const secondPage = new Promise<ActivityListResponse>((resolve) => { resolveSecondPage = resolve; });
+    const loadActivity = vi.fn()
+      .mockResolvedValueOnce(activityFixturePages.first)
+      .mockReturnValueOnce(secondPage)
+      .mockResolvedValue({ items: [], pageInfo: { nextCursor: null, hasNextPage: false } });
+    renderExperience({ loadActivity });
+    await screen.findByRole("heading", { name: "Refine activity timeline" });
+    await userEvent.click(screen.getByRole("button", { name: "Load more activity" }));
+    await userEvent.selectOptions(screen.getByLabelText("Repository"), "repo-02");
+    resolveSecondPage(activityFixturePages.second);
+    await waitFor(() => expect(loadActivity).toHaveBeenLastCalledWith(expect.objectContaining({ repositoryId: "repo-02" })));
+    expect(screen.queryByRole("heading", { name: "Draft activity filters" })).not.toBeInTheDocument();
+  });
+
   it("shows actionable empty and forbidden states", async () => {
     const empty: ActivityListResponse = { items: [], pageInfo: { nextCursor: null, hasNextPage: false } };
     const { rerender } = render(<ActivityExperience loadActivity={vi.fn().mockResolvedValue(empty)} />);
