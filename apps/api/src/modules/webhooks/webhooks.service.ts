@@ -91,7 +91,7 @@ export class WebhooksService {
       }
 
       if (existingDelivery !== null) {
-        return { deliveryId: existingDelivery.id };
+        return { deliveryId: existingDelivery.id, shouldEnqueue: existingDelivery.status === 'pending' };
       }
       const delivery = await transaction.githubWebhookDelivery.create({
         data: {
@@ -105,12 +105,14 @@ export class WebhooksService {
           payload: payload as object,
         },
       });
-      return { deliveryId: delivery.id };
+      return { deliveryId: delivery.id, shouldEnqueue: true };
     });
     if (durableDeliveryId.deliveryId === null) {
       return { accepted: false, reason: 'untracked' };
     }
-    await this.queue.enqueue(durableDeliveryId.deliveryId);
+    if (durableDeliveryId.shouldEnqueue) {
+      await this.queue.enqueue(durableDeliveryId.deliveryId);
+    }
 
     return { accepted: true };
   }

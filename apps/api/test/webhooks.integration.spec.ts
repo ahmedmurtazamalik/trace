@@ -212,6 +212,21 @@ describe('GitHub webhook acceptance', () => {
     await expect(queue.getJobCounts()).resolves.toMatchObject({ waiting: 0, delayed: 0, active: 0 });
   });
 
+  it('does not re-enqueue a delivery that already left pending state', async () => {
+    await trackedRepository();
+    const payload = pushPayload();
+    await postPush(payload).expect(202, { accepted: true });
+    await queue.obliterate({ force: true });
+    await prisma.githubWebhookDelivery.update({
+      where: { githubDeliveryId: deliveryId },
+      data: { status: 'completed', processedAt: new Date() },
+    });
+
+    await postPush(payload).expect(202, { accepted: true });
+    const jobs = await queue.getJobs(['wait', 'delayed', 'active', 'completed', 'failed']);
+    expect(jobs).toHaveLength(0);
+  });
+
   it('does not re-enqueue a persisted delivery after tracking is revoked', async () => {
     await trackedRepository();
     const payload = pushPayload();
