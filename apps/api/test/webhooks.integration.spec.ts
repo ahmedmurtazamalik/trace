@@ -283,6 +283,40 @@ describe('GitHub webhook acceptance', () => {
     await expect(prisma.githubWebhookDelivery.count()).resolves.toBe(0);
   });
 
+  it('does not accept while account disconnect commits concurrently', async () => {
+    await trackedRepository();
+    const user = await prisma.user.findUniqueOrThrow({
+      where: { username },
+      include: { githubAccount: true },
+    });
+    let releaseDisconnect!: () => void;
+    const release = new Promise<void>((resolve) => { releaseDisconnect = resolve; });
+    let revocationLocked!: () => void;
+    const locked = new Promise<void>((resolve) => { revocationLocked = resolve; });
+    const disconnect = prisma.$transaction(async (transaction) => {
+      await transaction.$queryRaw`SELECT id FROM users WHERE id = ${user.id} FOR UPDATE`;
+      await transaction.githubAccount.update({ where: { id: user.githubAccount!.id }, data: { unlinkedAt: new Date() } });
+      revocationLocked();
+      await release;
+    });
+    await locked;
+
+    let webhookSettled = false;
+    const webhook = postPush(pushPayload()).then((response) => {
+      webhookSettled = true;
+      return response;
+    });
+    await new Promise((resolve) => setTimeout(resolve, 750));
+    expect(webhookSettled).toBe(false);
+    releaseDisconnect();
+    await disconnect;
+
+    const response = await webhook;
+    expect(response.status).toBe(202);
+    expect(response.body).toEqual({ accepted: false, reason: 'untracked' });
+    await expect(prisma.githubWebhookDelivery.count({ where: { githubDeliveryId: deliveryId } })).resolves.toBe(0);
+  });
+
   it.each([
     ['suspended installation', async () => prisma.githubInstallation.updateMany({ where: { githubInstallationId: 820_001n }, data: { suspendedAt: new Date() } })],
     ['disconnected account', async () => prisma.githubAccount.updateMany({ where: { githubUserId: 810_001n }, data: { unlinkedAt: new Date() } })],
@@ -293,6 +327,52 @@ describe('GitHub webhook acceptance', () => {
     await postPush(pushPayload()).expect(202, { accepted: false, reason: 'untracked' });
     await expect(prisma.githubWebhookDelivery.count()).resolves.toBe(0);
     await expect(queue.getJobCounts()).resolves.toMatchObject({ waiting: 0, delayed: 0, active: 0 });
+  });
+
+  it('accepts and persists a fully validated nested commit', async () => {
+    await trackedRepository();
+    const commitId = '2'.repeat(40);
+    const payload = JSON.stringify({
+      ...JSON.parse(pushPayload()),
+      commits: [{
+        id: commitId,
+        tree_id: '3'.repeat(40),
+        distinct: true,
+        message: 'Add webhook ingestion boundary',
+        timestamp: '2026-08-12T15:58:00Z',
+        url: `https://github.com/day5-webhook-org/tracked/commit/${commitId}`,
+        author: { name: 'Octo Cat', email: 'octo@example.test', username: 'octocat' },
+        committer: { name: 'Octo Cat', email: 'octo@example.test', username: null },
+        added: ['src/new.ts'],
+        removed: [],
+        modified: ['src/existing.ts'],
+      }],
+    });
+
+    await postPush(payload).expect(202, { accepted: true });
+    const delivery = await prisma.githubWebhookDelivery.findUniqueOrThrow({ where: { githubDeliveryId: deliveryId } });
+    expect(delivery.payload).toEqual(JSON.parse(payload));
+  });
+
+  it('rejects a signed push with malformed nested commit fields', async () => {
+    await trackedRepository();
+    const payload = JSON.stringify({
+      ...JSON.parse(pushPayload()),
+      commits: [{
+        id: '2'.repeat(40),
+        message: 42,
+        timestamp: 'not-a-timestamp',
+        url: 'https://github.com/day5-webhook-org/tracked/commit/' + '2'.repeat(40),
+        author: { name: 'Octo Cat', email: 'octo@example.test', username: 'octocat' },
+        committer: { name: 'Octo Cat', email: 'octo@example.test', username: 'octocat' },
+        added: ['src/new.ts'],
+        removed: [],
+        modified: [],
+      }],
+    });
+
+    await postPush(payload).expect(400);
+    await expect(prisma.githubWebhookDelivery.count({ where: { githubDeliveryId: deliveryId } })).resolves.toBe(0);
   });
 
   it('rejects a signed malformed push payload before persistence or queueing', async () => {

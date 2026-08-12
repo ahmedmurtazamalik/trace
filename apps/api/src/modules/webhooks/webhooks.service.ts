@@ -1,6 +1,6 @@
 import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
 import { HttpException, HttpStatus, Inject, Injectable } from '@nestjs/common';
-import { PrismaService } from '@trace/database';
+import { Prisma, PrismaService } from '@trace/database';
 import type { TraceConfig } from '@trace/config';
 import { TRACE_CONFIG } from '../../common/config/config.token';
 import { GithubWebhookQueue } from './github-webhook.queue';
@@ -12,7 +12,27 @@ interface PushPayload {
   installation: { id: number };
   repository: { id: number; full_name: string };
   sender: { id: number; login: string };
-  commits: Record<string, unknown>[];
+  commits: PushCommit[];
+}
+
+interface PushIdentity {
+  name: string;
+  email: string;
+  username: string | null;
+}
+
+interface PushCommit {
+  id: string;
+  tree_id: string;
+  distinct: boolean;
+  message: string;
+  timestamp: string;
+  url: string;
+  author: PushIdentity;
+  committer: PushIdentity;
+  added: string[];
+  removed: string[];
+  modified: string[];
 }
 
 @Injectable()
@@ -56,17 +76,28 @@ export class WebhooksService {
       ) {
         throw new HttpException({ code: 'WEBHOOK_DELIVERY_CONFLICT', message: 'Webhook delivery ID conflicts with prior content.' }, HttpStatus.CONFLICT);
       }
-      const installation = await transaction.githubInstallation.findUnique({ where: { githubInstallationId } });
+      const installation = await transaction.githubInstallation.findUnique({
+        where: { githubInstallationId },
+        include: { githubAccount: { select: { id: true, userId: true } } },
+      });
       if (installation === null) {
         return { deliveryId: null };
       }
-      await transaction.$queryRaw`SELECT id FROM github_installations WHERE id = ${installation.id} FOR UPDATE`;
       const repository = await transaction.repository.findUnique({ where: { githubRepositoryId } });
       if (repository === null) {
         return { deliveryId: null };
       }
+      const memberships = await transaction.userRepository.findMany({
+        where: { repositoryId: repository.id },
+        select: { userId: true },
+        orderBy: { userId: 'asc' },
+      });
+      const authorityUserIds = [...new Set([installation.githubAccount.userId, ...memberships.map(({ userId }) => userId)])].sort();
+      await transaction.$queryRaw`SELECT id FROM users WHERE id IN (${Prisma.join(authorityUserIds)}) ORDER BY id FOR UPDATE`;
+      await transaction.$queryRaw`SELECT id FROM github_accounts WHERE id = ${installation.githubAccountId} FOR UPDATE`;
+      await transaction.$queryRaw`SELECT id FROM github_installations WHERE id = ${installation.id} FOR UPDATE`;
       await transaction.$queryRaw`SELECT id FROM repositories WHERE id = ${repository.id} FOR UPDATE`;
-      await transaction.$queryRaw`SELECT id FROM user_repositories WHERE repository_id = ${repository.id} FOR UPDATE`;
+      await transaction.$queryRaw`SELECT id FROM user_repositories WHERE repository_id = ${repository.id} ORDER BY user_id FOR UPDATE`;
 
       const liveRepository = await transaction.repository.findFirst({
         where: {
@@ -148,7 +179,56 @@ export class WebhooksService {
       && /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$/.test(sender.login)
       && Array.isArray(value.commits)
       && value.commits.length <= 2_048
-      && value.commits.every((commit) => this.record(commit) !== null);
+      && value.commits.every((commit) => this.pushCommit(commit));
+  }
+
+  private pushCommit(value: unknown): value is PushCommit {
+    const commit = this.record(value);
+    if (commit === null) return false;
+    return this.sha(commit.id)
+      && this.sha(commit.tree_id)
+      && typeof commit.distinct === 'boolean'
+      && this.boundedString(commit.message, 65_536)
+      && this.boundedString(commit.timestamp, 64)
+      && !Number.isNaN(Date.parse(commit.timestamp))
+      && this.httpUrl(commit.url)
+      && this.pushIdentity(commit.author)
+      && this.pushIdentity(commit.committer)
+      && this.paths(commit.added)
+      && this.paths(commit.removed)
+      && this.paths(commit.modified);
+  }
+
+  private pushIdentity(value: unknown): value is PushIdentity {
+    const identity = this.record(value);
+    return identity !== null
+      && this.boundedString(identity.name, 256)
+      && this.boundedString(identity.email, 320)
+      && (identity.username === null || this.boundedString(identity.username, 256));
+  }
+
+  private paths(value: unknown): value is string[] {
+    return Array.isArray(value)
+      && value.length <= 4_096
+      && value.every((path) => this.boundedString(path, 4_096));
+  }
+
+  private httpUrl(value: unknown): value is string {
+    if (!this.boundedString(value, 2_048)) return false;
+    try {
+      const url = new URL(value);
+      return url.protocol === 'https:' || url.protocol === 'http:';
+    } catch {
+      return false;
+    }
+  }
+
+  private sha(value: unknown): value is string {
+    return typeof value === 'string' && /^[a-f0-9]{40,64}$/i.test(value);
+  }
+
+  private boundedString(value: unknown, maximum: number): value is string {
+    return typeof value === 'string' && value.length >= 1 && value.length <= maximum;
   }
 
   private record(value: unknown): Record<string, unknown> | null {
