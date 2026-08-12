@@ -1,5 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { HttpException, HttpStatus } from '@nestjs/common';
+import { randomInt } from 'node:crypto';
 import type { TraceConfig } from '@trace/config';
 import { Prisma, PrismaService, type User } from '@trace/database';
 import {
@@ -22,6 +23,9 @@ import { PASSWORD_RESET_DELIVERY, type PasswordResetDelivery } from './password-
 const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1_000;
 const RESET_TTL_MS = 30 * 60 * 1_000;
 const RATE_WINDOW_MS = 15 * 60 * 1_000;
+const FORGOT_RESPONSE_MIN_MS = 250;
+const FORGOT_RESPONSE_JITTER_MS = 100;
+const RESET_ISSUANCE_LOCK_MS = 30_000;
 const ARGON_OPTIONS: argon2.Options & { type: number } = {
   type: argon2.argon2id,
   memoryCost: 19_456,
@@ -37,6 +41,7 @@ interface RequestContext {
 interface SessionResult {
   response: AuthSessionResponse;
   rawSessionToken: string;
+  sessionId: string;
 }
 
 interface SafeParseSchema<T> {
@@ -121,13 +126,30 @@ export class AuthService {
     }
 
     return this.prisma.$transaction(async (transaction) => {
-      const session = await this.createSession(transaction, user);
+      await transaction.$queryRaw`SELECT "id" FROM "users" WHERE "id" = ${user.id} FOR UPDATE`;
+      const lockedUser = await transaction.user.findUniqueOrThrow({ where: { id: user.id } });
+      let lockedPasswordMatches = false;
+      try {
+        lockedPasswordMatches = await argon2.verify(lockedUser.passwordHash, parsed.password);
+      } catch {
+        lockedPasswordMatches = false;
+      }
+      if (!lockedPasswordMatches) {
+        throw this.unauthorized('INVALID_CREDENTIALS', 'The supplied credentials are invalid.');
+      }
+      if (lockedUser.disabledAt !== null) {
+        throw new HttpException(
+          { code: 'ACCOUNT_DISABLED', message: 'This account is disabled.' },
+          HttpStatus.FORBIDDEN,
+        );
+      }
+      const session = await this.createSession(transaction, lockedUser);
       await transaction.auditLog.create({
         data: {
-          actorUserId: user.id,
+          actorUserId: lockedUser.id,
           action: 'auth.logged_in',
           targetType: 'session',
-          targetId: user.id,
+          targetId: session.sessionId,
           requestId: context.requestId,
         },
       });
@@ -185,9 +207,16 @@ export class AuthService {
 
   async forgotPassword(input: unknown, context: RequestContext): Promise<ForgotPasswordResponse> {
     const parsed = this.parse(forgotPasswordRequestSchema, input);
+    if (!this.resetDelivery.available) {
+      throw new HttpException(
+        { code: 'SERVICE_UNAVAILABLE', message: 'Password reset delivery is unavailable.' },
+        HttpStatus.SERVICE_UNAVAILABLE,
+      );
+    }
     const identifier = parsed.identifier.trim().toLowerCase();
     await this.rateLimits.consume('forgot-ip', context.clientAddress, 10, RATE_WINDOW_MS);
     await this.rateLimits.consume('forgot-identifier', identifier, 5, RATE_WINDOW_MS);
+    const respondAfter = Date.now() + FORGOT_RESPONSE_MIN_MS + randomInt(FORGOT_RESPONSE_JITTER_MS + 1);
 
     const user = await this.prisma.user.findFirst({
       where: {
@@ -197,30 +226,11 @@ export class AuthService {
         ],
       },
     });
-    if (user !== null && user.disabledAt === null && user.email !== null) {
-      const rawToken = createOpaqueToken();
-      const expiresAt = new Date(Date.now() + RESET_TTL_MS);
-      await this.prisma.$transaction(async (transaction) => {
-        await transaction.passwordResetToken.deleteMany({ where: { userId: user.id, consumedAt: null } });
-        await transaction.passwordResetToken.create({
-          data: { userId: user.id, tokenHash: hashResetToken(rawToken), expiresAt },
-        });
-        await transaction.auditLog.create({
-          data: {
-            actorUserId: user.id,
-            action: 'auth.password_reset_requested',
-            targetType: 'user',
-            targetId: user.id,
-            requestId: context.requestId,
-          },
-        });
-      });
-      try {
-        await this.resetDelivery.deliver({ email: user.email, token: rawToken, expiresAt });
-      } catch {
-        // The public response remains deliberately non-enumerating.
-      }
-    }
+    const issuance = user !== null && user.disabledAt === null && user.email !== null
+      ? this.issuePasswordReset(user, user.email, context.requestId).catch(() => undefined)
+      : Promise.resolve();
+    await Promise.race([issuance, this.waitUntil(respondAfter)]);
+    await this.waitUntil(respondAfter);
     return forgotPasswordResponseSchema.parse({
       message: 'If the account exists, password reset instructions have been sent.',
     });
@@ -240,6 +250,7 @@ export class AuthService {
         if (token === null || token.consumedAt !== null || token.expiresAt <= now) {
           throw this.invalidResetToken();
         }
+        await transaction.$queryRaw`SELECT "id" FROM "users" WHERE "id" = ${token.userId} FOR UPDATE`;
         const consumed = await transaction.passwordResetToken.updateMany({
           where: { id: token.id, consumedAt: null, expiresAt: { gt: now } },
           data: { consumedAt: now },
@@ -258,14 +269,14 @@ export class AuthService {
         });
         await transaction.auditLog.create({
           data: {
-            actorUserId: token.userId,
+            actorUserId: null,
             action: 'auth.password_reset_completed',
             targetType: 'user',
             targetId: token.userId,
             requestId: context.requestId,
           },
         });
-      }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+      });
     } catch (error) {
       if (error instanceof HttpException) {
         throw error;
@@ -280,7 +291,7 @@ export class AuthService {
   private async createSession(transaction: Prisma.TransactionClient, user: User): Promise<SessionResult> {
     const rawSessionToken = createOpaqueToken();
     const csrfToken = deriveCsrfToken(rawSessionToken, this.sessionSecret());
-    await transaction.userSession.create({
+    const persistedSession = await transaction.userSession.create({
       data: {
         userId: user.id,
         sessionTokenHash: hashSessionToken(rawSessionToken, this.sessionSecret()),
@@ -290,8 +301,44 @@ export class AuthService {
     });
     return {
       rawSessionToken,
+      sessionId: persistedSession.id,
       response: { user: this.publicUser(user), csrfToken },
     };
+  }
+
+  private async issuePasswordReset(user: User, email: string, requestId?: string): Promise<void> {
+    await this.rateLimits.withLock('password-reset-issuance', user.id, RESET_ISSUANCE_LOCK_MS, async () => {
+      const rawToken = createOpaqueToken();
+      const tokenHash = hashResetToken(rawToken);
+      const expiresAt = new Date(Date.now() + RESET_TTL_MS);
+      const token = await this.prisma.$transaction(async (transaction) => {
+        const created = await transaction.passwordResetToken.create({
+          data: { userId: user.id, tokenHash, expiresAt },
+        });
+        await transaction.auditLog.create({
+          data: {
+            actorUserId: null,
+            action: 'auth.password_reset_requested',
+            targetType: 'user',
+            targetId: user.id,
+            requestId,
+          },
+        });
+        return created;
+      });
+
+      try {
+        await this.resetDelivery.deliver({ email, token: rawToken, expiresAt });
+      } catch {
+        await this.prisma.passwordResetToken.deleteMany({ where: { id: token.id, consumedAt: null } });
+        return;
+      }
+
+      await this.prisma.passwordResetToken.updateMany({
+        where: { userId: user.id, id: { not: token.id }, consumedAt: null },
+        data: { consumedAt: new Date() },
+      });
+    });
   }
 
   private async assertIdentityAvailable(username: string, email?: string): Promise<void> {
@@ -353,6 +400,12 @@ export class AuthService {
 
   private unauthorized(code: string, message: string): HttpException {
     return new HttpException({ code, message }, HttpStatus.UNAUTHORIZED);
+  }
+
+  private async waitUntil(timestamp: number): Promise<void> {
+    const remainingMs = timestamp - Date.now();
+    if (remainingMs <= 0) return;
+    await new Promise<void>((resolve) => setTimeout(resolve, remainingMs));
   }
 
   private invalidResetToken(): HttpException {

@@ -21,6 +21,7 @@ export const authErrorCodeSchema = z.enum([
   'CSRF_INVALID',
   'INVALID_OR_EXPIRED_RESET_TOKEN',
   'RATE_LIMITED',
+  'SERVICE_UNAVAILABLE',
 ]);
 
 export const publicUserSchema = z.object({

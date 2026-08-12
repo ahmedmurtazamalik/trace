@@ -120,7 +120,8 @@ The implemented `/api/v1/auth` endpoints are documented in `docs/api.md`. Authen
 - Authenticated mutations require the response's CSRF token in `X-CSRF-Token`.
 - Redis-backed fixed-window limits apply first per direct client address and then per normalized account/identifier, so already-blocked traffic cannot churn principal keys. Forwarded-address headers are not trusted by the application.
 - Password-reset tokens expire after 30 minutes, are stored only as SHA-256 hashes, are single-use, and revoke every active session when consumed.
-- Forgot-password responses remain identical for known and unknown identifiers.
+- Forgot-password responses remain identical for known and unknown identifiers. Eligible-account issuance runs asynchronously behind a per-user Redis lock, while the public response completes in the same randomized minimum window even if delivery is slower.
+- A replacement reset token does not invalidate the previous token until the delivery boundary succeeds. Failed replacements are deleted; successful replacements consume prior outstanding tokens.
 - Security-relevant successful transitions are recorded without raw passwords, session tokens, CSRF tokens, or reset tokens.
 
-The password-reset endpoint invokes the `PasswordResetDelivery` boundary. The repository's default adapter deliberately does not log or expose raw reset tokens; a deployment must bind an approved outbound delivery provider before claiming user-facing email delivery.
+The password-reset endpoint invokes the `PasswordResetDelivery` boundary. Tests use an in-memory adapter. Non-test deployments bind an unavailable adapter and return `503 SERVICE_UNAVAILABLE` for every forgot-password identifier until an approved, bounded enqueue/delivery provider replaces it; no usable replacement token is persisted through a silent no-op.

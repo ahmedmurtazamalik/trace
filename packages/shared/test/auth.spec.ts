@@ -71,6 +71,7 @@ describe('auth contracts', () => {
       'CSRF_INVALID',
       'INVALID_OR_EXPIRED_RESET_TOKEN',
       'RATE_LIMITED',
+      'SERVICE_UNAVAILABLE',
     ];
 
     expect(codes.map((code) => authErrorCodeSchema.parse(code))).toEqual(codes);

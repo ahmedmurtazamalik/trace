@@ -9,7 +9,7 @@
     "dev": "tsx watch src/main.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "eslint src test",
-    "test": "jest --runInBand test/api-exception.filter.spec.ts test/dependency-health.service.spec.ts",
+    "test": "jest --runInBand test/api-exception.filter.spec.ts test/dependency-health.service.spec.ts test/password-reset-delivery.spec.ts",
     "test:integration": "jest --runInBand --testPathPattern=integration.spec.ts"
   },
   "dependencies": {

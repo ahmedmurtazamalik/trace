@@ -139,13 +139,31 @@ describe('authentication API', () => {
     const registered = await request(server).post('/api/v1/auth/register').send({ username, email, password }).expect(201);
     const oldCookie = sessionCookie(registered);
 
+    const knownStartedAt = Date.now();
     const known = await request(server).post('/api/v1/auth/password/forgot').send({ identifier: email }).expect(202);
+    const knownDuration = Date.now() - knownStartedAt;
+    const unknownStartedAt = Date.now();
     const unknown = await request(server).post('/api/v1/auth/password/forgot').send({ identifier: 'missing@example.test' }).expect(202);
+    const unknownDuration = Date.now() - unknownStartedAt;
     expect(known.body).toEqual(unknown.body);
     expect(known.body).toEqual({ message: 'If the account exists, password reset instructions have been sent.' });
+    expect(knownDuration).toBeGreaterThanOrEqual(200);
+    expect(unknownDuration).toBeGreaterThanOrEqual(200);
+    expect(Math.abs(knownDuration - unknownDuration)).toBeLessThan(200);
 
     const user = await prisma.user.findUniqueOrThrow({ where: { username } });
     expect(await prisma.passwordResetToken.count({ where: { userId: user.id } })).toBe(1);
+    const requestAudit = await prisma.auditLog.findFirstOrThrow({
+      where: { action: 'auth.password_reset_requested', targetId: user.id },
+      orderBy: { createdAt: 'desc' },
+    });
+    expect(requestAudit).toMatchObject({ actorUserId: null, targetType: 'user', targetId: user.id });
+
+    await Promise.all([
+      request(server).post('/api/v1/auth/password/forgot').send({ identifier: email }).expect(202),
+      request(server).post('/api/v1/auth/password/forgot').send({ identifier: email }).expect(202),
+    ]);
+    expect(await prisma.passwordResetToken.count({ where: { userId: user.id, consumedAt: null } })).toBe(1);
 
     const rawToken = 'test-reset-token-with-at-least-thirty-two-bytes';
     await prisma.passwordResetToken.deleteMany({ where: { userId: user.id } });
@@ -157,17 +175,29 @@ describe('authentication API', () => {
       },
     });
 
-    const resetResponses = await Promise.all([
+    const [firstReset, secondReset, racingLogin] = await Promise.all([
       request(server).post('/api/v1/auth/password/reset').send({ token: rawToken, password: replacementPassword }),
       request(server).post('/api/v1/auth/password/reset').send({ token: rawToken, password: replacementPassword }),
+      request(server).post('/api/v1/auth/login').send({ username, password }),
     ]);
-    expect(resetResponses.map((response) => response.status).sort()).toEqual([200, 400]);
-    const rejectedReset = resetResponses.find((response) => response.status === 400);
+    expect([firstReset.status, secondReset.status].sort()).toEqual([200, 400]);
+    if (racingLogin.status === 200) {
+      await request(server).get('/api/v1/auth/me').set('Cookie', sessionCookie(racingLogin)).expect(401);
+    } else {
+      expect(racingLogin.status).toBe(401);
+    }
+    const rejectedReset = [firstReset, secondReset].find((response) => response.status === 400);
     expect(rejectedReset?.body).toEqual(expect.objectContaining({ code: 'INVALID_OR_EXPIRED_RESET_TOKEN' }));
 
     await request(server).get('/api/v1/auth/me').set('Cookie', oldCookie).expect(401);
     await request(server).post('/api/v1/auth/login').send({ username, password }).expect(401);
     await request(server).post('/api/v1/auth/login').send({ username, password: replacementPassword }).expect(200);
+
+    const resetAudit = await prisma.auditLog.findFirstOrThrow({
+      where: { action: 'auth.password_reset_completed', targetId: user.id },
+      orderBy: { createdAt: 'desc' },
+    });
+    expect(resetAudit).toMatchObject({ actorUserId: null, targetType: 'user', targetId: user.id });
     const replay = await request(server)
       .post('/api/v1/auth/password/reset')
       .send({ token: rawToken, password })
@@ -184,10 +214,13 @@ describe('authentication API', () => {
       .set('Cookie', cookie)
       .set('X-CSRF-Token', registeredBody.csrfToken)
       .expect(200);
+    await request(server).post('/api/v1/auth/login').send({ username, password }).expect(200);
 
     const user = await prisma.user.findUniqueOrThrow({ where: { username } });
     const logs = await prisma.auditLog.findMany({ where: { actorUserId: user.id }, orderBy: { createdAt: 'asc' } });
-    expect(logs.map((entry) => entry.action)).toEqual(expect.arrayContaining(['auth.registered', 'auth.logged_out']));
+    expect(logs.map((entry) => entry.action)).toEqual(expect.arrayContaining(['auth.registered', 'auth.logged_out', 'auth.logged_in']));
+    const loginLog = logs.find((entry) => entry.action === 'auth.logged_in');
+    expect(await prisma.userSession.findUnique({ where: { id: loginLog?.targetId ?? '' } })).toMatchObject({ userId: user.id });
     expect(JSON.stringify(logs)).not.toContain(password);
     expect(JSON.stringify(logs)).not.toContain(registeredBody.csrfToken);
     expect(JSON.stringify(logs)).not.toContain(cookie);
