@@ -6,9 +6,10 @@ import { RedisModule } from './common/redis/redis.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { DependencyHealthService } from './modules/health/dependency-health.service';
 import { HealthController } from './modules/health/health.controller';
+import { GithubModule } from './modules/github/github.module';
 
 @Module({
-  imports: [TraceConfigModule, PrismaModule, RedisModule, AuthModule],
+  imports: [TraceConfigModule, PrismaModule, RedisModule, AuthModule, GithubModule],
   controllers: [HealthController],
   providers: [DependencyHealthService],
 })

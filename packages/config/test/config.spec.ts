@@ -48,4 +48,18 @@ describe('loadConfig', () => {
       }),
     ).toThrow('Invalid Trace configuration');
   });
+
+  it('loads the public GitHub callback URL separately from provider secrets', () => {
+    const config = loadConfig({
+      DATABASE_URL: 'postgresql://trace:***@localhost:5432/trace',
+      REDIS_URL: 'redis://localhost:6379',
+      GITHUB_CALLBACK_URL: 'https://trace.example/api/v1/github/callback',
+      GITHUB_APP_SLUG: 'trace-app',
+      GITHUB_INSTALLATION_CALLBACK_URL: 'https://trace.example/api/v1/github/installation/callback',
+    });
+    expect(config.github.callbackUrl).toBe('https://trace.example/api/v1/github/callback');
+    expect(config.github.appSlug).toBe('trace-app');
+    expect(config.github.installationCallbackUrl).toBe('https://trace.example/api/v1/github/installation/callback');
+    expect(config.github.clientSecret).toBeUndefined();
+  });
 });

@@ -1,0 +1,19 @@
+{
+  "name": "@trace/github",
+  "version": "0.1.0",
+  "private": true,
+  "main": "dist/src/index.js",
+  "types": "dist/src/index.d.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "eslint src",
+    "test": "jest --runInBand"
+  },
+  "devDependencies": {
+    "@types/jest": "29.5.14",
+    "@types/node": "22.18.0",
+    "jest": "29.7.0",
+    "ts-jest": "29.4.12"
+  }
+}

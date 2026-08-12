@@ -1,0 +1,21 @@
+{
+  "items": [
+    {
+      "id": "repo_01",
+      "owner": "trace-fixture-org",
+      "name": "trace",
+      "fullName": "trace-fixture-org/trace",
+      "private": true,
+      "defaultBranch": "main",
+      "url": "https://github.com/trace-fixture-org/trace",
+      "accessible": true,
+      "trackingEnabled": false,
+      "lastActivityAt": "2026-08-12T09:30:00.000Z",
+      "contributorCount": 3
+    }
+  ],
+  "pageInfo": {
+    "nextCursor": null,
+    "hasNextPage": false
+  }
+}

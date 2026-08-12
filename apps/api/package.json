@@ -18,6 +18,7 @@
     "@nestjs/platform-express": "11.1.29",
     "@trace/config": "workspace:*",
     "@trace/database": "workspace:*",
+    "@trace/github": "workspace:*",
     "@trace/shared": "workspace:*",
     "argon2": "0.44.0",
     "class-transformer": "0.5.1",

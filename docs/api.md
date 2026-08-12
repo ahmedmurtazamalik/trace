@@ -138,16 +138,16 @@ Request and success-response fixtures for all six auth endpoints are validated b
 - Registration, login, forgot-password, and reset-password are protected by Redis-backed direct-address and normalized-principal rate limits. The API does not trust `X-Forwarded-For` unless deployment architecture is changed and reviewed later.
 - Reset tokens are opaque, single-use, expire after 30 minutes, and are stored only as SHA-256 hashes. Forgot-password uses a bounded public response window while eligible-account issuance continues asynchronously behind a renewable per-user Redis lock. Each issuer snapshots prior token IDs under a PostgreSQL user-row lock and can retire only that snapshot, so an older issuer cannot invalidate a newer delivery even across Redis lease loss. A failed replacement preserves the prior token; only successful delivery consumes older tokens. The endpoint calls an injectable delivery boundary. Because choosing an outbound provider is outside Day 2, non-test deployments return `503 SERVICE_UNAVAILABLE` for all forgot-password identifiers until a bounded provider is bound; they never silently persist a replacement through a no-op adapter.
 
-## Frozen GitHub connection contract for Day 3
+## Implemented GitHub connection contract
 
-Day 2 freezes the browser/backend handoff only. No GitHub controller, OAuth exchange, GitHub App installation behavior, or repository synchronization is implemented on this branch.
-
-Schemas and types live in `packages/shared/src/github.ts`; frozen fixtures live under `packages/shared/test/fixtures/github/`.
+Day 3 implements the browser/backend GitHub connection handoff. Schemas and types live in `packages/shared/src/github.ts`; frozen fixtures live under `packages/shared/test/fixtures/github/`.
 
 | Method | Path | Success | Request | Success behavior | Documented errors |
 | --- | --- | --- | --- | --- | --- |
 | `GET` | `/api/v1/github/connect` | `200` | authenticated session; no body | `GithubConnectResponse` containing a backend-generated HTTPS `github.com` authorization URL; the same operation is used when reconnecting | `401 UNAUTHENTICATED`; `429 RATE_LIMITED` |
 | `GET` | `/api/v1/github/callback?code=...&state=...` or `?error=access_denied&state=...` | `302` | success or provider-denial `GithubCallbackQuery`; browser session cookie | Redirect to the configured frontend GitHub settings route with a closed `GithubCallbackResult` query result | `GITHUB_STATE_INVALID`; `GITHUB_CALLBACK_FAILED` are converted to safe closed callback results, never raw provider text |
+| `GET` | `/api/v1/github/installation` | `200` | authenticated connected session; no body | `GithubInstallationStartResponse` containing a state-bound `github.com/apps/.../installations/new` URL | `401 UNAUTHENTICATED`; `409 GITHUB_RECONNECT_REQUIRED`; `429 RATE_LIMITED` |
+| `GET` | `/api/v1/github/installation/callback?installation_id=...&setup_action=...&state=...` | `302` | validated App setup callback; initiating browser session cookie | verifies the installation exists for the App, stores its ID only in a new exact-session state, and redirects through GitHub OAuth for user-scoped ownership verification | state/session/provider failures become closed callback results |
 | `GET` | `/api/v1/github/status` | `200` | authenticated session | `GithubConnectionStatus` | `401 UNAUTHENTICATED` |
 | `DELETE` | `/api/v1/github/connection` | `200` | authenticated session + `X-CSRF-Token`; no body | `GithubDisconnectResponse` with `historyRetained: true` | `401 UNAUTHENTICATED`; `403 CSRF_INVALID`; `409 GITHUB_NOT_CONNECTED` |
 
@@ -158,8 +158,22 @@ Schemas and types live in `packages/shared/src/github.ts`; frozen fixtures live 
 
 Disconnect never deletes historical activity. The frontend may show local `connecting`/`redirecting` progress, but must render callback and provider failures only through the closed result/reason enums. Installation tokens, OAuth tokens, state values, and raw provider errors never appear in these DTOs.
 
-The frozen contract fixtures cover connected, disconnected, reconnect-required plus suspended installation, callback success/provider-denial query variants, safe callback results, connect URL/state consistency, and disconnect history retention.
+The contract fixtures cover connected, disconnected, reconnect-required plus suspended installation, callback success/provider-denial query variants, safe callback results, connect URL/state consistency, and disconnect history retention.
+
+OAuth, installation setup, and installation ownership verification use separate random states stored only as SHA-256 digests. Each state is bound to the exact initiating live Trace session, expires after 10 minutes, has a fixed purpose, and is consumed once before provider work. A setup callback's browser-controlled numeric installation ID is never sufficient for persistence: a fresh ephemeral user OAuth grant must show that the already-linked GitHub user can access that exact installation through GitHub's user-scoped installation endpoint. Account and installation persistence runs atomically under the Trace user row lock. A GitHub account or installation already linked to another Trace account is not reassigned. Connect/install starts are Redis-rate-limited by direct socket address first and user second and fail closed if Redis is unavailable.
+
+`GITHUB_CALLBACK_URL` is the public callback URL registered with GitHub. Missing provider credentials leave liveness and unrelated APIs available; GitHub connect fails closed with `503 SERVICE_UNAVAILABLE`. Day 3 stores no OAuth or installation token and returns no provider credential, app private key, webhook secret, or raw provider error.
+
+## Frozen Day 4 repository contract
+
+Repository contracts are frozen in `packages/shared/src/repositories.ts`; fixtures live under `packages/shared/test/fixtures/repositories/`.
+
+- List/detail DTOs expose stable opaque IDs, owner/name/full name, privacy/default branch, nullable URL, last activity, contributor count, and separate `accessible` and per-user `trackingEnabled` flags.
+- Lists use stable cursor pagination (`cursor`, `limit`, `pageInfo`) plus optional trimmed `search`.
+- Tracking responses contain only `{ repositoryId, trackingEnabled }`; provider credentials and installation tokens never enter repository DTOs.
+- Canonical future routes are `GET /api/v1/repositories`, `GET /api/v1/repositories/:id`, `POST /api/v1/repositories/:id/tracking`, and `DELETE /api/v1/repositories/:id/tracking`.
+- Person B may implement Day 4 UI against these schemas and fixtures without waiting for Person A's Day 4 repository behavior.
 
 ## Provisional later-day contracts
 
-Repository, activity, pagination, and report schemas remain provisional. They preserve current compatibility decisions—generic activity `source`, generic activity `type`, opaque IDs, and valid report statuses—but are not frozen until their scheduled backend day.
+Activity, pagination, and report schemas remain provisional. They preserve current compatibility decisions—generic activity `source`, generic activity `type`, opaque IDs, and valid report statuses—but are not frozen until their scheduled backend day.

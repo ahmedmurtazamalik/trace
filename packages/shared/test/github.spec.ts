@@ -16,6 +16,8 @@ import {
   githubCallbackQuerySchema,
   githubCallbackResultSchema,
   githubConnectResponseSchema,
+  githubInstallationCallbackQuerySchema,
+  githubInstallationStartResponseSchema,
   githubConnectionStatusSchema,
   githubDisconnectResponseSchema,
   githubErrorCodeSchema,
@@ -49,6 +51,15 @@ describe('Day 3 GitHub connection contract', () => {
     expect(githubConnectionStatusSchema.parse(connectedFixture)).toEqual(connectedFixture);
     expect(githubConnectionStatusSchema.parse(disconnectedFixture)).toEqual(disconnectedFixture);
     expect(githubConnectionStatusSchema.parse(reconnectRequiredFixture)).toEqual(reconnectRequiredFixture);
+  });
+
+  it('freezes a separate GitHub App installation setup flow', () => {
+    expect(githubInstallationStartResponseSchema.parse({
+      installationUrl: 'https://github.com/apps/trace-app/installations/new?state=installation-state-value',
+    })).toBeDefined();
+    expect(githubInstallationCallbackQuerySchema.parse({
+      installation_id: '91', setup_action: 'install', state: 'installation-state-value-at-least-32-characters',
+    })).toEqual({ installation_id: '91', setup_action: 'install', state: 'installation-state-value-at-least-32-characters' });
   });
 
   it('freezes disconnect history retention and closed error codes', () => {
