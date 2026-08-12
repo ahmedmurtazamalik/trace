@@ -31,30 +31,30 @@ function validSourceType(source: z.infer<typeof activitySourceSchema>, type: z.i
 }
 
 export const activityRepositorySchema = z.object({
-  id: z.string().min(1),
-  fullName: z.string().min(1),
-  url: z.url().nullable(),
+  id: z.string().min(1).max(256),
+  fullName: z.string().min(1).max(512),
+  url: z.url().max(2_048).nullable(),
 }).strict();
 
 export const activityContributorSchema = z.object({
-  id: z.string().min(1),
-  username: z.string().min(1).nullable(),
-  displayName: z.string().min(1).nullable(),
-  avatarUrl: z.url().nullable(),
+  id: z.string().min(1).max(256),
+  username: z.string().min(1).max(100).nullable(),
+  displayName: z.string().min(1).max(256).nullable(),
+  avatarUrl: z.url().max(2_048).nullable(),
 }).strict();
 
 export const activityFactsSchema = z.object({
   sha: z.string().min(7).max(64).nullable(),
-  message: z.string().min(1).nullable(),
-  branch: z.string().min(1).nullable(),
+  message: z.string().min(1).max(10_000).nullable(),
+  branch: z.string().min(1).max(1_024).nullable(),
   filesChanged: z.number().int().nonnegative().nullable(),
   additions: z.number().int().nonnegative().nullable(),
   deletions: z.number().int().nonnegative().nullable(),
-  url: z.url().nullable(),
+  url: z.url().max(2_048).nullable(),
 }).strict();
 
 export const activitySummarySchema = z.object({
-  id: z.string().min(1),
+  id: z.string().min(1).max(256),
   repository: activityRepositorySchema,
   contributor: activityContributorSchema.nullable(),
   source: activitySourceSchema,
@@ -68,8 +68,8 @@ export const activitySummarySchema = z.object({
 export const activityListQuerySchema = paginationQuerySchema.extend({
   date: z.iso.date().optional(),
   timezone: timezoneSchema.default('UTC'),
-  repositoryId: z.string().min(1).optional(),
-  contributorId: z.string().min(1).optional(),
+  repositoryId: z.string().min(1).max(256).optional(),
+  contributorId: z.string().min(1).max(256).optional(),
   source: activitySourceSchema.optional(),
   type: activityTypeSchema.optional(),
 }).strict().superRefine((value, context) => {

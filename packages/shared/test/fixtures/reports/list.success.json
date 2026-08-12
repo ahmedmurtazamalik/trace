@@ -1,0 +1,19 @@
+{
+  "items": [
+    {
+      "id": "report_2026_08_12",
+      "reportDate": "2026-08-12",
+      "timezone": "Asia/Karachi",
+      "status": "completed",
+      "createdAt": "2026-08-13T00:00:00.000Z",
+      "completedAt": "2026-08-13T00:01:00.000Z",
+      "errorMessage": null,
+      "revision": 2,
+      "downloadAvailable": true
+    }
+  ],
+  "pageInfo": {
+    "nextCursor": null,
+    "hasNextPage": false
+  }
+}

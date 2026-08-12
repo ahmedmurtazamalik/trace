@@ -1,0 +1,49 @@
+{
+  "report": {
+    "id": "report_2026_08_12",
+    "reportDate": "2026-08-12",
+    "timezone": "Asia/Karachi",
+    "status": "completed",
+    "createdAt": "2026-08-13T00:00:00.000Z",
+    "completedAt": "2026-08-13T00:01:00.000Z",
+    "errorMessage": null,
+    "revision": 2,
+    "downloadAvailable": true,
+    "revisionSource": "manual",
+    "content": {
+      "executiveSummary": "The team completed repository synchronization and activity processing.",
+      "repositories": [
+        {
+          "repositoryId": "repo_1",
+          "summary": "Implemented bounded activity processing.",
+          "contributors": [
+            {
+              "contributorId": "contributor_1",
+              "summary": "Implemented activity processing and verification.",
+              "accomplishments": ["Added canonical persistence", "Verified retry idempotency"]
+            }
+          ]
+        }
+      ]
+    },
+    "facts": {
+      "repositoryCount": 1,
+      "contributorCount": 1,
+      "commitCount": 2,
+      "filesChanged": 8,
+      "additions": 120,
+      "deletions": 18
+    },
+    "artifacts": [
+      {
+        "id": "artifact_pdf_1",
+        "revision": 2,
+        "kind": "pdf",
+        "fileName": "trace-report-2026-08-12.pdf",
+        "contentType": "application/pdf",
+        "sizeBytes": 42000,
+        "checksum": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      }
+    ]
+  }
+}

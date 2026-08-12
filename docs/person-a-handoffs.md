@@ -256,3 +256,28 @@ Final recorded results:
 
 - Activity/dashboard endpoint implementation, authorization, date filters, timezone boundaries, and cursor pagination remain Day 7.
 - Report aggregation and all AI/rendering work remain Days 8–10.
+
+---
+
+## Day 7 — Person A
+
+### Done
+
+- Added authenticated `GET /api/v1/activity` and `GET /api/v1/repositories/:id/activity` routes backed by canonical PostgreSQL `ActivityEvent` rows.
+- Enforced caller authorization exclusively through Trace session identity and `UserRepository` membership. Unassociated repository routes fail with `404`; historical events remain visible only through the caller's inclusive `accessRemovedAt` boundary.
+- Implemented bounded repository, contributor, source, type, local-date, timezone, cursor, and limit filters. Local dates use true half-open IANA calendar days, including daylight-saving transitions.
+- Added deterministic descending `(occurredAt, id)` pagination with versioned HMAC-signed opaque cursors bound to the authenticated user, complete normalized query, and route repository.
+- Projected only the frozen strict activity summary. Required source/type and repository facts fail closed when malformed; optional stored metadata is revalidated and bounded, and unsafe links normalize to `null` rather than exposing arbitrary metadata or invalidating the response.
+- Froze the complete Days 8–10 report contract and fixtures: lifecycle/list/detail, nonempty structured prose edits, expected-revision conflict semantics, regeneration, unique artifact selection/download metadata, closed error codes, and lifecycle/artifact consistency.
+- Kept deterministic report facts and repository/contributor structure server-owned. Edits are bounded prose patches keyed to the current immutable ID sets and exclude arbitrary LaTeX, metrics, storage keys, filesystem paths, and unknown mutation fields.
+
+### Verification boundary
+
+- PostgreSQL integration coverage proves session authorization, repository isolation, historical cutoff behavior, combined activity filters, signed filter/user-bound cursor validation and tamper rejection, stable tie-breaking, Asia/Karachi local dates, DST 23-hour and 25-hour days, skipped-civil-date rejection, unsafe URL removal, invalid source/type exclusion, and malformed optional metadata handling.
+- Shared contract tests validate success fixtures, strict edit boundaries, lifecycle invariants, current PDF requirements, mutation wrappers, artifact selection, and report error vocabulary.
+- No `apps/web/**`, `packages/ui/**`, database schema/migration, worker, report endpoint, AI, LaTeX, storage, push, PR, or merge work is included.
+
+### Deferred by plan
+
+- Dashboard endpoint implementation is not part of Person A's reviewed Day 7 task and remains unimplemented despite its previously frozen shared DTO.
+- Report persistence, owner-authorized endpoints, factual aggregation, queue/worker orchestration, AI validation/retry, revision history, regeneration behavior, deterministic rendering, sandboxed compilation, storage, and byte-stream download remain Days 8–10.

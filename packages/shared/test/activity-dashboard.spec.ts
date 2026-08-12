@@ -4,6 +4,7 @@ import dashboardFixture from './fixtures/dashboard/ready.success.json';
 import {
   activityListQuerySchema,
   activityListResponseSchema,
+  activitySummarySchema,
   dashboardQuerySchema,
   dashboardResponseSchema,
 } from '../src';
@@ -50,5 +51,18 @@ describe('Frozen Day 5-7 activity and dashboard contract', () => {
     expect(dashboardResponseSchema.safeParse({ ...dashboardFixture, timezone: 'not/a-zone' }).success).toBe(false);
     expect(activityListResponseSchema.safeParse({ ...activityListFixture, installationToken: 'secret' }).success).toBe(false);
     expect(dashboardResponseSchema.safeParse({ ...dashboardFixture, productivityScore: 99 }).success).toBe(false);
+  });
+
+  it('bounds activity identifiers and projected display strings', () => {
+    expect(activityListQuerySchema.safeParse({ repositoryId: 'r'.repeat(257) }).success).toBe(false);
+    expect(activityListQuerySchema.safeParse({ contributorId: 'c'.repeat(257) }).success).toBe(false);
+    expect(activitySummarySchema.safeParse({
+      ...activityListFixture.items[0],
+      facts: { ...activityListFixture.items[0]!.facts, message: 'm'.repeat(10_001) },
+    }).success).toBe(false);
+    expect(activitySummarySchema.safeParse({
+      ...activityListFixture.items[0],
+      contributor: { ...activityListFixture.items[0]!.contributor!, displayName: 'd'.repeat(257) },
+    }).success).toBe(false);
   });
 });

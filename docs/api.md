@@ -182,17 +182,21 @@ Repositories omitted from a successful current synchronization are retained for 
 
 List results are ordered by `fullName` then opaque repository ID. Cursors are opaque server values bound to that ordering and the active search filter. Search is trimmed and case-insensitive across owner, name, and full name. `lastActivityAt` is the newest stored activity timestamp; `contributorCount` is the distinct count of non-null stored contributors. Reads and mutations require an existing user/repository association and do not expose another user's repository membership.
 
-## Frozen Day 5–7 activity and dashboard contract
+## Day 7 Activity API and frozen dashboard contract
 
-The frontend-consumable activity and dashboard boundary is frozen in `packages/shared/src/activity.ts` and `packages/shared/src/dashboard.ts`; validated fixtures live under `packages/shared/test/fixtures/activity/` and `packages/shared/test/fixtures/dashboard/`. Day 4 freezes these DTOs only; webhook ingestion, activity processing, and activity/dashboard endpoints remain scheduled for Days 5–7.
+The frontend-consumable activity and dashboard boundary is frozen in `packages/shared/src/activity.ts` and `packages/shared/src/dashboard.ts`; validated fixtures live under `packages/shared/test/fixtures/activity/` and `packages/shared/test/fixtures/dashboard/`. Day 7 implements the two activity routes against canonical PostgreSQL events. Dashboard implementation remains outside Person A's reviewed Day 7 task and is not claimed here.
 
-Canonical future routes are:
+Activity routes are:
 
 - `GET /api/v1/activity` using `ActivityListQuery` and `ActivityListResponse`.
 - `GET /api/v1/repositories/:id/activity` using the same filter and response schemas, with repository ownership enforced by the server.
-- `GET /api/v1/dashboard` using `DashboardQuery` and `DashboardResponse`.
+- `GET /api/v1/dashboard` remains a frozen future boundary using `DashboardQuery` and `DashboardResponse`.
 
 Activity filters include optional ISO date, IANA timezone (default `UTC`), repository, contributor, source, type, cursor, and bounded limit. A supplied date denotes the half-open calendar interval `[00:00, next 00:00)` in the supplied IANA timezone; the API converts that interval to UTC before querying. Invalid dates, timezones, filters, limits, and cursors fail with `400 VALIDATION_ERROR`. Results use a stable opaque cursor ordered by `occurredAt` descending then opaque activity ID descending.
+
+Both activity routes require an authenticated Trace session. Authorization is derived only from the caller's `UserRepository` rows. The global route returns events from associated repositories; the repository route returns `404 REPOSITORY_NOT_FOUND` without disclosing whether an unassociated repository exists. Tracking disablement, GitHub disconnection, installation suspension, or provider access removal does not erase historical activity. When the caller's repository access has ended, only events with `occurredAt <= accessRemovedAt` remain visible; later transferred-repository activity is excluded.
+
+The opaque versioned cursor contains the final `(occurredAt, id)` position, is HMAC-signed with a domain-separated server secret, and is bound to the authenticated user plus the complete normalized filter set, including route repository, date, timezone, source, type, contributor, and limit. Modified, non-canonical, cross-user, or cross-query cursors fail validation. Day boundaries are calendar-correct across 23-hour and 25-hour daylight-saving transitions rather than fixed 24-hour windows; civil dates skipped by timezone transitions fail validation instead of silently returning an empty interval. Nullable event metadata is independently bounded and validated before projection; malformed optional facts become `null`, unsafe/non-HTTPS links are excluded, invalid source/type rows fail closed, and arbitrary stored metadata is never returned.
 
 The closed sources are `github | cli`; the closed activity types are `commit | push | pull_request | working_tree_snapshot | staged_change | untracked_file | local_commit`. Each item contains repository context, an optional contributor who need not have a Trace account, generic source/type, timestamp, and strict nullable factual display fields (`sha`, message, branch, files changed, additions, deletions, and optional evidence URL). Provider credentials, webhook internals, raw patches, and arbitrary metadata are excluded.
 
@@ -216,6 +220,21 @@ The API publishes one BullMQ job named `process-github-webhook`, using determini
 
 `apps/worker/src/queues/github/github-webhook.worker.ts` and `apps/worker/src/runtime.ts` provide the Day 5 worker lifecycle boundary with Redis readiness, concurrency restricted to 1–32, bounded durable-reference validation, monitored fatal run-loop completion, SIGINT/SIGTERM handling, and graceful-then-forced deadline-bounded close. Terminal-failure recording is attempted once and recorder failures are contained; BullMQ stores only the stable `WEBHOOK_PROCESSING_FAILED` reason and never retains raw processor or observability exception text. A fatal run loop marks the process failed and initiates the same idempotent stop path. The executable fails closed until Day 6 supplies a real processor, so it cannot acknowledge jobs through a placeholder consumer.
 
-## Provisional later-day contracts
+## Frozen Day 8–10 report contract
 
-Report schemas remain provisional until the scheduled Day 7 report-contract freeze.
+The report protocol is frozen in `packages/shared/src/reports.ts`; validated list/detail fixtures live under `packages/shared/test/fixtures/reports/`. Day 7 freezes DTOs and lifecycle semantics only. Report API handlers, aggregation, queueing, AI, revision persistence, LaTeX, artifact storage, and download streaming remain Days 8–10.
+
+Canonical routes for those days are:
+
+- `POST /api/v1/reports` with `ReportCreateRequest`, returning `ReportCreateResponse`.
+- `GET /api/v1/reports` with `ReportListQuery`, returning `ReportListResponse`.
+- `GET /api/v1/reports/:id`, returning `ReportDetailResponse`.
+- `PUT /api/v1/reports/:id/revision` with `ReportRevisionUpdateRequest`, returning `ReportRevisionUpdateResponse`.
+- `POST /api/v1/reports/:id/regenerate` with `ReportRegenerationRequest`, returning `ReportRegenerationResponse`.
+- `GET /api/v1/reports/:id/download?artifactId=...` with `ReportDownloadQuery`; the successful response is the authorized artifact byte stream, not JSON.
+
+Create accepts one ISO report date and an IANA timezone. List pagination is bounded and may filter by the closed lifecycle statuses `pending | processing | completed | failed`. `pending` and `processing` reports have no completion timestamp or downloadable PDF. `failed` reports expose only a bounded safe error message. `completed` reports require a completion timestamp, revisioned structured content, and a current PDF artifact stored successfully.
+
+Report facts are server-owned non-negative counts and cannot be submitted through edit requests. Editable content is a strict bounded sparse `prosePatch` only: executive summary, repository summaries, contributor summaries, and accomplishment strings keyed by opaque repository/contributor IDs. Omitted sections remain unchanged; explicit empty repository/contributor patch arrays, duplicate IDs, and nested ID-only patches that change no prose are rejected. The server must verify every submitted repository and contributor ID against the current revision and reject unknown IDs or reassignment; only prose values may change. Arbitrary LaTeX, HTML extensions, model-controlled metrics, storage paths, repository names as authority, and unknown fields are rejected. Update and regeneration requests carry `expectedRevision`; stale writes must return `REPORT_REVISION_CONFLICT` and cannot silently overwrite newer or manual content. The closed report error vocabulary also covers not found, duplicate date, non-editable state, missing artifact, and generation unavailability.
+
+Artifact DTOs expose only bounded safe display/download metadata: a report-unique opaque ID, report revision, closed kind, basename, closed content type, bounded size, and SHA-256 checksum. Duplicate artifact IDs within one report are invalid. Clients select an artifact by its ID on the enclosing report's authorized download route; redundant client-provided storage URLs, storage keys, and filesystem paths are never part of the contract. The frozen contract includes PDF and optional `.tex` artifact kinds; `.tex` may only be downloaded if safely produced and is never an arbitrary browser/server editor input.
