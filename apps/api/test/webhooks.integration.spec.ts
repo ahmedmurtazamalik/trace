@@ -268,6 +268,18 @@ describe('GitHub webhook acceptance', () => {
     await expect(prisma.githubWebhookDelivery.count()).resolves.toBe(0);
   });
 
+  it('keeps the webhook payload-limit envelope scoped to the webhook route', async () => {
+    const oversized = JSON.stringify({ padding: 'x'.repeat(1_048_577) });
+    const response = await request(server)
+      .post('/api/v1/auth/register')
+      .set('Content-Type', 'application/json')
+      .send(oversized)
+      .expect(413);
+
+    expect(response.body).not.toMatchObject({ code: 'WEBHOOK_PAYLOAD_TOO_LARGE' });
+    await expect(prisma.githubWebhookDelivery.count()).resolves.toBe(0);
+  });
+
   it.each([
     ['suspended installation', async () => prisma.githubInstallation.updateMany({ where: { githubInstallationId: 820_001n }, data: { suspendedAt: new Date() } })],
     ['disconnected account', async () => prisma.githubAccount.updateMany({ where: { githubUserId: 810_001n }, data: { unlinkedAt: new Date() } })],
