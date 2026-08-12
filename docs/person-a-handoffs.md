@@ -199,3 +199,33 @@ Final recorded results:
 - GitHub activity normalization/processing remains Day 6.
 - Activity/dashboard endpoint implementation remains Day 7; Day 4 publishes only their frozen contracts and fixtures.
 - The GitHub App installation-start frontend action remains outside Person A ownership and was not implemented.
+
+---
+
+## Day 5 — Person A
+
+### Done
+
+- Added `POST /api/v1/webhooks/github` with a route-specific 256 KiB raw JSON parser. HMAC-SHA256 is verified against the exact request bytes before JSON decoding.
+- Enforced lowercase canonical delivery UUIDs, supported `push` events, strict signature format, and a bounded push envelope containing ref/SHAs, installation, stable repository ID, sender, and strictly validated nested commit fields.
+- Resolved installation/repository authority exclusively from current server state. Suspended installations, disconnected accounts, removed repository access, disabled users, removed memberships, and wholly untracked repositories are acknowledged without persistence or queueing.
+- Serialized account/user authority with disconnect and disable flows, then serialized delivery IDs transactionally with a PostgreSQL advisory lock and retained the unique database constraint. Conflicting delivery-ID reuse fails closed.
+- Persisted the validated bounded JSON payload, digest, and durable `publishedAt` queue-publication marker through upgrade-safe migration `20260812144000_webhook_payload`; legacy rows are retained but terminally quarantined before the payload column becomes non-null, and the obsolete status/received-time index is replaced rather than retained beside the reconciliation index.
+- Added deterministic BullMQ jobs containing only the durable delivery-row ID, with five exponential-backoff attempts and bounded completed/failed job retention.
+- Added autonomous startup/periodic publication reconciliation for pending rows, independent of GitHub retries and later authority changes. Request-path publication is bounded and deterministic re-adds close the Redis/marker crash window.
+- Established request correlation before all body parsers so oversized webhook and general API requests retain their request ID in the scoped `413` envelope.
+- Added the `@trace/worker` workspace package with Redis readiness, monitored fatal run-loop completion, SIGINT/SIGTERM handling, one absolute shutdown deadline covering pause, queue inspection, graceful close, and run-loop settlement, immediate catch-observed force-close/disconnect fallback, and sanitized BullMQ failure persistence even when terminal observability itself fails. Failed-start cleanup uses the same bounded principle and catch-observes any run loop before cleanup can trigger a late rejection. Processing remains an injected Day 6 boundary and the executable fails closed until a real processor is composed.
+- Added real PostgreSQL/Redis integration coverage for valid and conflicting concurrent delivery reuse, malformed/case-variant IDs, invalid signatures, oversized requests, unsupported/untracked/revoked authority, publication failure and deterministic replay, migration of an existing ledger row, queue references, retries, observability failure, fatal runtime failure, and forced shutdown.
+- No `apps/web/**` or `packages/ui/**` files were changed.
+
+### Integration boundary
+
+- Redis jobs contain `{ deliveryId }` only. Day 6 reads the durable row and processes its validated `payload`.
+- Worker terminal-failure callbacks receive only the delivery row ID and stable code `WEBHOOK_PROCESSING_FAILED`; raw exception or payload text is neither passed to observability nor retained in BullMQ failure fields.
+- The queue and API both default to `github-webhook-deliveries`. Worker concurrency must remain within 1–32.
+- Webhook retries revalidate current installation, repository, user, membership, and tracking authority. Already accepted pending rows retain an independent durable publication obligation, so later revocation cannot strand them.
+
+### Deferred by plan
+
+- Push/commit normalization, enrichment, activity persistence, and processing-state transitions remain Day 6.
+- AI calls and report generation remain outside webhook request and worker acceptance infrastructure.

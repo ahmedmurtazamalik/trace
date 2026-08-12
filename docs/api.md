@@ -198,6 +198,24 @@ The closed sources are `github | cli`; the closed activity types are `commit | p
 
 Dashboard responses contain the requested date/timezone, a truthful state (`READY`, `GITHUB_NOT_CONNECTED`, `NO_TRACKED_REPOSITORIES`, `NO_ACTIVITY`, or `PARTIAL`), deterministic non-negative metrics, and at most 20 canonical recent activity items. No productivity score, inferred effort, ranking, or model-generated metric is part of the contract.
 
+## Day 5 GitHub webhook acceptance
+
+`POST /api/v1/webhooks/github` is the server-to-server GitHub App webhook endpoint. It accepts only `application/json` push deliveries with these required headers:
+
+- `X-GitHub-Event: push`
+- `X-GitHub-Delivery: <canonical lowercase UUID>`
+- `X-Hub-Signature-256: sha256=<64 lowercase hex characters>`
+
+The endpoint establishes a bounded request correlation ID before body parsing, then reads at most 256 KiB into a raw buffer. It verifies the HMAC-SHA256 signature over those exact bytes with a timing-safe comparison before decoding JSON. The signed push envelope then validates bounded ref, SHA, installation, stable repository ID, repository full name, sender, and every nested commit field (IDs, messages, timestamps, URLs, authors, and added/removed/modified path arrays). Missing/malformed headers or schema return `400`; invalid signatures return `401`; oversized bodies return `413 WEBHOOK_PAYLOAD_TOO_LARGE` with the same request ID. General API JSON remains limited to 1 MiB and URL-encoded bodies to 64 KiB.
+
+A valid push is authorized from current server state using the stable GitHub installation and repository IDs. The installation must be active, its account linked, the repository currently assigned to it with provider access intact, and at least one enabled Trace user membership must have current access and tracking enabled. Valid but wholly untracked, suspended, disconnected, removed-access, or disabled-user deliveries return `202 { "accepted": false, "reason": "untracked" }` without persistence or queueing so GitHub does not retry irrelevant deliveries.
+
+Accepted pushes return `202 { "accepted": true }`. A PostgreSQL advisory transaction lock serializes the canonical delivery UUID. The unique delivery row stores the bounded validated JSON payload and its SHA-256 digest; duplicate IDs are accepted only when event, digest, installation ID, and repository ID match exactly. Current authorization is revalidated even for retries. Conflicting reuse returns `409 WEBHOOK_DELIVERY_CONFLICT`.
+
+The API publishes one BullMQ job named `process-github-webhook`, using deterministic ID `github-webhook-<delivery-row-id>`, five bounded exponential-backoff attempts, and `{ "deliveryId": "<delivery-row-id>" }` as its entire Redis payload. PostgreSQL is the durable source of both the validated payload and the queue-publication obligation: `publishedAt = null` marks an accepted pending delivery still owed to Redis. The request performs a bounded best-effort publish, while an independent startup/periodic reconciler publishes owed rows and marks them only after deterministic `queue.add` succeeds. This closes the PostgreSQL-to-Redis gap even if GitHub never retries or authority is later revoked. A crash after Redis succeeds but before the marker update is safe because the next pass uses the same deterministic job ID. Rows already in `processing`, `completed`, or `failed` are never selected for publication.
+
+`apps/worker/src/queues/github/github-webhook.worker.ts` and `apps/worker/src/runtime.ts` provide the Day 5 worker lifecycle boundary with Redis readiness, concurrency restricted to 1–32, bounded durable-reference validation, monitored fatal run-loop completion, SIGINT/SIGTERM handling, and graceful-then-forced deadline-bounded close. Terminal-failure recording is attempted once and recorder failures are contained; BullMQ stores only the stable `WEBHOOK_PROCESSING_FAILED` reason and never retains raw processor or observability exception text. A fatal run loop marks the process failed and initiates the same idempotent stop path. The executable fails closed until Day 6 supplies a real processor, so it cannot acknowledge jobs through a placeholder consumer.
+
 ## Provisional later-day contracts
 
 Report schemas remain provisional until the scheduled Day 7 report-contract freeze.
