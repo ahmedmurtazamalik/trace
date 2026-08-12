@@ -81,15 +81,13 @@ export function GithubConnectionPanel({
     setError(undefined);
     try {
       const result = await revokeConnection(csrfToken);
-      setStatus({
-        accountConnection: { status: "DISCONNECTED", account: null },
-        installationAuthorization: { status: "NOT_INSTALLED", installation: null },
-        accessibleRepositoryCount: 0,
-        trackedRepositoryCount: 0,
-        historyRetained: result.historyRetained,
-      });
+      const authoritativeStatus = await loadStatus();
+      setStatus(authoritativeStatus);
       setConfirmDisconnect(false);
       setNotice("GitHub disconnected. Historical activity remains in Trace.");
+      if (!result.historyRetained || !authoritativeStatus.historyRetained) {
+        setError("Trace could not confirm retained GitHub history. Please refresh and try again.");
+      }
     } catch (reason) {
       setError(errorMessage(reason));
     } finally {
