@@ -10,7 +10,12 @@ export async function createApplication(): Promise<INestApplication> {
   const app = await NestFactory.create(AppModule, { bodyParser: false });
   const config = app.get<TraceConfig>(TRACE_CONFIG);
 
-  app.use(json({ limit: '1mb' }));
+  app.use(json({
+    limit: '1mb',
+    verify: (request, _response, buffer) => {
+      (request as typeof request & { rawBody?: Buffer }).rawBody = Buffer.from(buffer);
+    },
+  }));
   app.use(urlencoded({ extended: false, limit: '64kb' }));
   app.useGlobalPipes(new ValidationPipe({
     whitelist: true,
