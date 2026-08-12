@@ -3,6 +3,7 @@
 import type { ReactNode } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { SessionControls } from "./session-controls";
 import {
   Activity,
   BookOpen,
@@ -71,7 +72,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             <span className="eyebrow">Trace workspace</span>
             <strong>Development activity</strong>
           </div>
-          <div className="topbar-status"><span className="live-signal" />Interface online</div>
+          <SessionControls />
         </header>
         <div className="data-disclosure">
           <span className="disclosure-icon"><Radio size={14} aria-hidden="true" /></span>

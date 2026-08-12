@@ -60,3 +60,71 @@ No Person A-owned file or root workspace file was changed.
 ### Next-day joint gate
 - READY, subject to Person A publishing the frozen Day 1 auth/session/error contract and fixture.
 - Day 2 Person B work: registration, login, logout/session UX, protected layout behavior, forgot/reset password, API-client cookie/CSRF handling, and auth error/loading states against contract mocks.
+
+## Day 2 — Authentication UI
+
+### Done
+- Added a typed authentication API boundary consuming `@trace/shared` frozen schemas for register, login, current session, logout, forgot-password, and reset-password.
+- Added cookie credentials on every auth request, canonical CSRF-header logout, cancellation forwarding, runtime success-response validation, and safe normalized errors.
+- Implemented accessible registration, login, forgot-password, and reset-password forms with contract-aligned local validation, duplicate-submit prevention, progress, success, conflict, disabled-account, rate-limit, network, service, and invalid-token states.
+- Added an in-memory session provider. Session credentials remain in the HTTP-only cookie; public user and CSRF response state are never persisted to local/session storage.
+- Added `/auth/me` bootstrap, protected workspace rendering, expired-session redirects, safe local return paths, and explicit logout race protection.
+- Added authenticated identity and logout controls to the existing shell without replacing its accepted layout.
+- Added desktop and Pixel 5 browser coverage using deterministic frozen-contract HTTP interception.
+- Added user-facing and developer-facing documentation.
+
+### Person B-owned files changed
+- `apps/web/**`
+- `docs/frontend-setup.md`
+- `docs/user-guide.md`
+- `docs/person-b-handoffs.md`
+
+No Person A-owned backend/shared-contract source, root workspace configuration, root README, or root lockfile is changed.
+
+### Contract consumed
+- Source: `packages/shared/src/auth.ts` merged into `main` through Person A's Day 1/Day 2 authentication delivery.
+- API documentation: `docs/api.md`, implemented authentication API section.
+- Fixtures: `packages/shared/test/fixtures/auth/*.json`.
+- Endpoints: `/api/v1/auth/register`, `/login`, `/me`, `/logout`, `/password/forgot`, `/password/reset`.
+- No direct shared-contract edits: YES.
+
+### Mock versus real status
+- Real adapter: `apps/web/src/api/auth.ts` targets `NEXT_PUBLIC_API_ORIGIN`, sends real cookie credentials, validates real response schemas, and uses the documented CSRF header.
+- Deterministic tests: component tests inject adapters; Playwright intercepts the same frozen HTTP endpoints with contract-shaped responses.
+- Live joint smoke: pending a running API/PostgreSQL/Redis environment. Forgot-password additionally needs Person A's bounded outbound provider in non-test environments; without it the backend intentionally returns `503`.
+
+### TDD evidence
+- API-client RED: missing `src/api/auth.ts`; then seven missing endpoint/error behaviors.
+- Login RED: missing `login-form.tsx`.
+- Session RED: missing `session-provider.tsx`.
+- Registration/recovery/reset RED: missing three form components.
+- Protection RED: missing `protected-session.tsx`.
+- Browser RED: 28/34 initially passed; failures isolated Next route-announcer selectors, asynchronous shell readiness, and a real logout/protection redirect race. The logout state machine was corrected and focused tests passed before the complete rerun.
+- Logout-failure RED: 8/9 provider tests passed; the new regression correctly found `isSigningOut` remained true after failed revocation. The provider now restores the authenticated state, resets the transition, rethrows the safe error, and the header renders retryable feedback.
+- Independent-review RED: the first reviewer found literal/encoded backslash open-redirect bypasses and a late-bootstrap overwrite race. Focused tests failed exactly those three cases; return-path decoding/backslash rejection and abortable generation-guarded bootstrap now pass.
+- Final-review RED: the second reviewer found that a pending logout could clear a newer login session. The new test failed only that race (`expected authenticated, received anonymous`); generation-owned logout completion/failure now preserves the newer session and all 14 provider tests pass.
+
+### Tests and builds actually run
+- `pnpm --filter @trace/ui test` — PASS, 2/2.
+- `pnpm --filter @trace/ui typecheck` — PASS.
+- `pnpm --filter @trace/web test` — PASS, 42/42 across 9 files.
+- `pnpm --filter @trace/web lint` — PASS, no warnings or errors.
+- `pnpm --filter @trace/web typecheck` — PASS.
+- `pnpm --filter @trace/web build` — PASS, 14 static pages generated.
+- `pnpm --filter @trace/web test:e2e` — PASS, 34/34 on desktop Chrome and Pixel 5.
+- Focused session regression — PASS, 12/12 after explicit logout-state fix.
+- Desktop visual inspection — PASS; accepted split layout preserved with aligned, readable controls and no clipping.
+- 393 × 851 mobile visual inspection — PASS; measured document width equals viewport width, with no clipping or overflow.
+- Browser console inspection — PASS, no JavaScript errors.
+- Security scan — PASS; no hardcoded secret assignments, browser token persistence, direct cookie access, unsafe HTML/eval, or debug logging.
+- `git diff --check` and ownership scan — PASS; no whitespace errors or changed paths outside Person B scope.
+
+### Problems/risks
+- The fresh integrated workspace initially failed offline installation with `ERR_PNPM_NO_OFFLINE_META` for `@types/jest@29.5.14`; a normal workspace install succeeded.
+- `@trace/shared` publishes `dist` entries but was not built in the fresh source workspace. Frontend-only Next/Vitest/TypeScript source aliases now consume the committed shared source without modifying Person A's package.
+- `pnpm install` generated a root lockfile diff; it was explicitly reverted to preserve integration-owner scope.
+- Playwright's Next dev server emits a future-version `allowedDevOrigins` warning for `127.0.0.1`; current tests and requests succeed. Coordinate the future Next upgrade rather than changing root/runtime policy in Person B's branch.
+
+### Next-day joint gate
+- Frontend Day 2 authentication functionality is ready after final quality gates.
+- Before claiming live end-to-end integration, run API/PostgreSQL/Redis and execute registration, session reload, protected navigation, and logout against the real backend.

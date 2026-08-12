@@ -1,5 +1,14 @@
 import { expect, test } from "@playwright/test";
 
+const session = {
+  user: { id: "usr_01HXYZ", username: "alice.dev", displayName: "Alice Developer", email: "alice@example.com", createdAt: "2026-08-11T12:00:00.000Z" },
+  csrfToken: "csrf_opaque_value",
+};
+
+test.beforeEach(async ({ page }) => {
+  await page.route("**/api/v1/auth/me", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(session) }));
+});
+
 const routes = {
   "/dashboard": "Good morning, developer.",
   "/repositories": "Repositories",
@@ -22,8 +31,10 @@ for (const [route, heading] of Object.entries(routes)) {
 
 test("keyboard users can skip to content", async ({ page }) => {
   await page.goto("/dashboard");
+  const skipLink = page.getByRole("link", { name: "Skip to content" });
+  await expect(skipLink).toBeVisible();
   await page.keyboard.press("Tab");
-  await expect(page.getByRole("link", { name: "Skip to content" })).toBeFocused();
+  await expect(skipLink).toBeFocused();
   await page.keyboard.press("Enter");
   await expect(page.locator("#main-content")).toBeFocused();
 });
