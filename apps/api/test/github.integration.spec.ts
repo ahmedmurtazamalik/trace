@@ -89,14 +89,14 @@ describe('GitHub connection API', () => {
       .query({ code: 'fake-success-code', state })
       .set('Cookie', sessionCookie)
       .expect(302);
-    expect(callback.headers.location).toBe('http://localhost:3000/settings/github?result=connected');
+    expect(callback.headers.location).toBe('http://localhost:3000/github?result=connected');
 
     const replay = await request(server)
       .get('/api/v1/github/callback')
       .query({ code: 'fake-success-code', state })
       .set('Cookie', sessionCookie)
       .expect(302);
-    expect(replay.headers.location).toBe('http://localhost:3000/settings/github?result=error&reason=state_invalid');
+    expect(replay.headers.location).toBe('http://localhost:3000/github?result=error&reason=state_invalid');
 
     const status = await request(server).get('/api/v1/github/status').set('Cookie', sessionCookie).expect(200);
     expect(githubConnectionStatusSchema.parse(status.body as unknown)).toMatchObject({
@@ -123,7 +123,7 @@ describe('GitHub connection API', () => {
     const state = new URL((connect.body as { authorizationUrl: string }).authorizationUrl).searchParams.get('state');
 
     const withoutSession = await request(server).get('/api/v1/github/callback').query({ code: 'fake-success-code', state }).expect(302);
-    expect(withoutSession.headers.location).toBe('http://localhost:3000/settings/github?result=error&reason=session_expired');
+    expect(withoutSession.headers.location).toBe('http://localhost:3000/github?result=error&reason=session_expired');
 
     const sameUserLogin = await request(server).post('/api/v1/auth/login').send({ username, password }).expect(200);
     const wrongSameUserSession = await request(server)
@@ -131,7 +131,7 @@ describe('GitHub connection API', () => {
       .query({ code: 'fake-success-code', state })
       .set('Cookie', cookie(sameUserLogin))
       .expect(302);
-    expect(wrongSameUserSession.headers.location).toBe('http://localhost:3000/settings/github?result=error&reason=state_invalid');
+    expect(wrongSameUserSession.headers.location).toBe('http://localhost:3000/github?result=error&reason=state_invalid');
 
     const second = await request(server)
       .post('/api/v1/auth/register')
@@ -142,7 +142,7 @@ describe('GitHub connection API', () => {
       .query({ code: 'fake-success-code', state })
       .set('Cookie', cookie(second))
       .expect(302);
-    expect(wrongSession.headers.location).toBe('http://localhost:3000/settings/github?result=error&reason=state_invalid');
+    expect(wrongSession.headers.location).toBe('http://localhost:3000/github?result=error&reason=state_invalid');
 
     const invalidCode = await request(server).get('/api/v1/github/connect').set('Cookie', firstCookie).expect(200);
     const invalidState = new URL((invalidCode.body as { authorizationUrl: string }).authorizationUrl).searchParams.get('state');
@@ -151,7 +151,7 @@ describe('GitHub connection API', () => {
       .query({ code: 'fake-invalid-code', state: invalidState })
       .set('Cookie', firstCookie)
       .expect(302);
-    expect(failed.headers.location).toBe('http://localhost:3000/settings/github?result=error&reason=callback_failed');
+    expect(failed.headers.location).toBe('http://localhost:3000/github?result=error&reason=callback_failed');
 
     const deniedConnect = await request(server).get('/api/v1/github/connect').set('Cookie', firstCookie).expect(200);
     const deniedState = new URL((deniedConnect.body as { authorizationUrl: string }).authorizationUrl).searchParams.get('state');
@@ -160,7 +160,7 @@ describe('GitHub connection API', () => {
       .query({ error: 'access_denied', state: deniedState })
       .set('Cookie', firstCookie)
       .expect(302);
-    expect(denied.headers.location).toBe('http://localhost:3000/settings/github?result=error&reason=access_denied');
+    expect(denied.headers.location).toBe('http://localhost:3000/github?result=error&reason=access_denied');
   });
 
   it('reports GitHub App installation authorization independently from account connection', async () => {
@@ -206,7 +206,7 @@ describe('GitHub connection API', () => {
     const verificationState = new URL(setup.headers.location as string).searchParams.get('state');
     const verification = await request(server).get('/api/v1/github/callback')
       .query({ code: 'fake-installation-verification-code', state: verificationState }).set('Cookie', identity.cookie).expect(302);
-    expect(verification.headers.location).toBe('http://localhost:3000/settings/github?result=error&reason=callback_failed');
+    expect(verification.headers.location).toBe('http://localhost:3000/github?result=error&reason=callback_failed');
     const status = await request(server).get('/api/v1/github/status').set('Cookie', identity.cookie).expect(200);
     expect(status.body).toMatchObject({ installationAuthorization: { status: 'NOT_INSTALLED', installation: null } });
   });
@@ -220,7 +220,7 @@ describe('GitHub connection API', () => {
     expect(disconnected.body).toMatchObject({ accountConnection: { status: 'RECONNECT_REQUIRED', account: { username: 'fake-octocat' } } });
     const reconnectState = await connectState(identity.cookie);
     const reconnected = await request(server).get('/api/v1/github/callback').query({ code: 'fake-success-code', state: reconnectState }).set('Cookie', identity.cookie).expect(302);
-    expect(reconnected.headers.location).toBe('http://localhost:3000/settings/github?result=connected');
+    expect(reconnected.headers.location).toBe('http://localhost:3000/github?result=connected');
     const status = await request(server).get('/api/v1/github/status').set('Cookie', identity.cookie).expect(200);
     expect(status.body).toMatchObject({ accountConnection: { status: 'CONNECTED' } });
   });
@@ -245,7 +245,7 @@ describe('GitHub connection API', () => {
       .query({ code: 'fake-success-code', state: secondState })
       .set('Cookie', second.cookie)
       .expect(302);
-    expect(conflict.headers.location).toBe('http://localhost:3000/settings/github?result=error&reason=callback_failed');
+    expect(conflict.headers.location).toBe('http://localhost:3000/github?result=error&reason=callback_failed');
     const secondStatus = await request(server).get('/api/v1/github/status').set('Cookie', second.cookie).expect(200);
     expect(secondStatus.body).toMatchObject({ accountConnection: { status: 'DISCONNECTED', account: null } });
   });

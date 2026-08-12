@@ -33,6 +33,10 @@ export const repositoryTrackingResponseSchema = z.object({
   trackingEnabled: z.boolean(),
 }).strict();
 
+export const repositorySynchronizationResponseSchema = z.object({
+  accessibleRepositoryCount: z.number().int().nonnegative(),
+}).strict();
+
 export const repositoryErrorCodeSchema = z.enum([
   'REPOSITORY_NOT_FOUND',
   'REPOSITORY_ACCESS_REMOVED',
@@ -45,4 +49,5 @@ export type RepositoryListQuery = z.infer<typeof repositoryListQuerySchema>;
 export type RepositoryListResponse = z.infer<typeof repositoryListResponseSchema>;
 export type RepositoryDetailResponse = z.infer<typeof repositoryDetailResponseSchema>;
 export type RepositoryTrackingResponse = z.infer<typeof repositoryTrackingResponseSchema>;
+export type RepositorySynchronizationResponse = z.infer<typeof repositorySynchronizationResponseSchema>;
 export type RepositoryErrorCode = z.infer<typeof repositoryErrorCodeSchema>;

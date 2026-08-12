@@ -118,8 +118,10 @@ export class GithubService {
   async status(userId: string): Promise<GithubConnectionStatus> {
     const account = await this.prisma.githubAccount.findUnique({ where: { userId }, include: { installations: true } });
     const active = account?.unlinkedAt === null ? account : null;
-    const installation = active?.installations[0] ?? null;
-    const counts = installation === null ? { accessible: 0, tracked: 0 } : await this.repositoryCounts(userId, installation.id);
+    const orderedInstallations = [...(active?.installations ?? [])].sort((left, right) => left.id.localeCompare(right.id));
+    const activeInstallations = orderedInstallations.filter((candidate) => candidate.suspendedAt === null);
+    const installation = activeInstallations[0] ?? orderedInstallations[0] ?? null;
+    const counts = activeInstallations.length === 0 ? { accessible: 0, tracked: 0 } : await this.repositoryCounts(userId, activeInstallations.map((candidate) => candidate.id));
     const accountConnection = account === null
       ? { status: 'DISCONNECTED' as const, account: null }
       : account.unlinkedAt === null
@@ -197,7 +199,7 @@ export class GithubService {
   }
 
   private redirect(result: { result: string; reason?: string }): string {
-    const url = new URL('/settings/github', this.config.frontendOrigin);
+    const url = new URL('/github', this.config.frontendOrigin);
     url.searchParams.set('result', result.result);
     if (result.reason !== undefined) url.searchParams.set('reason', result.reason);
     return url.toString();
@@ -211,10 +213,10 @@ export class GithubService {
     return { id: installation.id, accountType: installation.accountType, accountLogin: installation.accountLogin };
   }
 
-  private async repositoryCounts(userId: string, installationId: string): Promise<{ accessible: number; tracked: number }> {
+  private async repositoryCounts(userId: string, installationIds: string[]): Promise<{ accessible: number; tracked: number }> {
     const [accessible, tracked] = await Promise.all([
-      this.prisma.repository.count({ where: { githubInstallationId: installationId, accessRemovedAt: null } }),
-      this.prisma.userRepository.count({ where: { userId, trackingEnabled: true, repository: { githubInstallationId: installationId, accessRemovedAt: null } } }),
+      this.prisma.userRepository.count({ where: { userId, accessRemovedAt: null, repository: { githubInstallationId: { in: installationIds }, accessRemovedAt: null } } }),
+      this.prisma.userRepository.count({ where: { userId, trackingEnabled: true, accessRemovedAt: null, repository: { githubInstallationId: { in: installationIds }, accessRemovedAt: null } } }),
     ]);
     return { accessible, tracked };
   }
