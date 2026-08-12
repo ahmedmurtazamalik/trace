@@ -217,3 +217,49 @@ No Person A-owned backend/shared-contract source, root workspace configuration, 
 ### Next
 - Add detail-route shell and explicit loading/empty/forbidden/server-error fixture scenarios.
 - Integrate Person A's list/detail/tracking endpoints only after their independent Day 4 contract-compatible implementation is available.
+
+## Day 5 — Activity experience (Person B)
+
+### Done
+- Replaced the Activity placeholder with a source-neutral, contract-shaped development timeline.
+- Added date, repository, contributor, source, and type filters with stable URL state and clear-all behavior.
+- Added source-compatible activity type choices, generic future-value fallback, contributor display without requiring a Trace account, and deterministic factual commit/push cards.
+- Added cursor pagination with deduplication and stale-request protection for filter changes and overlapping page loads.
+- Added loading, empty, filtered-empty, retryable error, and pagination-error states.
+- Kept fixture provenance visible: this page uses deterministic illustrative activity and does not claim live webhook processing.
+- Added focused component coverage and a desktop/mobile browser journey.
+
+### Person B-owned files changed
+- `apps/web/app/(app)/activity/page.tsx`
+- `apps/web/app/globals.css`
+- `apps/web/e2e/activity.spec.ts`
+- `apps/web/src/features/activity/**`
+- `apps/web/src/mocks/fixtures/activity.ts`
+- `docs/person-b-handoffs.md`
+
+No Person A-owned backend, worker, shared-contract, root workspace, or infrastructure file was changed.
+
+### Contract and mock-versus-real status
+- Contract: frozen `packages/shared/src/activity.ts` and the Day 4 API documentation.
+- Mock-backed: Activity list, filtering, pagination, loading/empty/error states, and browser journey.
+- Real adapter: not yet; the Activity API is scheduled for Person A Day 7.
+- Live webhook data: not shown; Person A Day 5 accepts webhooks and Day 6 processes them.
+
+### TDD and verification
+- Expected RED: stale cursor-page regression appended an old page after filters changed; generation ownership now discards stale completion.
+- Real regression caught before publication: rapid mobile filter changes could lose URL state; removing parent-to-child filter feedback fixed the race.
+- Focused Activity component suite: PASS, 6/6.
+- Complete web suite before the final focused race fix: PASS, 70/70; the final complete suite is rerun at the publication gate.
+- Activity Playwright journey: PASS, 2/2 across desktop and mobile.
+- Web lint and typecheck: PASS.
+- Production build: PASS, 14/14 routes generated.
+- `git diff --check`, ownership scan, and added-line secret/unsafe-API scan: PASS.
+
+### Issues and important notes
+- All activity shown on Day 5 is deterministic illustrative data from `apps/web/src/mocks/fixtures/activity.ts`.
+- GitHub webhook acceptance exists on integrated `main`, but enrichment and the real Activity API are later Person A work.
+- `.hermes/` remains local-only and is excluded from the Day 5 commit.
+
+### Next-day joint gate
+- Person B Day 6 builds the Dashboard against the already frozen dashboard contract.
+- Person A Day 6 GitHub processing must be integrated through `main` before Day 6 coherence verification.
