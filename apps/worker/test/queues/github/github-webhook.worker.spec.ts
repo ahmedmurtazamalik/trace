@@ -65,11 +65,12 @@ describe('GitHub webhook worker lifecycle', () => {
 
   it('force-closes resources after the graceful shutdown deadline', async () => {
     skipObliterate = true;
+    let releaseProcessor: (() => void) | undefined;
     worker = new GithubWebhookWorker({
       redisUrl,
       queueName,
       shutdownTimeoutMs: 50,
-      processDelivery: async () => new Promise<void>(() => undefined),
+      processDelivery: async () => new Promise<void>((resolve) => { releaseProcessor = resolve; }),
       recordTerminalFailure: jest.fn().mockResolvedValue(undefined),
     });
     await worker.start();
@@ -80,6 +81,7 @@ describe('GitHub webhook worker lifecycle', () => {
     }
 
     await expect(worker.close()).resolves.toBeUndefined();
+    releaseProcessor?.();
   });
 
   it('sanitizes a terminal observability failure before BullMQ persistence', async () => {
