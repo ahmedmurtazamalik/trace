@@ -1,8 +1,17 @@
 
+import { randomUUID } from 'node:crypto';
+import { readFile, readdir } from 'node:fs/promises';
+import path from 'node:path';
 import { PrismaClient } from '@prisma/client';
 import { seed } from '../prisma/seed';
 
 const prisma = new PrismaClient();
+
+async function executeMigration(client: PrismaClient, sql: string): Promise<void> {
+  for (const statement of sql.split(';').map((value) => value.trim()).filter(Boolean)) {
+    await client.$executeRawUnsafe(statement);
+  }
+}
 
 describe('database foundation', () => {
   afterAll(async () => {
@@ -25,6 +34,54 @@ describe('database foundation', () => {
       commits: 1,
       reports: 1,
     });
+  });
+
+  it('upgrades and quarantines an existing webhook delivery row', async () => {
+    const schema = `webhook_upgrade_${randomUUID().replaceAll('-', '')}`;
+    const databaseUrl = new URL(process.env.DATABASE_URL as string);
+    databaseUrl.searchParams.set('schema', schema);
+    const isolated = new PrismaClient({ datasourceUrl: databaseUrl.toString() });
+    await prisma.$executeRawUnsafe(`CREATE SCHEMA "${schema}"`);
+
+    try {
+      const migrationsRoot = path.join(__dirname, '../prisma/migrations');
+      const migrations = (await readdir(migrationsRoot)).sort();
+      const day5Migration = '20260812144000_webhook_payload';
+      for (const migration of migrations.filter((name) => name < day5Migration)) {
+        const sql = (await readFile(path.join(migrationsRoot, migration, 'migration.sql'), 'utf8'))
+          .replaceAll('"public".', `"${schema}".`);
+        await executeMigration(isolated, sql);
+      }
+      await isolated.$executeRawUnsafe(`
+        INSERT INTO github_webhook_deliveries
+          (id, github_delivery_id, event_name, external_installation_id, external_repository_id, payload_hash)
+        VALUES
+          ('legacy_delivery', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 'push', 1, 2, repeat('a', 64))
+      `);
+
+      const day5Sql = await readFile(path.join(migrationsRoot, day5Migration, 'migration.sql'), 'utf8');
+      await executeMigration(isolated, day5Sql);
+
+      const rows = await isolated.$queryRawUnsafe<Array<{
+        status: string;
+        payload: unknown;
+        processing_error: string;
+        published_at: Date | null;
+      }>>('SELECT status, payload, processing_error, published_at FROM github_webhook_deliveries WHERE id = \'legacy_delivery\'');
+      expect(rows).toEqual([{
+        status: 'failed',
+        payload: {},
+        processing_error: 'WEBHOOK_PAYLOAD_UNAVAILABLE',
+        published_at: null,
+      }]);
+      const indexes = await isolated.$queryRawUnsafe<Array<{ indexname: string }>>(
+        "SELECT indexname FROM pg_indexes WHERE schemaname = current_schema() AND indexname = 'github_webhook_deliveries_status_published_at_received_at_idx'",
+      );
+      expect(indexes).toHaveLength(1);
+    } finally {
+      await isolated.$disconnect();
+      await prisma.$executeRawUnsafe(`DROP SCHEMA IF EXISTS "${schema}" CASCADE`);
+    }
   });
 
   it('enforces canonical repository and SHA uniqueness in PostgreSQL', async () => {

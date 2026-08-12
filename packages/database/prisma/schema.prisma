@@ -304,7 +304,7 @@ model GithubWebhookDelivery {
   installation         GithubInstallation?      @relation(fields: [installationId], references: [id], onDelete: SetNull)
   repository           Repository?              @relation(fields: [repositoryId], references: [id], onDelete: SetNull)
 
-  @@index([status, receivedAt])
+  @@index([status, publishedAt, receivedAt])
   @@map("github_webhook_deliveries")
 }
 

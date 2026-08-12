@@ -1,10 +1,17 @@
 import { GithubWebhookWorker } from './queues/github/github-webhook.worker';
 
+export interface WorkerLifecycle {
+  start(): Promise<void>;
+  close(): Promise<void>;
+  readonly completion: Promise<void>;
+}
+
 export interface WorkerRuntimeOptions {
   environment: NodeJS.ProcessEnv;
   processDelivery(deliveryId: string): Promise<void>;
   recordTerminalFailure(deliveryId: string, code: 'WEBHOOK_PROCESSING_FAILED'): Promise<void>;
   signals?: NodeJS.Process;
+  workerFactory?: (options: ConstructorParameters<typeof GithubWebhookWorker>[0]) => WorkerLifecycle;
 }
 
 export async function runGithubWebhookWorker(options: WorkerRuntimeOptions): Promise<() => Promise<void>> {
@@ -17,7 +24,7 @@ export async function runGithubWebhookWorker(options: WorkerRuntimeOptions): Pro
   if (queueName !== undefined && !/^[A-Za-z0-9_-]{1,128}$/.test(queueName)) {
     throw new Error('Invalid worker configuration: WEBHOOK_QUEUE_NAME is invalid.');
   }
-  const worker = new GithubWebhookWorker({
+  const worker = (options.workerFactory ?? ((workerOptions) => new GithubWebhookWorker(workerOptions)))({
     redisUrl,
     queueName,
     concurrency,
@@ -38,6 +45,10 @@ export async function runGithubWebhookWorker(options: WorkerRuntimeOptions): Pro
   const onSignal = (): void => { void stop().catch(() => { signals.exitCode = 1; }); };
   signals.once('SIGINT', onSignal);
   signals.once('SIGTERM', onSignal);
+  void worker.completion.catch(() => {
+    signals.exitCode = 1;
+    return stop().catch(() => undefined);
+  });
   return stop;
 }
 

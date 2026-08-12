@@ -207,14 +207,15 @@ Final recorded results:
 ### Done
 
 - Added `POST /api/v1/webhooks/github` with a route-specific 256 KiB raw JSON parser. HMAC-SHA256 is verified against the exact request bytes before JSON decoding.
-- Enforced canonical delivery UUIDs, supported `push` events, strict signature format, and a bounded push envelope containing ref/SHAs, installation, stable repository ID, sender, and strictly validated nested commit fields.
+- Enforced lowercase canonical delivery UUIDs, supported `push` events, strict signature format, and a bounded push envelope containing ref/SHAs, installation, stable repository ID, sender, and strictly validated nested commit fields.
 - Resolved installation/repository authority exclusively from current server state. Suspended installations, disconnected accounts, removed repository access, disabled users, removed memberships, and wholly untracked repositories are acknowledged without persistence or queueing.
 - Serialized account/user authority with disconnect and disable flows, then serialized delivery IDs transactionally with a PostgreSQL advisory lock and retained the unique database constraint. Conflicting delivery-ID reuse fails closed.
 - Persisted the validated bounded JSON payload, digest, and durable `publishedAt` queue-publication marker through upgrade-safe migration `20260812144000_webhook_payload`; legacy rows are retained but terminally quarantined before the payload column becomes non-null.
 - Added deterministic BullMQ jobs containing only the durable delivery-row ID, with five exponential-backoff attempts and bounded completed/failed job retention.
 - Added autonomous startup/periodic publication reconciliation for pending rows, independent of GitHub retries and later authority changes. Request-path publication is bounded and deterministic re-adds close the Redis/marker crash window.
-- Added the `@trace/worker` workspace package with Redis readiness, SIGINT/SIGTERM handling, bounded graceful shutdown, sanitized BullMQ failure persistence, and awaited terminal observability. Processing remains an injected Day 6 boundary and the executable fails closed until a real processor is composed.
-- Added real PostgreSQL/Redis integration coverage for valid, duplicate, malformed, invalid-signature, oversized, unsupported, untracked, suspended, disconnected, removed-access, stale-retry, queue-reference, retry, failure-observability, and shutdown behavior.
+- Established request correlation before all body parsers so oversized webhook and general API requests retain their request ID in the scoped `413` envelope.
+- Added the `@trace/worker` workspace package with Redis readiness, monitored fatal run-loop completion, SIGINT/SIGTERM handling, graceful-then-forced deadline-bounded shutdown, and sanitized BullMQ failure persistence even when terminal observability itself fails. Processing remains an injected Day 6 boundary and the executable fails closed until a real processor is composed.
+- Added real PostgreSQL/Redis integration coverage for valid and conflicting concurrent delivery reuse, malformed/case-variant IDs, invalid signatures, oversized requests, unsupported/untracked/revoked authority, publication failure and deterministic replay, migration of an existing ledger row, queue references, retries, observability failure, fatal runtime failure, and forced shutdown.
 - No `apps/web/**` or `packages/ui/**` files were changed.
 
 ### Integration boundary

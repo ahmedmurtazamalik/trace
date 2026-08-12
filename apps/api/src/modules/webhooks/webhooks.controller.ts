@@ -19,7 +19,7 @@ export class WebhooksController {
     if (
       eventName !== 'push'
       || deliveryId === undefined
-      || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(deliveryId)
+      || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(deliveryId)
       || signature === undefined
       || !Buffer.isBuffer(request.body)
     ) {

@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { EventEmitter } from 'node:events';
 import { Queue } from 'bullmq';
 import { runGithubWebhookWorker } from '../src/runtime';
+import type { WorkerLifecycle } from '../src/runtime';
 
 class SignalProcess extends EventEmitter {
   exitCode: number | undefined;
@@ -44,5 +45,31 @@ describe('worker runtime composition', () => {
       await queue.obliterate({ force: true });
       await queue.close();
     }
+  });
+
+  it('marks the process failed and closes when the run loop dies', async () => {
+    const signals = new SignalProcess();
+    let rejectCompletion: ((error: Error) => void) | undefined;
+    const completion = new Promise<void>((_resolve, reject) => { rejectCompletion = reject; });
+    const close = jest.fn().mockResolvedValue(undefined);
+    const lifecycle: WorkerLifecycle = {
+      start: jest.fn().mockResolvedValue(undefined),
+      close,
+      completion,
+    };
+    const stop = await runGithubWebhookWorker({
+      environment: { REDIS_URL: redisUrl },
+      processDelivery: jest.fn().mockResolvedValue(undefined),
+      recordTerminalFailure: jest.fn().mockResolvedValue(undefined),
+      signals: signals as unknown as NodeJS.Process,
+      workerFactory: () => lifecycle,
+    });
+
+    rejectCompletion?.(new Error('secret run-loop detail'));
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(signals.exitCode).toBe(1);
+    expect(close).toHaveBeenCalledTimes(1);
+    await expect(stop()).resolves.toBeUndefined();
   });
 });

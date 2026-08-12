@@ -171,6 +171,31 @@ describe('GitHub webhook acceptance', () => {
     expect(jobs).toHaveLength(1);
   });
 
+  it('rejects conflicting reuse of a delivery ID without replacing the accepted payload', async () => {
+    await trackedRepository();
+    const original = pushPayload();
+    const conflicting = JSON.stringify({ ...JSON.parse(original) as object, after: '2'.repeat(40) });
+
+    await postPush(original).expect(202, { accepted: true });
+    await postPush(conflicting).expect(409);
+
+    const persisted = await prisma.githubWebhookDelivery.findUniqueOrThrow({ where: { githubDeliveryId: deliveryId } });
+    expect(persisted.payload).toEqual(JSON.parse(original));
+    await expect(prisma.githubWebhookDelivery.count({ where: { githubDeliveryId: deliveryId } })).resolves.toBe(1);
+  });
+
+  it('serializes simultaneous conflicting reuse of a delivery ID', async () => {
+    await trackedRepository();
+    const firstPayload = pushPayload();
+    const secondPayload = JSON.stringify({ ...JSON.parse(firstPayload) as object, after: '3'.repeat(40) });
+
+    const responses = await Promise.all([postPush(firstPayload), postPush(secondPayload)]);
+    expect(responses.map(({ status }) => status).sort()).toEqual([202, 409]);
+    await expect(prisma.githubWebhookDelivery.count({ where: { githubDeliveryId: deliveryId } })).resolves.toBe(1);
+    const jobs = await queue.getJobs(['wait', 'delayed', 'active', 'completed', 'failed']);
+    expect(jobs).toHaveLength(1);
+  });
+
   it('acknowledges a wholly untracked push without persisting or queueing it', async () => {
     await trackedRepository();
     const repository = await prisma.repository.findUniqueOrThrow({ where: { githubRepositoryId: 830_001n } });
@@ -200,14 +225,17 @@ describe('GitHub webhook acceptance', () => {
     await expect(queue.getJobCounts()).resolves.toMatchObject({ waiting: 0, delayed: 0, active: 0 });
   });
 
-  it('rejects a malformed GitHub delivery ID before persistence or queueing', async () => {
+  it.each([
+    'not-a-delivery-id',
+    'AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA',
+  ])('rejects noncanonical GitHub delivery ID %s before persistence or queueing', async (invalidDeliveryId) => {
     await trackedRepository();
     const payload = pushPayload();
     await request(server)
       .post('/api/v1/webhooks/github')
       .set('Content-Type', 'application/json')
       .set('X-GitHub-Event', 'push')
-      .set('X-GitHub-Delivery', 'not-a-delivery-id')
+      .set('X-GitHub-Delivery', invalidDeliveryId)
       .set('X-Hub-Signature-256', signature(payload))
       .send(payload)
       .expect(400);
@@ -259,6 +287,42 @@ describe('GitHub webhook acceptance', () => {
     expect(published.publishedAt).toBeInstanceOf(Date);
   });
 
+  it('keeps failed publication discoverable and recreates an evicted deterministic job', async () => {
+    await trackedRepository();
+    const payload = JSON.parse(pushPayload()) as object;
+    const installation = await prisma.githubInstallation.findUniqueOrThrow({ where: { githubInstallationId: 820_001n } });
+    const repository = await prisma.repository.findUniqueOrThrow({ where: { githubRepositoryId: 830_001n } });
+    const delivery = await prisma.githubWebhookDelivery.create({
+      data: {
+        githubDeliveryId: deliveryId,
+        eventName: 'push',
+        githubInstallationId: 820_001n,
+        githubRepositoryId: 830_001n,
+        installationId: installation.id,
+        repositoryId: repository.id,
+        payloadHash: 'b'.repeat(64),
+        payload,
+      },
+    });
+    const failingPublisher = new GithubWebhookPublisher(prisma, {
+      enqueue: jest.fn().mockRejectedValue(new Error('redis unavailable')),
+    } as never);
+
+    await failingPublisher.publishOwed();
+    await expect(prisma.githubWebhookDelivery.findUniqueOrThrow({ where: { id: delivery.id } })).resolves.toMatchObject({
+      publishedAt: null,
+      status: 'pending',
+    });
+
+    const publisher = app.get(GithubWebhookPublisher);
+    await publisher.publishOwed();
+    expect(await queue.getJob(`github-webhook-${delivery.id}`)).not.toBeNull();
+    await queue.obliterate({ force: true });
+    await prisma.githubWebhookDelivery.update({ where: { id: delivery.id }, data: { publishedAt: null } });
+    await publisher.publishOwed();
+    expect(await queue.getJob(`github-webhook-${delivery.id}`)).not.toBeNull();
+  });
+
   it('does not re-enqueue a persisted delivery after tracking is revoked', async () => {
     await trackedRepository();
     const payload = pushPayload();
@@ -289,14 +353,19 @@ describe('GitHub webhook acceptance', () => {
   it('rejects oversized payloads before persistence or queueing', async () => {
     await trackedRepository();
     const payload = JSON.stringify({ padding: 'x'.repeat(256 * 1024) });
-    await request(server)
+    const response = await request(server)
       .post('/api/v1/webhooks/github')
       .set('Content-Type', 'application/json')
+      .set('X-Request-ID', 'oversized-webhook-request')
       .set('X-GitHub-Event', 'push')
       .set('X-GitHub-Delivery', deliveryId)
       .set('X-Hub-Signature-256', signature(payload))
       .send(payload)
       .expect(413);
+    expect(response.body).toMatchObject({
+      code: 'WEBHOOK_PAYLOAD_TOO_LARGE',
+      requestId: 'oversized-webhook-request',
+    });
     await expect(prisma.githubWebhookDelivery.count()).resolves.toBe(0);
   });
 

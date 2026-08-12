@@ -5,11 +5,13 @@ import { AppModule } from './app.module';
 import { ApiExceptionFilter } from './common/errors/api-exception.filter';
 import { TRACE_CONFIG } from './common/config/config.token';
 import type { TraceConfig } from '@trace/config';
+import { establishRequestId, type RequestWithId } from './common/middleware/request-id.middleware';
 
 export async function createApplication(): Promise<INestApplication> {
   const app = await NestFactory.create(AppModule, { bodyParser: false });
   const config = app.get<TraceConfig>(TRACE_CONFIG);
 
+  app.use(establishRequestId);
   app.use('/api/v1/webhooks/github', raw({ type: 'application/json', limit: '256kb' }));
   const payloadLimitHandler: ErrorRequestHandler = (error, request, response, next) => {
     const unknownError: unknown = error;
@@ -23,7 +25,7 @@ export async function createApplication(): Promise<INestApplication> {
       response.status(413).json({
         code: isGithubWebhook ? 'WEBHOOK_PAYLOAD_TOO_LARGE' : 'PAYLOAD_TOO_LARGE',
         message: isGithubWebhook ? 'Webhook payload is too large.' : 'Request payload is too large.',
-        requestId: 'unknown',
+        requestId: (request as RequestWithId).requestId ?? 'unknown',
       });
       return;
     }

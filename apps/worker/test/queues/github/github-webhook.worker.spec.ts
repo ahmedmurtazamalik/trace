@@ -8,17 +8,23 @@ describe('GitHub webhook worker lifecycle', () => {
   let queue: Queue<{ deliveryId: string }>;
   let queueName: string;
   let worker: GithubWebhookWorker | undefined;
+  let skipObliterate = false;
 
   beforeEach(() => {
     queueName = `github-webhook-deliveries-worker-test-${process.pid}-${randomUUID()}`;
     queue = new Queue(queueName, { connection: { url: redisUrl } });
+    skipObliterate = false;
   });
 
   afterEach(async () => {
     await worker?.close();
     worker = undefined;
-    await queue.obliterate({ force: true });
-    await queue.close();
+    if (skipObliterate) {
+      await queue.disconnect();
+    } else {
+      await queue.obliterate({ force: true });
+      await queue.close();
+    }
   });
 
   it('processes a bounded durable reference and closes gracefully', async () => {
@@ -55,6 +61,48 @@ describe('GitHub webhook worker lifecycle', () => {
     });
 
     await expect(worker.start()).rejects.toThrow('Webhook worker startup failed.');
+  });
+
+  it('force-closes resources after the graceful shutdown deadline', async () => {
+    skipObliterate = true;
+    worker = new GithubWebhookWorker({
+      redisUrl,
+      queueName,
+      shutdownTimeoutMs: 50,
+      processDelivery: async () => new Promise<void>(() => undefined),
+      recordTerminalFailure: jest.fn().mockResolvedValue(undefined),
+    });
+    await worker.start();
+    await queue.add('process-github-webhook', { deliveryId: 'delivery-hung' }, { jobId: 'github-webhook-delivery-hung' });
+    const deadline = Date.now() + 2_000;
+    while ((await queue.getJobCounts('active')).active === 0 && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+
+    await expect(worker.close()).resolves.toBeUndefined();
+  });
+
+  it('sanitizes a terminal observability failure before BullMQ persistence', async () => {
+    const processDelivery = jest.fn().mockRejectedValue(new Error('secret processor fragment'));
+    const recordTerminalFailure = jest.fn().mockRejectedValue(new Error('secret observability fragment'));
+    worker = new GithubWebhookWorker({
+      redisUrl,
+      queueName,
+      processDelivery,
+      recordTerminalFailure,
+    });
+    await worker.start();
+
+    await queue.add('process-github-webhook', { deliveryId: 'delivery-observability-failure' }, {
+      attempts: 1,
+      jobId: 'github-webhook-delivery-observability-failure',
+    });
+    await worker.waitUntilIdle(5_000);
+
+    const failedJob = await queue.getJob('github-webhook-delivery-observability-failure');
+    expect(failedJob?.failedReason).toBe('WEBHOOK_PROCESSING_FAILED');
+    expect((failedJob?.stacktrace ?? []).join('\n')).not.toContain('secret observability fragment');
+    expect((failedJob?.stacktrace ?? []).join('\n')).not.toContain('secret processor fragment');
   });
 
   it('records one sanitized terminal failure after bounded retries are exhausted', async () => {
