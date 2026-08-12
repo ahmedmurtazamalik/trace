@@ -172,6 +172,56 @@ describe('GitHub webhook worker lifecycle', () => {
     worker = undefined;
   });
 
+  it('observes a late run-loop rejection after bounded worker-start cleanup', async () => {
+    const never = new Promise<never>(() => undefined);
+    let rejectRun: (reason: Error) => void = () => undefined;
+    const runPromise = new Promise<void>((_resolve, reject) => {
+      rejectRun = reject;
+    });
+    const runCatch = jest.spyOn(runPromise, 'catch');
+    const queueClose = jest.fn().mockReturnValue(never);
+    const queueDisconnect = jest.fn().mockReturnValue(never);
+    const workerClose = jest.fn().mockReturnValue(never);
+    const workerDisconnect = jest.fn().mockReturnValue(never);
+    const queueResource: WebhookQueueResource = {
+      on: jest.fn(),
+      waitUntilReady: jest.fn().mockResolvedValue(undefined),
+      getJobCounts: jest.fn(),
+      close: queueClose,
+      disconnect: queueDisconnect,
+    };
+    const workerResource: WebhookWorkerResource = {
+      on: jest.fn(),
+      run: jest.fn().mockReturnValue(runPromise),
+      waitUntilReady: jest.fn().mockRejectedValue(new Error('unavailable')),
+      pause: jest.fn(),
+      close: workerClose,
+      disconnect: workerDisconnect,
+    };
+    worker = new GithubWebhookWorker({
+      redisUrl,
+      queueName,
+      shutdownTimeoutMs: 50,
+      processDelivery: jest.fn().mockResolvedValue(undefined),
+      recordTerminalFailure: jest.fn().mockResolvedValue(undefined),
+      createQueue: () => queueResource,
+      createWorker: () => workerResource,
+    });
+
+    const startedAt = Date.now();
+    await expect(worker.start()).rejects.toThrow('Webhook worker startup failed.');
+
+    expect(Date.now() - startedAt).toBeLessThan(200);
+    expect(workerClose).toHaveBeenCalledTimes(1);
+    expect(queueClose).toHaveBeenCalledTimes(1);
+    expect(workerDisconnect).toHaveBeenCalledTimes(1);
+    expect(queueDisconnect).toHaveBeenCalledTimes(1);
+    expect(runCatch).toHaveBeenCalledTimes(1);
+    rejectRun(new Error('secret late run-loop rejection'));
+    await new Promise((resolve) => setImmediate(resolve));
+    worker = undefined;
+  });
+
   it('sanitizes a terminal observability failure before BullMQ persistence', async () => {
     const processDelivery = jest.fn().mockRejectedValue(new Error('secret processor fragment'));
     const recordTerminalFailure = jest.fn().mockRejectedValue(new Error('secret observability fragment'));

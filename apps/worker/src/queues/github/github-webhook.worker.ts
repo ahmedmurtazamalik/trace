@@ -88,6 +88,8 @@ export class GithubWebhookWorker {
     } catch (error) {
       const worker = this.worker;
       const queue = this.queue;
+      const runPromise = this.runPromise;
+      void runPromise?.catch(() => undefined);
       this.worker = undefined;
       this.queue = undefined;
       const cleanup = Promise.allSettled([
