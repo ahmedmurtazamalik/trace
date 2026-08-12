@@ -177,11 +177,10 @@ export class RepositoriesService {
         throw this.error('GITHUB_INSTALLATION_REQUIRED', 'An active GitHub App installation is required.', HttpStatus.CONFLICT);
       }
 
-      const synchronizedAt = new Date();
       const externalIds = repositories.map((repository) => repository.id);
       const currentlyOwned = await transaction.repository.findMany({
         where: { githubInstallationId: installationId },
-        select: { githubRepositoryId: true },
+        select: { id: true, githubRepositoryId: true, updatedAt: true },
       });
       const lockIds = [...new Set([...externalIds, ...currentlyOwned.map((repository) => repository.githubRepositoryId)])]
         .sort((left, right) => left < right ? -1 : left > right ? 1 : 0);
@@ -193,13 +192,13 @@ export class RepositoriesService {
       for (const repository of orderedRepositories) {
         const existing = await transaction.repository.findUnique({
           where: { githubRepositoryId: repository.id },
-          select: { id: true, githubInstallationId: true, lastSyncSequence: true },
+          select: { id: true, githubInstallationId: true, lastSyncSequence: true, updatedAt: true },
         });
         if (existing !== null && existing.lastSyncSequence > sequence) continue;
         if (existing !== null && existing.githubInstallationId !== installationId) {
           await transaction.userRepository.updateMany({
             where: { repositoryId: existing.id, accessRemovedAt: null },
-            data: { accessRemovedAt: synchronizedAt },
+            data: { accessRemovedAt: existing.updatedAt },
           });
         }
         const persisted = await transaction.repository.upsert({
@@ -242,18 +241,20 @@ export class RepositoriesService {
           lastSyncSequence: { lt: sequence },
           ...(externalIds.length === 0 ? {} : { githubRepositoryId: { notIn: externalIds } }),
         },
-        select: { id: true },
+        select: { id: true, updatedAt: true },
       });
       const removableIds = removableRepositories.map((repository) => repository.id);
       if (removableIds.length > 0) {
-        await transaction.repository.updateMany({
-          where: { id: { in: removableIds }, lastSyncSequence: { lt: sequence } },
-          data: { accessRemovedAt: synchronizedAt, lastSyncSequence: sequence },
-        });
-        await transaction.userRepository.updateMany({
-          where: { userId, accessRemovedAt: null, repositoryId: { in: removableIds } },
-          data: { accessRemovedAt: synchronizedAt },
-        });
+        for (const repository of removableRepositories) {
+          await transaction.repository.updateMany({
+            where: { id: repository.id, lastSyncSequence: { lt: sequence } },
+            data: { accessRemovedAt: repository.updatedAt, lastSyncSequence: sequence },
+          });
+          await transaction.userRepository.updateMany({
+            where: { userId, accessRemovedAt: null, repositoryId: repository.id },
+            data: { accessRemovedAt: repository.updatedAt },
+          });
+        }
       }
       return acceptedRepositoryCount;
     });
