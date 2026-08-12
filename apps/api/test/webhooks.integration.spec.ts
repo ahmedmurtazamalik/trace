@@ -159,8 +159,11 @@ describe('GitHub webhook acceptance', () => {
     await trackedRepository();
     const payload = pushPayload();
 
-    await postPush(payload).expect(202, { accepted: true });
-    await postPush(payload).expect(202, { accepted: true });
+    const [first, second] = await Promise.all([postPush(payload), postPush(payload)]);
+    expect(first.status).toBe(202);
+    expect(first.body).toEqual({ accepted: true });
+    expect(second.status).toBe(202);
+    expect(second.body).toEqual({ accepted: true });
 
     await expect(prisma.githubWebhookDelivery.count({ where: { githubDeliveryId: deliveryId } })).resolves.toBe(1);
     const jobs = await queue.getJobs(['wait', 'delayed', 'active', 'completed', 'failed']);
