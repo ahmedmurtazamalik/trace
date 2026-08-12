@@ -1,3 +1,8 @@
-import { DashboardPreview } from "@/components/dashboard/dashboard-preview";
 import { PageShell } from "@/components/page-shell";
-export default function DashboardPage() { return <PageShell eyebrow="Overview" title="Good morning, developer." description="A focused view of what moved across your workspace."><DashboardPreview/></PageShell>; }
+import { DashboardRoute } from "@/features/dashboard/dashboard-route";
+
+export default function DashboardPage() {
+  return <PageShell eyebrow="Overview" title="Development dashboard" description="See deterministic activity totals and recent work for the selected day.">
+    <DashboardRoute />
+  </PageShell>;
+}

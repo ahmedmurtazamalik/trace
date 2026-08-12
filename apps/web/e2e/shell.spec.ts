@@ -10,7 +10,7 @@ test.beforeEach(async ({ page }) => {
 });
 
 const routes = {
-  "/dashboard": "Good morning, developer.",
+  "/dashboard": "Development dashboard",
   "/repositories": "Repositories",
   "/activity": "Activity",
   "/reports": "Reports",

@@ -1,9 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { GitCommitHorizontal, GitPullRequest, Upload } from "lucide-react";
-import { Badge, Button, Card } from "@trace/ui";
+import { Button, Card } from "@trace/ui";
 import type { ActivityListQuery, ActivityListResponse, ActivitySummary, ActivitySource, ActivityType } from "@trace/shared";
+import { ActivitySummaryCard } from "./activity-summary-card";
 
 export type ActivityFilters = Pick<ActivityListQuery, "date" | "repositoryId" | "contributorId" | "source" | "type">;
 export type LoadActivity = (query: Partial<ActivityListQuery>) => Promise<ActivityListResponse>;
@@ -18,8 +18,6 @@ const validTypesBySource: Record<ActivitySource, Set<ActivityType>> = {
   cli: new Set(["working_tree_snapshot", "staged_change", "untracked_file", "local_commit"]),
 };
 
-function contributorName(item: ActivitySummary) { return item.contributor?.displayName ?? item.contributor?.username ?? "Unknown contributor"; }
-function icon(type: string) { if (type === "push") return <Upload aria-hidden="true" size={18} />; if (type === "pull_request") return <GitPullRequest aria-hidden="true" size={18} />; return <GitCommitHorizontal aria-hidden="true" size={18} />; }
 function filtered(filters: ActivityFilters) { return Object.fromEntries(Object.entries(filters).filter(([, value]) => value !== undefined && value !== "")) as ActivityFilters; }
 
 export function ActivityExperience({ loadActivity, initialFilters = {}, timezone = "UTC", onFiltersChange }: ActivityExperienceProps) {
@@ -87,9 +85,7 @@ export function ActivityExperience({ loadActivity, initialFilters = {}, timezone
     {loading && items.length === 0 ? <Card className="activity-state-card" role="status">Loading development activity…</Card>
       : error !== undefined && items.length === 0 ? <Card className="activity-state-card activity-state-error" role="alert"><p>{error}</p><Button className="trace-button-secondary" onClick={() => void reload()}>Retry</Button></Card>
       : items.length === 0 ? <Card className="activity-state-card"><h2>{Object.keys(filters).length ? "No activity matches these filters" : "No development activity yet"}</h2><p>{Object.keys(filters).length ? "Clear filters or choose a broader combination." : "Activity appears after a tracked repository sends development events."}</p>{Object.keys(filters).length > 0 && <Button className="trace-button-secondary" onClick={clear}>Clear filters</Button>}</Card>
-      : <div className="activity-timeline" aria-label="Development activity timeline">{items.map((item) => <Card className="activity-event-card" key={item.id}>
-        <span className="activity-event-icon">{icon(item.type)}</span><div className="activity-event-body"><div className="activity-event-heading"><Badge>{labels[item.type] ?? "Activity"}</Badge><span>{item.source.toUpperCase()}</span></div><h2>{item.facts.message ?? labels[item.type] ?? "Development activity"}</h2><p>{contributorName(item)} <span aria-hidden="true">·</span> {item.repository.fullName}</p><div className="activity-facts">{item.facts.branch !== null && <span>Branch {item.facts.branch}</span>}{item.facts.filesChanged !== null && <span>{item.facts.filesChanged} files</span>}{item.facts.additions !== null && <span className="activity-additions">+{item.facts.additions}</span>}{item.facts.deletions !== null && <span className="activity-deletions">−{item.facts.deletions}</span>}</div></div><time dateTime={item.occurredAt}>{new Date(item.occurredAt).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit", timeZone: "UTC" })}</time>
-      </Card>)}</div>}
+      : <div className="activity-timeline" aria-label="Development activity timeline">{items.map((item) => <ActivitySummaryCard item={item} key={item.id} />)}</div>}
     {nextCursor !== null && <div className="activity-pagination"><Button className="trace-button-secondary" disabled={loadingMore} onClick={() => void loadMore()}>{loadingMore ? "Loading…" : "Load more activity"}</Button></div>}
     {pageError !== undefined && <div className="activity-notice-error" role="alert">{pageError} <Button className="trace-button-secondary" onClick={() => void loadMore()}>Retry</Button></div>}
   </div>;

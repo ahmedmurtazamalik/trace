@@ -263,3 +263,49 @@ No Person A-owned backend, worker, shared-contract, root workspace, or infrastru
 ### Next-day joint gate
 - Person B Day 6 builds the Dashboard against the already frozen dashboard contract.
 - Person A Day 6 GitHub processing must be integrated through `main` before Day 6 coherence verification.
+
+## Day 6 — Dashboard (Person B)
+
+### Done
+- Replaced the Day 1 preview with a contract-shaped development dashboard.
+- Added all seven deterministic metrics: activity, repositories, contributors, commits, files changed, additions, and deletions.
+- Reused the canonical Activity summary card for recent work rather than duplicating factual rendering.
+- Added date and repository filtering with stable URL state and required-date validation.
+- Added `GITHUB_NOT_CONNECTED`, `NO_TRACKED_REPOSITORIES`, `NO_ACTIVITY`, `PARTIAL`, loading, and retryable error states with clear next actions.
+- Added responsive desktop/mobile layout and browser coverage.
+- Kept the fixture boundary visible in the UI.
+
+### Person B-owned files changed
+- `apps/web/app/(app)/dashboard/page.tsx`
+- `apps/web/app/globals.css`
+- `apps/web/e2e/dashboard.spec.ts`
+- `apps/web/src/features/dashboard/**`
+- `apps/web/src/features/activity/activity-summary-card.tsx`
+- `apps/web/src/features/activity/activity-experience.tsx`
+- `apps/web/src/mocks/fixtures/dashboard.ts`
+- `docs/person-b-handoffs.md`
+
+No Person A-owned backend, worker, shared-contract, root workspace, or infrastructure file was changed.
+
+### Contract and mock-versus-real status
+- Contract: frozen `packages/shared/src/dashboard.ts`, `packages/shared/src/activity.ts`, and Day 4 API documentation.
+- Mock-backed: dashboard load, all dashboard states, date/repository filters, metrics, and recent activity.
+- Real adapter: not yet; canonical `/api/v1/dashboard` remains scheduled for Person A Day 7.
+- Person A Day 6 processing: not present on remote `main`, any remote branch, or any PR at the initial, pre-verification, and final integration fetches, so integrated-tree proof against that unpublished work remains externally blocked.
+
+### TDD and verification
+- Expected RED: dashboard feature module absent.
+- Focused GREEN: dashboard component suite PASS, 8/8.
+- Expected RED: an empty date escaped the required frozen query boundary; the control now rejects empty intermediate values and sends no invalid request or URL update.
+- Dashboard Playwright journey: PASS, 2/2 across desktop and mobile.
+- Combined Activity/Dashboard browser regression after shared-card refactor: PASS, 4/4.
+- Full suite, build, ownership, and exact-main coherence results are recorded at the final Day 6 gate.
+
+### Issues and important notes
+- Dashboard data is deterministic illustrative data validated by `dashboardResponseSchema`; it is not live database, webhook, or Activity API data.
+- Day 5 PR #14 is merged into `main` as `846770f`; both GitHub CI jobs passed.
+- `day6` is local-only after the final coherence gate; `.hermes/` remains excluded.
+
+### Next-day joint gate
+- Integrate Person A Day 6 when it is actually published, then rerun seam checks against that exact tree.
+- Publish/open the Day 6 PR only when Ali explicitly requests that external action.
