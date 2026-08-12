@@ -307,11 +307,16 @@ export class AuthService {
   }
 
   private async issuePasswordReset(user: User, email: string, requestId?: string): Promise<void> {
-    await this.rateLimits.withLock('password-reset-issuance', user.id, RESET_ISSUANCE_LOCK_MS, async () => {
+    await this.rateLimits.withLock('password-reset-issuance', user.id, RESET_ISSUANCE_LOCK_MS, async (assertOwned) => {
       const rawToken = createOpaqueToken();
       const tokenHash = hashResetToken(rawToken);
       const expiresAt = new Date(Date.now() + RESET_TTL_MS);
-      const token = await this.prisma.$transaction(async (transaction) => {
+      const { token, priorTokenIds } = await this.prisma.$transaction(async (transaction) => {
+        await transaction.$queryRaw`SELECT "id" FROM "users" WHERE "id" = ${user.id} FOR UPDATE`;
+        const priorTokens = await transaction.passwordResetToken.findMany({
+          where: { userId: user.id, consumedAt: null },
+          select: { id: true },
+        });
         const created = await transaction.passwordResetToken.create({
           data: { userId: user.id, tokenHash, expiresAt },
         });
@@ -324,7 +329,7 @@ export class AuthService {
             requestId,
           },
         });
-        return created;
+        return { token: created, priorTokenIds: priorTokens.map(({ id }) => id) };
       });
 
       try {
@@ -334,8 +339,12 @@ export class AuthService {
         return;
       }
 
+      if (!await assertOwned()) {
+        await this.prisma.passwordResetToken.deleteMany({ where: { id: token.id, consumedAt: null } });
+        return;
+      }
       await this.prisma.passwordResetToken.updateMany({
-        where: { userId: user.id, id: { not: token.id }, consumedAt: null },
+        where: { userId: user.id, id: { in: priorTokenIds }, consumedAt: null },
         data: { consumedAt: new Date() },
       });
     });

@@ -17,6 +17,13 @@ end
 return 0
 `;
 
+const RENEW_LOCK_SCRIPT = `
+if redis.call('GET', KEYS[1]) == ARGV[1] then
+  return redis.call('PEXPIRE', KEYS[1], ARGV[2])
+end
+return 0
+`;
+
 @Injectable()
 export class AuthRateLimitService {
   constructor(private readonly redis: RedisService) {}
@@ -41,19 +48,39 @@ export class AuthRateLimitService {
     }
   }
 
-  async withLock(scope: string, identity: string, ttlMs: number, work: () => Promise<void>): Promise<boolean> {
+  async withLock(
+    scope: string,
+    identity: string,
+    ttlMs: number,
+    work: (assertOwned: () => Promise<boolean>) => Promise<void>,
+  ): Promise<boolean> {
     const digest = createHash('sha256').update(identity).digest('hex');
     const key = `trace:auth-lock:${scope}:${digest}`;
     const owner = randomUUID();
     try {
       const acquired = await this.redis.set(key, owner, 'PX', ttlMs, 'NX');
       if (acquired !== 'OK') return false;
+      let ownershipLost = false;
+      const renew = async (): Promise<void> => {
+        try {
+          const renewed = Number(await this.redis.eval(RENEW_LOCK_SCRIPT, 1, key, owner, ttlMs));
+          if (renewed !== 1) ownershipLost = true;
+        } catch {
+          ownershipLost = true;
+        }
+      };
+      const timer = setInterval(() => void renew(), Math.max(1, Math.floor(ttlMs / 3)));
+      timer.unref();
       try {
-        await work();
+        await work(async () => {
+          if (ownershipLost) return false;
+          return (await this.redis.get(key)) === owner;
+        });
       } finally {
+        clearInterval(timer);
         await this.redis.eval(RELEASE_LOCK_SCRIPT, 1, key, owner);
       }
-      return true;
+      return !ownershipLost;
     } catch {
       throw new HttpException(
         { code: 'SERVICE_UNAVAILABLE', message: 'Authentication is temporarily unavailable.' },

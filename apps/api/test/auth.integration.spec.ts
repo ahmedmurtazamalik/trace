@@ -4,6 +4,7 @@ import type { INestApplication } from '@nestjs/common';
 import { PrismaService } from '@trace/database';
 import { authSessionResponseSchema } from '@trace/shared';
 import { RedisService } from '../src/common/redis/redis.service';
+import { AuthRateLimitService } from '../src/modules/auth/auth-rate-limit.service';
 import request from 'supertest';
 
 import { createApplication } from '../src/bootstrap';
@@ -37,6 +38,7 @@ describe('authentication API', () => {
   let app: INestApplication;
   let server: Server;
   let redis: RedisService;
+  let rateLimits: AuthRateLimitService;
 
   beforeAll(async () => {
     process.env.NODE_ENV = 'test';
@@ -47,6 +49,7 @@ describe('authentication API', () => {
     await app.init();
     server = app.getHttpServer() as Server;
     redis = app.get(RedisService);
+    rateLimits = app.get(AuthRateLimitService);
     prisma = app.get(PrismaService);
   });
 
@@ -58,6 +61,44 @@ describe('authentication API', () => {
   afterAll(async () => {
     await removeTestUser();
     await app.close();
+  });
+
+  it('renews password-reset issuance ownership beyond the initial lease', async () => {
+    const mutations: string[] = [];
+    const first = rateLimits.withLock('lease-regression', username, 50, async (assertOwned) => {
+      await new Promise((resolve) => setTimeout(resolve, 80));
+      if (await assertOwned()) mutations.push('first-owner');
+    });
+    await new Promise((resolve) => setTimeout(resolve, 60));
+    const second = rateLimits.withLock('lease-regression', username, 50, async (assertOwned) => {
+      if (await assertOwned()) mutations.push('new-owner');
+    });
+
+    await Promise.all([first, second]);
+    expect(mutations).toEqual(['first-owner']);
+  });
+
+  it('never lets an older reset issuer retire a newer delivered token', async () => {
+    await request(server).post('/api/v1/auth/register').send({ username, email, password }).expect(201);
+    const user = await prisma.user.findUniqueOrThrow({ where: { username } });
+    const previous = await prisma.passwordResetToken.create({
+      data: { userId: user.id, tokenHash: createHash('sha256').update('previous').digest('hex'), expiresAt: new Date(Date.now() + 60_000) },
+    });
+    const olderIssuer = await prisma.passwordResetToken.create({
+      data: { userId: user.id, tokenHash: createHash('sha256').update('older').digest('hex'), expiresAt: new Date(Date.now() + 60_000) },
+    });
+    const newerIssuer = await prisma.passwordResetToken.create({
+      data: { userId: user.id, tokenHash: createHash('sha256').update('newer').digest('hex'), expiresAt: new Date(Date.now() + 60_000) },
+    });
+
+    await prisma.passwordResetToken.updateMany({
+      where: { userId: user.id, id: { in: [previous.id] }, consumedAt: null },
+      data: { consumedAt: new Date() },
+    });
+
+    expect((await prisma.passwordResetToken.findUniqueOrThrow({ where: { id: previous.id } })).consumedAt).not.toBeNull();
+    expect(await prisma.passwordResetToken.findUniqueOrThrow({ where: { id: olderIssuer.id } })).toMatchObject({ consumedAt: null });
+    expect(await prisma.passwordResetToken.findUniqueOrThrow({ where: { id: newerIssuer.id } })).toMatchObject({ consumedAt: null });
   });
 
   it('registers a user, establishes a secure session, and requires CSRF to log out', async () => {

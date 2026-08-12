@@ -96,7 +96,7 @@ Actual results:
 - Session cookies are HTTP-only, `SameSite=Lax`, API-wide, seven days, and `Secure` in production.
 - CSRF tokens are deterministically recoverable only with the HTTP-only session credential and server secret; authenticated mutations validate `X-CSRF-Token` against a persisted hash.
 - Disabled, revoked, and expired sessions fail closed. Password reset is single-use and atomically revokes all active sessions.
-- Forgot-password responses do not distinguish known, unknown, disabled, or email-less accounts in status, body, or randomized response timing. Eligible-account issuance continues asynchronously behind a per-user Redis lock.
+- Forgot-password responses do not distinguish known, unknown, disabled, or email-less accounts in status, body, or randomized response timing. Eligible-account issuance continues asynchronously behind a renewable per-user Redis lock; a PostgreSQL-locked snapshot limits each issuer to retiring only tokens that already existed before it.
 - Reset-token replacement preserves the previous valid token until delivery succeeds; failed replacements are removed, and successful replacements consume prior outstanding tokens.
 - Password-reset delivery is an injectable boundary. Tests use an in-memory adapter; non-test deployments fail closed with `503 SERVICE_UNAVAILABLE` for every identifier until an approved bounded provider is bound.
 - Redis enforces direct-address and normalized-principal limits for registration, login, forgot, and reset. Untrusted forwarded-address headers do not change the limiter principal, and a blocked direct address cannot churn new principal keys.
