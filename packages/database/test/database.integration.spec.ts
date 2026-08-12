@@ -86,6 +86,70 @@ describe('database foundation', () => {
     }
   });
 
+  it('upgrades existing commit and activity rows for canonical Day 6 processing', async () => {
+    const schema = `activity_upgrade_${randomUUID().replaceAll('-', '')}`;
+    const databaseUrl = new URL(process.env.DATABASE_URL as string);
+    databaseUrl.searchParams.set('schema', schema);
+    const isolated = new PrismaClient({ datasourceUrl: databaseUrl.toString() });
+    await prisma.$executeRawUnsafe(`CREATE SCHEMA "${schema}"`);
+
+    try {
+      const migrationsRoot = path.join(__dirname, '../prisma/migrations');
+      const migrations = (await readdir(migrationsRoot)).sort();
+      const day6Migration = '20260812190000_github_activity_processing';
+      for (const migration of migrations.filter((name) => name < day6Migration)) {
+        const sql = (await readFile(path.join(migrationsRoot, migration, 'migration.sql'), 'utf8'))
+          .replaceAll('"public".', `"${schema}".`);
+        await executeMigration(isolated, sql);
+      }
+      await executeMigration(isolated, `
+        INSERT INTO users (id, username, password_hash, updated_at)
+        VALUES ('legacy_user', 'legacy-user', 'not-used', CURRENT_TIMESTAMP);
+        INSERT INTO github_accounts (id, user_id, github_user_id, github_username, updated_at)
+        VALUES ('legacy_account', 'legacy_user', 101, 'legacy-user', CURRENT_TIMESTAMP);
+        INSERT INTO github_installations
+          (id, github_installation_id, github_account_id, account_type, account_login, updated_at)
+        VALUES ('legacy_installation', 201, 'legacy_account', 'USER', 'legacy-user', CURRENT_TIMESTAMP);
+        INSERT INTO repositories
+          (id, github_repository_id, github_installation_id, owner, name, full_name, private, default_branch, updated_at)
+        VALUES ('legacy_repository', 301, 'legacy_installation', 'legacy', 'repo', 'legacy/repo', false, 'main', CURRENT_TIMESTAMP);
+        INSERT INTO commits
+          (id, repository_id, sha, message, authored_at, committed_at)
+        VALUES ('legacy_commit', 'legacy_repository', repeat('a', 40), 'Legacy commit', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
+        INSERT INTO activity_events
+          (id, repository_id, source, type, occurred_at, metadata)
+        VALUES ('legacy_activity', 'legacy_repository', 'github', 'commit', CURRENT_TIMESTAMP, '{}'::jsonb)
+      `);
+
+      const day6Sql = await readFile(path.join(migrationsRoot, day6Migration, 'migration.sql'), 'utf8');
+      await executeMigration(isolated, day6Sql);
+
+      const commits = await isolated.$queryRawUnsafe<Array<{
+        author_name: string;
+        author_email: string;
+        committer_name: string;
+        committer_email: string;
+      }>>('SELECT author_name, author_email, committer_name, committer_email FROM commits WHERE id = \'legacy_commit\'');
+      expect(commits).toEqual([{
+        author_name: '[legacy unavailable]',
+        author_email: '[legacy unavailable]',
+        committer_name: '[legacy unavailable]',
+        committer_email: '[legacy unavailable]',
+      }]);
+      const activities = await isolated.$queryRawUnsafe<Array<{ source_key: string }>>(
+        'SELECT source_key FROM activity_events WHERE id = \'legacy_activity\'',
+      );
+      expect(activities).toEqual([{ source_key: 'legacy:legacy_activity' }]);
+      const indexes = await isolated.$queryRawUnsafe<Array<{ indexname: string }>>(
+        "SELECT indexname FROM pg_indexes WHERE schemaname = current_schema() AND tablename = 'activity_events' AND indexname = 'activity_events_source_key_key'",
+      );
+      expect(indexes).toEqual([{ indexname: 'activity_events_source_key_key' }]);
+    } finally {
+      await isolated.$disconnect();
+      await prisma.$executeRawUnsafe(`DROP SCHEMA IF EXISTS "${schema}" CASCADE`);
+    }
+  });
+
   it('enforces canonical repository and SHA uniqueness in PostgreSQL', async () => {
     const existing = await prisma.commit.findUniqueOrThrow({ where: { id: 'seed_commit_api_foundation' } });
 
@@ -95,6 +159,10 @@ describe('database foundation', () => {
           repositoryId: existing.repositoryId,
           sha: existing.sha,
           message: 'Duplicate must be rejected',
+          authorName: 'Duplicate Author',
+          authorEmail: 'duplicate-author@example.test',
+          committerName: 'Duplicate Committer',
+          committerEmail: 'duplicate-committer@example.test',
           authoredAt: existing.authoredAt,
           committedAt: existing.committedAt,
         },

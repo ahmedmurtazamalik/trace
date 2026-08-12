@@ -199,6 +199,12 @@ model Commit {
   repositoryId           String       @map("repository_id")
   sha                    String       @db.VarChar(64)
   message                String
+  authorName             String       @map("author_name")
+  authorEmail            String       @map("author_email")
+  authorUsername         String?      @map("author_username")
+  committerName          String       @map("committer_name")
+  committerEmail         String       @map("committer_email")
+  committerUsername      String?      @map("committer_username")
   authorContributorId    String?      @map("author_contributor_id")
   committerContributorId String?      @map("committer_contributor_id")
   authoredAt             DateTime     @map("authored_at")
@@ -251,6 +257,7 @@ model PushEvent {
 
 model ActivityEvent {
   id            String         @id @default(cuid())
+  sourceKey     String         @unique @map("source_key")
   repositoryId  String         @map("repository_id")
   contributorId String?        @map("contributor_id")
   source        ActivitySource

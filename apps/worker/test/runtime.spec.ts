@@ -47,6 +47,49 @@ describe('worker runtime composition', () => {
     }
   });
 
+  it('closes application resources after the worker stops', async () => {
+    const closeResources = jest.fn().mockResolvedValue(undefined);
+    const close = jest.fn().mockResolvedValue(undefined);
+    const lifecycle: WorkerLifecycle = {
+      start: jest.fn().mockResolvedValue(undefined),
+      close,
+      completion: new Promise<void>(() => undefined),
+    };
+    const stop = await runGithubWebhookWorker({
+      environment: { REDIS_URL: redisUrl },
+      processDelivery: jest.fn().mockResolvedValue(undefined),
+      recordTerminalFailure: jest.fn().mockResolvedValue(undefined),
+      closeResources,
+      workerFactory: () => lifecycle,
+    });
+
+    await stop();
+    await stop();
+
+    expect(close).toHaveBeenCalledTimes(1);
+    expect(closeResources).toHaveBeenCalledTimes(1);
+  });
+
+  it('bounds application resource cleanup after the worker stops', async () => {
+    const closeResources = jest.fn(() => new Promise<void>(() => undefined));
+    const lifecycle: WorkerLifecycle = {
+      start: jest.fn().mockResolvedValue(undefined),
+      close: jest.fn().mockResolvedValue(undefined),
+      completion: new Promise<void>(() => undefined),
+    };
+    const stop = await runGithubWebhookWorker({
+      environment: { REDIS_URL: redisUrl },
+      processDelivery: jest.fn().mockResolvedValue(undefined),
+      recordTerminalFailure: jest.fn().mockResolvedValue(undefined),
+      closeResources,
+      resourceCleanupTimeoutMs: 20,
+      workerFactory: () => lifecycle,
+    });
+
+    await expect(stop()).rejects.toThrow('Application resource cleanup timed out.');
+    expect(closeResources).toHaveBeenCalledTimes(1);
+  });
+
   it('marks the process failed and closes when the run loop dies', async () => {
     const signals = new SignalProcess();
     let rejectCompletion: ((error: Error) => void) | undefined;

@@ -1,1 +1,5 @@
-throw new Error('Webhook delivery processor is not configured; Day 6 composition is required before starting the consumer.');
+import { startGithubActivityWorker } from './application';
+
+void startGithubActivityWorker({ environment: process.env }).catch(() => {
+  process.exitCode = 1;
+});

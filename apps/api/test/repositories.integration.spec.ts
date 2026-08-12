@@ -246,6 +246,7 @@ describe('Repository API', () => {
     expect(membership.accessRemovedAt).toBeInstanceOf(Date);
     await prisma.activityEvent.create({
       data: {
+        sourceKey: `test:removed-repository:${stale.id}`,
         repositoryId: stale.id,
         source: 'github',
         type: 'push',
@@ -290,7 +291,7 @@ describe('Repository API', () => {
     const repository = await prisma.repository.findUniqueOrThrow({ where: { githubRepositoryId: 7_001n } });
     const contributor = await prisma.contributor.create({ data: { githubUserId: 44_001n, username: 'day4-contributor' } });
     await prisma.activityEvent.create({
-      data: { repositoryId: repository.id, contributorId: contributor.id, source: 'github', type: 'push', occurredAt: new Date('2026-08-12T08:00:00.000Z'), metadata: {} },
+      data: { sourceKey: `test:repository-detail:${repository.id}`, repositoryId: repository.id, contributorId: contributor.id, source: 'github', type: 'push', occurredAt: new Date('2026-08-12T08:00:00.000Z'), metadata: {} },
     });
 
     const response = await request(server).get(`/api/v1/repositories/${repository.id}`).set('Cookie', identity.cookie).expect(200);

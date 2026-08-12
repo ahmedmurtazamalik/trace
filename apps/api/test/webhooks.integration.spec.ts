@@ -1,5 +1,7 @@
 import { createHmac } from 'node:crypto';
+import { execFile } from 'node:child_process';
 import type { Server } from 'node:http';
+import { promisify } from 'node:util';
 import type { INestApplication } from '@nestjs/common';
 import { PrismaService } from '@trace/database';
 import { Queue } from 'bullmq';
@@ -10,6 +12,7 @@ import { GithubWebhookPublisher } from '../src/modules/webhooks/github-webhook.p
 const webhookSecret = 'day5-test-webhook-secret';
 const deliveryId = '11111111-2222-4333-8444-555555555555';
 const username = 'day5.webhook.user';
+const execFileAsync = promisify(execFile);
 
 function signature(payload: string): string {
   return `sha256=${createHmac('sha256', webhookSecret).update(payload).digest('hex')}`;
@@ -49,6 +52,9 @@ describe('GitHub webhook acceptance', () => {
 
   async function cleanup(): Promise<void> {
     await queue.obliterate({ force: true });
+    await prisma.activityEvent.deleteMany({ where: { repository: { githubRepositoryId: 830_001n } } });
+    await prisma.pushEvent.deleteMany({ where: { repository: { githubRepositoryId: 830_001n } } });
+    await prisma.commit.deleteMany({ where: { repository: { githubRepositoryId: 830_001n } } });
     await prisma.githubWebhookDelivery.deleteMany({
       where: {
         OR: [
@@ -154,6 +160,47 @@ describe('GitHub webhook acceptance', () => {
       data: { deliveryId: delivery.id },
       opts: { attempts: 5 },
     });
+  });
+
+  it('creates canonical activity exactly once from a signed mocked push through Redis and the worker', async () => {
+    await trackedRepository();
+    const sha = '4'.repeat(40);
+    const payload = JSON.stringify({
+      ...JSON.parse(pushPayload()) as object,
+      after: sha,
+      commits: [{
+        id: sha,
+        tree_id: '5'.repeat(40),
+        distinct: true,
+        message: 'Signed Day 6 gate',
+        timestamp: '2026-08-12T14:00:00.000Z',
+        url: `https://github.com/day5-webhook-org/tracked/commit/${sha}`,
+        author: { name: 'Webhook Author', email: 'author@example.test', username: null },
+        committer: { name: 'Webhook Committer', email: 'committer@example.test', username: null },
+        added: ['src/day-6.ts'],
+        removed: [],
+        modified: [],
+      }],
+    });
+
+    await postPush(payload).expect(202, { accepted: true });
+    await postPush(payload).expect(202, { accepted: true });
+    await execFileAsync('corepack', [
+      'pnpm', 'exec', 'tsx', 'apps/worker/test/support/process-accepted-delivery.ts',
+    ], {
+      cwd: '../..',
+      env: process.env,
+      timeout: 20_000,
+    });
+
+    const delivery = await prisma.githubWebhookDelivery.findUniqueOrThrow({ where: { githubDeliveryId: deliveryId } });
+    expect(delivery.status).toBe('completed');
+    const repository = await prisma.repository.findUniqueOrThrow({ where: { githubRepositoryId: 830_001n } });
+    expect(await prisma.pushEvent.count({ where: { githubDeliveryId: deliveryId } })).toBe(1);
+    expect(await prisma.commit.count({ where: { repositoryId: repository.id, sha } })).toBe(1);
+    expect(await prisma.activityEvent.count({ where: {
+      sourceKey: { in: [`github:push:${deliveryId}`, `github:commit:${repository.id}:${sha}`] },
+    } })).toBe(2);
   });
 
   it('acknowledges a duplicate delivery without duplicating its row or queue job', async () => {

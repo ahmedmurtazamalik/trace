@@ -229,3 +229,30 @@ Final recorded results:
 
 - Push/commit normalization, enrichment, activity persistence, and processing-state transitions remain Day 6.
 - AI calls and report generation remain outside webhook request and worker acceptance infrastructure.
+
+---
+
+## Day 6 — Person A
+
+### Done
+
+- Composed the real GitHub activity processor into the existing `github-webhook-deliveries` worker; the executable now validates PostgreSQL, Redis, and GitHub App configuration and closes Prisma with BullMQ on signals or fatal run-loop failure.
+- Reads only the durable internal delivery-row ID from Redis, revalidates the complete delivery → installation → repository authority chain against stable external IDs before provider I/O and again transactionally under delivery-advisory → installation-row → repository-row → delivery-row locks, and moves the delivery through `processing` to `completed`. Later revocation does not strand already accepted historical work, while concurrent repository reassignment cannot race canonical persistence.
+- Stores one push per GitHub delivery UUID and one commit per repository+SHA, with repository-relative file paths/statuses and generic push/commit activity rows.
+- Assigns contributor foreign keys only from stable GitHub numeric user IDs. Webhook author/committer name, email, and optional username are retained as raw facts and are never used to guess identity.
+- Uses deterministic activity `sourceKey` values for push and commit idempotency. Concurrent overlapping deliveries in one worker process coalesce the same repository+SHA enrichment request through transaction completion; all processes converge through database uniqueness on one commit and one commit activity.
+- Adds bounded GitHub API enrichment only for unseen commits. Each request has a fixed timeout and streamed response-byte cap, commit-file pagination is capped at three 100-file pages, repository paths and numeric/string facts are bounded, malformed provider facts fail closed, and App/installation credentials remain request-local.
+- Persists enriched authored/committed times, stable contributor identities, numeric commit totals, and per-file additions/deletions/rename paths when available; the bounded accepted webhook facts remain sufficient when enrichment is not configured in tests.
+- Migration `20260812190000_github_activity_processing` adds raw author/committer facts and unique activity source keys. Existing rows are retained with explicit legacy-unavailable identity facts and deterministic `legacy:<activity-id>` keys before non-null/unique enforcement.
+- Terminal retries retain the Day 5 five-attempt policy and persist only `WEBHOOK_PROCESSING_FAILED`; raw database, Redis, provider, and payload errors are not stored in BullMQ terminal metadata.
+
+### Verification boundary
+
+- Real PostgreSQL tests cover delivery retry idempotency, concurrent overlapping pushes, stable-ID contributor normalization, file metadata, malformed-payload rollback, and historical populated-schema migration.
+- A signed mocked push → Nest webhook acceptance → PostgreSQL ledger → Redis/BullMQ → production worker/processor → PostgreSQL gate proves duplicate delivery creates exactly one canonical push, commit, and activity set.
+- No `apps/web/**`, `packages/ui/**`, activity API, dashboard API, AI, or report functionality was added.
+
+### Deferred by plan
+
+- Activity/dashboard endpoint implementation, authorization, date filters, timezone boundaries, and cursor pagination remain Day 7.
+- Report aggregation and all AI/rendering work remain Days 8–10.

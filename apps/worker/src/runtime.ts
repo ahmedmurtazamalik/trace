@@ -10,6 +10,8 @@ export interface WorkerRuntimeOptions {
   environment: NodeJS.ProcessEnv;
   processDelivery(deliveryId: string): Promise<void>;
   recordTerminalFailure(deliveryId: string, code: 'WEBHOOK_PROCESSING_FAILED'): Promise<void>;
+  closeResources?: () => Promise<void>;
+  resourceCleanupTimeoutMs?: number;
   signals?: NodeJS.Process;
   workerFactory?: (options: ConstructorParameters<typeof GithubWebhookWorker>[0]) => WorkerLifecycle;
 }
@@ -37,7 +39,19 @@ export async function runGithubWebhookWorker(options: WorkerRuntimeOptions): Pro
   let stopping: Promise<void> | undefined;
   const stop = async (): Promise<void> => {
     if (stopping !== undefined) return stopping;
-    stopping = worker.close();
+    stopping = (async () => {
+      try {
+        await worker.close();
+      } finally {
+        if (options.closeResources !== undefined) {
+          await withTimeout(
+            options.closeResources(),
+            options.resourceCleanupTimeoutMs ?? 10_000,
+            'Application resource cleanup timed out.',
+          );
+        }
+      }
+    })();
     await stopping;
     signals.off('SIGINT', onSignal);
     signals.off('SIGTERM', onSignal);
@@ -50,6 +64,18 @@ export async function runGithubWebhookWorker(options: WorkerRuntimeOptions): Pro
     return stop().catch(() => undefined);
   });
   return stop;
+}
+
+function withTimeout(operation: Promise<void>, timeoutMs: number, message: string): Promise<void> {
+  let timer: NodeJS.Timeout | undefined;
+  return Promise.race([
+    operation,
+    new Promise<never>((_resolve, reject) => {
+      timer = setTimeout(() => reject(new Error(message)), timeoutMs);
+    }),
+  ]).finally(() => {
+    if (timer !== undefined) clearTimeout(timer);
+  });
 }
 
 function integer(value: string | undefined, fallback: number, minimum: number, maximum: number): number {
