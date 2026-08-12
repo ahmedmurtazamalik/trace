@@ -78,6 +78,29 @@ describe('authentication API', () => {
     expect(mutations).toEqual(['first-owner']);
   });
 
+  it('never lets an older reset issuer retire a newer delivered token', async () => {
+    await request(server).post('/api/v1/auth/register').send({ username, email, password }).expect(201);
+    const user = await prisma.user.findUniqueOrThrow({ where: { username } });
+    const previous = await prisma.passwordResetToken.create({
+      data: { userId: user.id, tokenHash: createHash('sha256').update('previous').digest('hex'), expiresAt: new Date(Date.now() + 60_000) },
+    });
+    const olderIssuer = await prisma.passwordResetToken.create({
+      data: { userId: user.id, tokenHash: createHash('sha256').update('older').digest('hex'), expiresAt: new Date(Date.now() + 60_000) },
+    });
+    const newerIssuer = await prisma.passwordResetToken.create({
+      data: { userId: user.id, tokenHash: createHash('sha256').update('newer').digest('hex'), expiresAt: new Date(Date.now() + 60_000) },
+    });
+
+    await prisma.passwordResetToken.updateMany({
+      where: { userId: user.id, id: { in: [previous.id] }, consumedAt: null },
+      data: { consumedAt: new Date() },
+    });
+
+    expect((await prisma.passwordResetToken.findUniqueOrThrow({ where: { id: previous.id } })).consumedAt).not.toBeNull();
+    expect(await prisma.passwordResetToken.findUniqueOrThrow({ where: { id: olderIssuer.id } })).toMatchObject({ consumedAt: null });
+    expect(await prisma.passwordResetToken.findUniqueOrThrow({ where: { id: newerIssuer.id } })).toMatchObject({ consumedAt: null });
+  });
+
   it('registers a user, establishes a secure session, and requires CSRF to log out', async () => {
     const registered = await request(server)
       .post('/api/v1/auth/register')
