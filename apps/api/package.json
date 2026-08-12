@@ -21,7 +21,7 @@
     "@trace/github": "workspace:*",
     "@trace/shared": "workspace:*",
     "argon2": "0.44.0",
-    "bullmq": "5.58.5",
+    "bullmq": "6.1.0",
     "class-transformer": "0.5.1",
     "class-validator": "0.14.2",
     "express": "5.1.0",

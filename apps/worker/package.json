@@ -9,7 +9,7 @@
     "test": "jest --runInBand"
   },
   "dependencies": {
-    "bullmq": "5.58.5"
+    "bullmq": "6.1.0"
   },
   "devDependencies": {
     "@types/jest": "29.5.14",
