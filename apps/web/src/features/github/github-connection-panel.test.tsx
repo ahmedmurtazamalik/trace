@@ -58,16 +58,25 @@ describe("GitHub connection UX", () => {
     expect(screen.getByText("2 tracked")).toBeInTheDocument();
   });
 
-  it("confirms disconnect, sends in-memory CSRF, and keeps history messaging", async () => {
+  it("confirms disconnect, sends in-memory CSRF, and refreshes the retained backend state", async () => {
     const revokeConnection = vi.fn().mockResolvedValue({ success: true, historyRetained: true });
-    renderPanel({ loadStatus: vi.fn().mockResolvedValue(connected), revokeConnection });
+    const loadStatus = vi.fn()
+      .mockResolvedValueOnce(connected)
+      .mockResolvedValueOnce({
+        ...reconnect,
+        installationAuthorization: { status: "NOT_INSTALLED" as const, installation: null },
+        accessibleRepositoryCount: 0,
+        trackedRepositoryCount: 0,
+      });
+    renderPanel({ loadStatus, revokeConnection });
     await screen.findByText("@alice-dev");
     await userEvent.click(screen.getByRole("button", { name: "Disconnect GitHub" }));
     expect(screen.getByRole("dialog")).toHaveTextContent("Historical activity remains in Trace");
     await userEvent.click(screen.getByRole("button", { name: "Confirm disconnect" }));
     await waitFor(() => expect(revokeConnection).toHaveBeenCalledWith("csrf-value"));
-    expect(await screen.findByRole("status")).toHaveTextContent("disconnected");
-    expect(screen.getByRole("heading", { name: "Connect GitHub" })).toBeInTheDocument();
+    await waitFor(() => expect(loadStatus).toHaveBeenCalledTimes(2));
+    expect(await screen.findByRole("button", { name: "Reconnect GitHub" })).toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent("disconnected");
   });
 
   it("renders reconnect, suspended installation, and closed callback feedback safely", async () => {
