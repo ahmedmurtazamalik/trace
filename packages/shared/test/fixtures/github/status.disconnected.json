@@ -1,0 +1,13 @@
+{
+  "accountConnection": {
+    "status": "DISCONNECTED",
+    "account": null
+  },
+  "installationAuthorization": {
+    "status": "NOT_INSTALLED",
+    "installation": null
+  },
+  "accessibleRepositoryCount": 0,
+  "trackedRepositoryCount": 0,
+  "historyRetained": true
+}

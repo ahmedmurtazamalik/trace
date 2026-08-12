@@ -1,0 +1,22 @@
+{
+  "accountConnection": {
+    "status": "RECONNECT_REQUIRED",
+    "account": {
+      "id": "github-account-1",
+      "username": "alice-dev",
+      "displayName": "Alice Developer",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/12345"
+    }
+  },
+  "installationAuthorization": {
+    "status": "SUSPENDED",
+    "installation": {
+      "id": "installation-1",
+      "accountType": "ORGANIZATION",
+      "accountLogin": "trace-example"
+    }
+  },
+  "accessibleRepositoryCount": 0,
+  "trackedRepositoryCount": 2,
+  "historyRetained": true
+}

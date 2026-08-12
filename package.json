@@ -1,4 +1,36 @@
 {
   "name": "trace",
-  "private": true
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "pnpm@10.15.1",
+  "scripts": {
+    "build": "pnpm -r --if-present build",
+    "typecheck": "pnpm -r --if-present typecheck",
+    "lint": "pnpm -r --if-present lint",
+    "test": "pnpm -r --if-present test",
+    "test:integration": "pnpm --filter @trace/database test:integration && pnpm --filter @trace/api test:integration",
+    "infra:up": "docker compose up -d postgres redis",
+    "infra:down": "docker compose down",
+    "db:generate": "pnpm --filter @trace/database db:generate",
+    "db:migrate": "pnpm --filter @trace/database db:migrate",
+    "db:migrate:dev": "pnpm --filter @trace/database db:migrate:dev",
+    "db:seed": "pnpm --filter @trace/database db:seed"
+  },
+  "devDependencies": {
+    "@eslint/js": "9.35.0",
+    "eslint": "9.35.0",
+    "globals": "16.3.0",
+    "typescript": "5.9.2",
+    "typescript-eslint": "8.42.0"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "@nestjs/core",
+      "@prisma/client",
+      "@prisma/engines",
+      "argon2",
+      "esbuild",
+      "prisma"
+    ]
+  }
 }
