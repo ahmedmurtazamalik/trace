@@ -1,0 +1,5 @@
+{
+  "error": "access_denied",
+  "error_description": "The user denied the authorization request.",
+  "state": "opaque-state-at-least-thirty-two-characters"
+}

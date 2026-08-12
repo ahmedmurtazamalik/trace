@@ -1,3 +1,3 @@
 {
-  "authorizationUrl": "https://github.com/login/oauth/authorize?client_id=trace-client&state=opaque-state"
+  "authorizationUrl": "https://github.com/login/oauth/authorize?client_id=trace-client&state=opaque-state-at-least-thirty-two-characters"
 }

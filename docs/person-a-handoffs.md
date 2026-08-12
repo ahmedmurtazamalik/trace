@@ -96,7 +96,9 @@ Actual results:
 - Session cookies are HTTP-only, `SameSite=Lax`, API-wide, seven days, and `Secure` in production.
 - CSRF tokens are deterministically recoverable only with the HTTP-only session credential and server secret; authenticated mutations validate `X-CSRF-Token` against a persisted hash.
 - Disabled, revoked, and expired sessions fail closed. Password reset is single-use and atomically revokes all active sessions.
-- Forgot-password responses do not distinguish known, unknown, disabled, or email-less accounts.
+- Forgot-password responses do not distinguish known, unknown, disabled, or email-less accounts in status, body, or randomized response timing. Eligible-account issuance continues asynchronously behind a per-user Redis lock.
+- Reset-token replacement preserves the previous valid token until delivery succeeds; failed replacements are removed, and successful replacements consume prior outstanding tokens.
+- Password-reset delivery is an injectable boundary. Tests use an in-memory adapter; non-test deployments fail closed with `503 SERVICE_UNAVAILABLE` for every identifier until an approved bounded provider is bound.
 - Redis enforces direct-address and normalized-principal limits for registration, login, forgot, and reset. Untrusted forwarded-address headers do not change the limiter principal, and a blocked direct address cannot churn new principal keys.
 - Security-relevant successful transitions create audit events without raw credentials or tokens.
 - Added reusable session authentication guard, CSRF guard, and current-session decorator for later authorized APIs.
@@ -122,13 +124,12 @@ Published in:
 
 Frozen operations:
 
-- `POST /api/v1/github/connect`
+- `GET /api/v1/github/connect` (also used to reconnect)
 - `GET /api/v1/github/callback`
 - `GET /api/v1/github/status`
-- `POST /api/v1/github/reconnect`
-- `POST /api/v1/github/disconnect`
+- `DELETE /api/v1/github/connection`
 
-The contract keeps Trace account connection separate from GitHub App installation authorization, uses only backend-provided HTTPS GitHub authorization URLs, exposes closed callback outcomes, never exposes provider/state/token details, and guarantees `historyRetained: true` on disconnect.
+The contract keeps Trace account connection separate from GitHub App installation authorization, uses only backend-provided HTTPS GitHub authorization URLs, validates both successful and provider-denied callbacks, exposes closed callback outcomes, never exposes provider/state/token details, and guarantees `historyRetained: true` on disconnect.
 
 No GitHub controller, provider adapter, OAuth exchange, App installation, repository synchronization, frontend, or CLI behavior was implemented on Day 2.
 

@@ -20,10 +20,17 @@ export const githubConnectResponseSchema = z.object({
   ),
 });
 
-export const githubCallbackQuerySchema = z.object({
-  code: z.string().min(1).max(512),
-  state: z.string().min(32).max(512),
-});
+export const githubCallbackQuerySchema = z.union([
+  z.object({
+    code: z.string().min(1).max(512),
+    state: z.string().min(32).max(512),
+  }),
+  z.object({
+    error: z.literal('access_denied'),
+    error_description: z.string().min(1).max(1_024).optional(),
+    state: z.string().min(32).max(512),
+  }),
+]);
 
 export const githubCallbackResultSchema = z.discriminatedUnion('result', [
   z.object({ result: z.literal('connected') }),

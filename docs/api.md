@@ -63,6 +63,8 @@ Schemas, inferred TypeScript types, and the closed auth error-code enum live in 
 | `POST` | `/api/v1/auth/password/forgot` | `202` | `ForgotPasswordRequest` | `ForgotPasswordResponse` | `400 VALIDATION_ERROR`; `429 RATE_LIMITED` |
 | `POST` | `/api/v1/auth/password/reset` | `200` | `ResetPasswordRequest` | `{ "success": true }` | `400 VALIDATION_ERROR`; `400 INVALID_OR_EXPIRED_RESET_TOKEN`; `429 RATE_LIMITED` |
 
+Any authentication endpoint may return `503 SERVICE_UNAVAILABLE` when required security configuration or Redis-backed abuse controls are unavailable; authentication fails closed in that state.
+
 `AuthSessionResponse` contains public user data plus a CSRF token. It never contains a session token or password material. Registration and login establish the session through a secure HTTP-only cookie in Day 2. Clients submit the returned token on every state-changing authenticated request in the `X-CSRF-Token` HTTP header (canonical lowercase contract constant: `csrfHeaderName = "x-csrf-token"`). The token is not sent in a request body or a separate cookie.
 
 ### Endpoint examples
@@ -134,7 +136,7 @@ Request and success-response fixtures for all six auth endpoints are validated b
 - Disabled, revoked, and expired sessions are rejected. Password reset revokes every active session and consumes all outstanding reset tokens.
 - Trace usernames and optional emails are owned case-insensitively, enforced by PostgreSQL functional unique indexes as well as API checks.
 - Registration, login, forgot-password, and reset-password are protected by Redis-backed direct-address and normalized-principal rate limits. The API does not trust `X-Forwarded-For` unless deployment architecture is changed and reviewed later.
-- Reset tokens are opaque, single-use, expire after 30 minutes, and are stored only as SHA-256 hashes. The endpoint calls an injectable delivery boundary; no outbound email provider or raw-token logging is included in the repository.
+- Reset tokens are opaque, single-use, expire after 30 minutes, and are stored only as SHA-256 hashes. Forgot-password uses a bounded public response window while eligible-account issuance continues asynchronously behind a per-user Redis lock. A failed replacement preserves the prior token; only successful delivery consumes older tokens. The endpoint calls an injectable delivery boundary. Because choosing an outbound provider is outside Day 2, non-test deployments return `503 SERVICE_UNAVAILABLE` for all forgot-password identifiers until a bounded provider is bound; they never silently persist a replacement through a no-op adapter.
 
 ## Frozen GitHub connection contract for Day 3
 
@@ -144,11 +146,10 @@ Schemas and types live in `packages/shared/src/github.ts`; frozen fixtures live 
 
 | Method | Path | Success | Request | Success behavior | Documented errors |
 | --- | --- | --- | --- | --- | --- |
-| `POST` | `/api/v1/github/connect` | `200` | authenticated session + `X-CSRF-Token`; no body | `GithubConnectResponse` containing a backend-generated HTTPS `github.com` authorization URL | `401 UNAUTHENTICATED`; `403 CSRF_INVALID`; `429 RATE_LIMITED` |
-| `GET` | `/api/v1/github/callback?code=...&state=...` | `302` | `GithubCallbackQuery`; browser session cookie | Redirect to the configured frontend GitHub settings route with a closed `GithubCallbackResult` query result | `GITHUB_STATE_INVALID`; `GITHUB_CALLBACK_FAILED` are converted to safe closed callback results, never raw provider text |
+| `GET` | `/api/v1/github/connect` | `200` | authenticated session; no body | `GithubConnectResponse` containing a backend-generated HTTPS `github.com` authorization URL; the same operation is used when reconnecting | `401 UNAUTHENTICATED`; `429 RATE_LIMITED` |
+| `GET` | `/api/v1/github/callback?code=...&state=...` or `?error=access_denied&state=...` | `302` | success or provider-denial `GithubCallbackQuery`; browser session cookie | Redirect to the configured frontend GitHub settings route with a closed `GithubCallbackResult` query result | `GITHUB_STATE_INVALID`; `GITHUB_CALLBACK_FAILED` are converted to safe closed callback results, never raw provider text |
 | `GET` | `/api/v1/github/status` | `200` | authenticated session | `GithubConnectionStatus` | `401 UNAUTHENTICATED` |
-| `POST` | `/api/v1/github/reconnect` | `200` | authenticated session + `X-CSRF-Token`; no body | `GithubConnectResponse` | `401 UNAUTHENTICATED`; `403 CSRF_INVALID`; `429 RATE_LIMITED` |
-| `POST` | `/api/v1/github/disconnect` | `200` | authenticated session + `X-CSRF-Token`; no body | `GithubDisconnectResponse` with `historyRetained: true` | `401 UNAUTHENTICATED`; `403 CSRF_INVALID`; `409 GITHUB_NOT_CONNECTED` |
+| `DELETE` | `/api/v1/github/connection` | `200` | authenticated session + `X-CSRF-Token`; no body | `GithubDisconnectResponse` with `historyRetained: true` | `401 UNAUTHENTICATED`; `403 CSRF_INVALID`; `409 GITHUB_NOT_CONNECTED` |
 
 `GithubConnectionStatus` deliberately separates:
 
@@ -157,7 +158,7 @@ Schemas and types live in `packages/shared/src/github.ts`; frozen fixtures live 
 
 Disconnect never deletes historical activity. The frontend may show local `connecting`/`redirecting` progress, but must render callback and provider failures only through the closed result/reason enums. Installation tokens, OAuth tokens, state values, and raw provider errors never appear in these DTOs.
 
-The frozen contract fixtures cover connected, disconnected, reconnect-required plus suspended installation, callback success/error, connect URL, and disconnect history retention.
+The frozen contract fixtures cover connected, disconnected, reconnect-required plus suspended installation, callback success/provider-denial query variants, safe callback results, connect URL/state consistency, and disconnect history retention.
 
 ## Provisional later-day contracts
 
