@@ -33,6 +33,7 @@ export function DashboardExperience({ loadDashboard, initialDate, initialReposit
   const [error, setError] = useState<string>();
   const [loading, setLoading] = useState(true);
   const generation = useRef(0);
+  const initialFilterKey = JSON.stringify({ date: initialDate, ...(initialRepositoryId ? { repositoryId: initialRepositoryId } : {}) });
   const query = useMemo<DashboardQuery>(() => ({ date: filters.date, timezone, ...(filters.repositoryId ? { repositoryId: filters.repositoryId } : {}) }), [filters, timezone]);
 
   const reload = useCallback(() => {
@@ -43,6 +44,10 @@ export function DashboardExperience({ loadDashboard, initialDate, initialReposit
       .finally(() => { if (request === generation.current) setLoading(false); });
   }, [loadDashboard, query]);
   useEffect(() => { void reload(); return () => { generation.current += 1; }; }, [reload]);
+  useEffect(() => {
+    const next = JSON.parse(initialFilterKey) as DashboardFilters;
+    setFilters((current) => JSON.stringify(current) === initialFilterKey ? current : next);
+  }, [initialFilterKey]);
 
   function change(next: DashboardFilters) { generation.current += 1; setFilters(next); onFiltersChange?.(next); }
 

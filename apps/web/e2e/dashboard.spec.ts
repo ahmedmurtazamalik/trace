@@ -20,3 +20,18 @@ test("dashboard presents factual metrics and stable filters on desktop and mobil
   await expect(page.getByLabel("Repository")).toHaveValue("repo_1");
   await expect(page.locator("body")).toHaveJSProperty("scrollWidth", await page.locator("body").evaluate((node) => node.clientWidth));
 });
+
+test("dashboard history restores filters and invalid contract values fall back safely", async ({ page }) => {
+  await page.goto("/dashboard?date=2026-08-11&repositoryId=repo_1");
+  await page.goto("/dashboard?date=2026-08-12");
+  await page.goBack();
+  await expect(page.getByLabel("Date")).toHaveValue("2026-08-11");
+  await expect(page.getByLabel("Repository")).toHaveValue("repo_1");
+  await page.goForward();
+  await expect(page.getByLabel("Date")).toHaveValue("2026-08-12");
+
+  await page.goto("/dashboard?date=not-a-date&timezone=Not%2FAZone");
+  await expect(page.getByRole("heading", { level: 1, name: "Development dashboard" })).toBeVisible();
+  await expect(page.getByLabel("Date")).toHaveValue("2026-08-12");
+  await expect(page.getByText("UTC", { exact: true })).toBeVisible();
+});

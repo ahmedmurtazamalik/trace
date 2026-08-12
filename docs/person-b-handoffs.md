@@ -317,3 +317,8 @@ No Person A-owned backend, worker, shared-contract, root workspace, or infrastru
 - Added semantic day-group headings, lists, and list items to the Activity timeline.
 - Replaced raw loader messages with safe normalized user-facing errors and added contract validation to the fixture adapter.
 - Added focused component and desktop/mobile Playwright regressions for all five findings.
+
+### Delayed Day 6 review remediation
+- Validated every Dashboard URL query and fixture response through the frozen shared schemas, with safe defaults for hostile dates and timezones.
+- Restored Dashboard controls and data when URL-derived props change through browser Back/Forward navigation.
+- Added stale-request, zero-value, large-number, hostile-query, and desktop/mobile history regressions.

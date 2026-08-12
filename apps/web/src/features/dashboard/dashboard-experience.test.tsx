@@ -44,6 +44,37 @@ describe("Day 6 dashboard experience", () => {
     expect(onFiltersChange).not.toHaveBeenCalled();
   });
 
+  it("restores URL-derived filters when parent props change", async () => {
+    const loadDashboard = vi.fn().mockResolvedValue(dashboardFixtures.ready);
+    const { rerender } = render(<DashboardExperience loadDashboard={loadDashboard} initialDate="2026-08-12" timezone="UTC" />);
+    await screen.findByLabelText("Development activity metrics");
+    rerender(<DashboardExperience loadDashboard={loadDashboard} initialDate="2026-08-11" initialRepositoryId="repo_1" timezone="UTC" />);
+    await waitFor(() => expect(screen.getByLabelText("Date")).toHaveValue("2026-08-11"));
+    expect(screen.getByLabelText("Repository")).toHaveValue("repo_1");
+    expect(loadDashboard).toHaveBeenLastCalledWith({ date: "2026-08-11", timezone: "UTC", repositoryId: "repo_1" });
+  });
+
+  it("ignores stale dashboard responses after filters change", async () => {
+    let resolveOld!: (value: DashboardResponse) => void;
+    const oldRequest = new Promise<DashboardResponse>((resolve) => { resolveOld = resolve; });
+    const replacement = { ...dashboardFixtures.ready, date: "2026-08-10", metrics: { ...dashboardFixtures.ready.metrics, activityCount: 9999 } };
+    const loadDashboard = vi.fn().mockResolvedValueOnce(dashboardFixtures.ready).mockReturnValueOnce(oldRequest).mockResolvedValue(replacement);
+    const { rerender } = render(<DashboardExperience loadDashboard={loadDashboard} initialDate="2026-08-12" timezone="UTC" />);
+    await screen.findByLabelText("Development activity metrics");
+    rerender(<DashboardExperience loadDashboard={loadDashboard} initialDate="2026-08-11" timezone="UTC" />);
+    rerender(<DashboardExperience loadDashboard={loadDashboard} initialDate="2026-08-10" timezone="UTC" />);
+    resolveOld(dashboardFixtures.ready);
+    expect(await screen.findByText("9,999")).toBeInTheDocument();
+  });
+
+  it("formats zero and large metric values factually", async () => {
+    const response = { ...dashboardFixtures.ready, metrics: { ...dashboardFixtures.ready.metrics, activityCount: 0, additions: 1234567 } };
+    renderDashboard(response);
+    const metrics = await screen.findByLabelText("Development activity metrics");
+    expect(within(metrics).getByText("0")).toBeInTheDocument();
+    expect(within(metrics).getByText("1,234,567")).toBeInTheDocument();
+  });
+
   it.each([
     ["githubNotConnected", "Connect GitHub", "/github"],
     ["noTrackedRepositories", "Choose repositories", "/repositories"],
