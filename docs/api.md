@@ -164,16 +164,40 @@ OAuth, installation setup, and installation ownership verification use separate 
 
 `GITHUB_CALLBACK_URL` is the public callback URL registered with GitHub. Missing provider credentials leave liveness and unrelated APIs available; GitHub connect fails closed with `503 SERVICE_UNAVAILABLE`. Day 3 stores no OAuth or installation token and returns no provider credential, app private key, webhook secret, or raw provider error.
 
-## Frozen Day 4 repository contract
+## Implemented Day 4 repository API
 
-Repository contracts are frozen in `packages/shared/src/repositories.ts`; fixtures live under `packages/shared/test/fixtures/repositories/`.
+Repository contracts live in `packages/shared/src/repositories.ts`; fixtures live under `packages/shared/test/fixtures/repositories/`.
 
-- List/detail DTOs expose stable opaque IDs, owner/name/full name, privacy/default branch, nullable URL, last activity, contributor count, and separate `accessible` and per-user `trackingEnabled` flags.
-- Lists use stable cursor pagination (`cursor`, `limit`, `pageInfo`) plus optional trimmed `search`.
-- Tracking responses contain only `{ repositoryId, trackingEnabled }`; provider credentials and installation tokens never enter repository DTOs.
-- Canonical future routes are `GET /api/v1/repositories`, `GET /api/v1/repositories/:id`, `POST /api/v1/repositories/:id/tracking`, and `DELETE /api/v1/repositories/:id/tracking`.
-- Person B may implement Day 4 UI against these schemas and fixtures without waiting for Person A's Day 4 repository behavior.
+| Method | Path | Success | Request | Success response | Documented errors |
+| --- | --- | --- | --- | --- | --- |
+| `POST` | `/api/v1/repositories/sync` | `200` | authenticated session + `X-CSRF-Token`; no body | `{ "accessibleRepositoryCount": number }` | `401 UNAUTHENTICATED`; `403 CSRF_INVALID`; `409 GITHUB_INSTALLATION_REQUIRED`; `409 GITHUB_INSTALLATION_SUSPENDED`; `503 SERVICE_UNAVAILABLE` |
+| `GET` | `/api/v1/repositories` | `200` | authenticated session; `RepositoryListQuery` | `RepositoryListResponse` | `400 VALIDATION_ERROR`; `401 UNAUTHENTICATED` |
+| `GET` | `/api/v1/repositories/:id` | `200` | authenticated session | `RepositoryDetailResponse` | `401 UNAUTHENTICATED`; `404 REPOSITORY_NOT_FOUND` |
+| `POST` | `/api/v1/repositories/:id/tracking` | `200` | authenticated session + `X-CSRF-Token`; no body | `RepositoryTrackingResponse` with `trackingEnabled: true` | `401 UNAUTHENTICATED`; `403 CSRF_INVALID`; `404 REPOSITORY_NOT_FOUND`; `409 REPOSITORY_ACCESS_REMOVED` |
+| `DELETE` | `/api/v1/repositories/:id/tracking` | `200` | authenticated session + `X-CSRF-Token`; no body | `RepositoryTrackingResponse` with `trackingEnabled: false` | `401 UNAUTHENTICATED`; `403 CSRF_INVALID`; `404 REPOSITORY_NOT_FOUND` |
+
+Repository synchronization uses an ephemeral installation token entirely inside `@trace/github`; provider credentials and tokens never enter DTOs, logs, or persistence. All GitHub pages are fetched before one database reconciliation. Each synchronization reserves an installation-local generation and a database-global claim sequence before provider I/O. Publication requires the generation to remain current, locks affected stable repository IDs in deterministic order, and accepts only claims newer than each repository's last published sequence. This prevents both slower same-installation snapshots and older cross-installation snapshots from overwriting a newer transfer or access-removal decision. Repositories are upserted by stable GitHub repository ID, metadata and installation ownership are refreshed, and each authorized repository receives an idempotent per-user `UserRepository` association defaulting to tracking off. The synchronization response count reflects only repository claims accepted by the authoritative reconciliation; stale fenced claims are not reported as accessible. Existing per-user tracking state is never reset by synchronization.
+
+Repositories omitted from a successful current synchronization are retained for historical activity and marked with global and per-user `accessRemovedAt` cutoffs. They remain visible to their owning Trace user with `accessible: false`; summaries include only activity at or before that user's cutoff, preventing later transferred-repository activity from leaking to a former owner. Enabling tracking fails closed, while disabling remains available. A disconnected account or suspended installation is also inaccessible. Tracking state always belongs to `UserRepository`, never the global repository row.
+
+List results are ordered by `fullName` then opaque repository ID. Cursors are opaque server values bound to that ordering and the active search filter. Search is trimmed and case-insensitive across owner, name, and full name. `lastActivityAt` is the newest stored activity timestamp; `contributorCount` is the distinct count of non-null stored contributors. Reads and mutations require an existing user/repository association and do not expose another user's repository membership.
+
+## Frozen Day 5–7 activity and dashboard contract
+
+The frontend-consumable activity and dashboard boundary is frozen in `packages/shared/src/activity.ts` and `packages/shared/src/dashboard.ts`; validated fixtures live under `packages/shared/test/fixtures/activity/` and `packages/shared/test/fixtures/dashboard/`. Day 4 freezes these DTOs only; webhook ingestion, activity processing, and activity/dashboard endpoints remain scheduled for Days 5–7.
+
+Canonical future routes are:
+
+- `GET /api/v1/activity` using `ActivityListQuery` and `ActivityListResponse`.
+- `GET /api/v1/repositories/:id/activity` using the same filter and response schemas, with repository ownership enforced by the server.
+- `GET /api/v1/dashboard` using `DashboardQuery` and `DashboardResponse`.
+
+Activity filters include optional ISO date, IANA timezone (default `UTC`), repository, contributor, source, type, cursor, and bounded limit. A supplied date denotes the half-open calendar interval `[00:00, next 00:00)` in the supplied IANA timezone; the API converts that interval to UTC before querying. Invalid dates, timezones, filters, limits, and cursors fail with `400 VALIDATION_ERROR`. Results use a stable opaque cursor ordered by `occurredAt` descending then opaque activity ID descending.
+
+The closed sources are `github | cli`; the closed activity types are `commit | push | pull_request | working_tree_snapshot | staged_change | untracked_file | local_commit`. Each item contains repository context, an optional contributor who need not have a Trace account, generic source/type, timestamp, and strict nullable factual display fields (`sha`, message, branch, files changed, additions, deletions, and optional evidence URL). Provider credentials, webhook internals, raw patches, and arbitrary metadata are excluded.
+
+Dashboard responses contain the requested date/timezone, a truthful state (`READY`, `GITHUB_NOT_CONNECTED`, `NO_TRACKED_REPOSITORIES`, `NO_ACTIVITY`, or `PARTIAL`), deterministic non-negative metrics, and at most 20 canonical recent activity items. No productivity score, inferred effort, ranking, or model-generated metric is part of the contract.
 
 ## Provisional later-day contracts
 
-Activity, pagination, and report schemas remain provisional. They preserve current compatibility decisions—generic activity `source`, generic activity `type`, opaque IDs, and valid report statuses—but are not frozen until their scheduled backend day.
+Report schemas remain provisional until the scheduled Day 7 report-contract freeze.

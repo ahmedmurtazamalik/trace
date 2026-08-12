@@ -14,6 +14,27 @@ describe('GitHub authorization adapters', () => {
     const installUrl = new URL(adapter.installationUrl({ state: 'install-state', appSlug: 'trace-app' }));
     expect(installUrl.pathname).toBe('/apps/trace-app/installations/new');
     expect(installUrl.searchParams.get('state')).toBe('install-state');
+
+    await expect(adapter.repositories(91n)).resolves.toEqual([
+      {
+        id: 7_001n,
+        owner: 'trace-fixture-org',
+        name: 'web',
+        fullName: 'trace-fixture-org/web',
+        private: true,
+        defaultBranch: 'main',
+        htmlUrl: 'https://github.com/trace-fixture-org/web',
+      },
+      {
+        id: 7_002n,
+        owner: 'trace-fixture-org',
+        name: 'api',
+        fullName: 'trace-fixture-org/api',
+        private: false,
+        defaultBranch: 'main',
+        htmlUrl: 'https://github.com/trace-fixture-org/api',
+      },
+    ]);
   });
 
   it('verifies an exact installation through the user-scoped grant', async () => {
@@ -41,6 +62,7 @@ describe('GitHub authorization adapters', () => {
     expect(() => adapter.installationUrl({ state: 'state', appSlug: 'trace-app' })).toThrow('not configured');
     await expect(adapter.authorize('code')).rejects.toThrow('not configured');
     await expect(adapter.installation(91n)).rejects.toThrow('not configured');
+    await expect(adapter.repositories(91n)).rejects.toThrow('not configured');
     await expect(adapter.verifyInstallation('code', 91n)).rejects.toThrow('not configured');
   });
 });

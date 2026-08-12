@@ -14,6 +14,16 @@ export interface GithubInstallationAccess {
   suspended: boolean;
 }
 
+export interface GithubRepositoryAccess {
+  id: bigint;
+  owner: string;
+  name: string;
+  fullName: string;
+  private: boolean;
+  defaultBranch: string;
+  htmlUrl: string | null;
+}
+
 export interface GithubAuthorizationResult {
   user: GithubAuthorizedUser;
 }
@@ -23,6 +33,7 @@ export interface GithubAuthorizationAdapter {
   authorize(code: string): Promise<GithubAuthorizationResult>;
   installationUrl(input: { state: string; appSlug: string }): string;
   installation(installationId: bigint): Promise<GithubInstallationAccess>;
+  repositories(installationId: bigint): Promise<GithubRepositoryAccess[]>;
   verifyInstallation(code: string, installationId: bigint): Promise<{ user: GithubAuthorizedUser; installation: GithubInstallationAccess }>;
 }
 
@@ -52,6 +63,14 @@ export class FakeGithubAuthorizationAdapter implements GithubAuthorizationAdapte
     return Promise.resolve({ id: installationId, accountType: 'ORGANIZATION', accountLogin: 'trace-fixture-org', suspended: false });
   }
 
+  repositories(installationId: bigint): Promise<GithubRepositoryAccess[]> {
+    if (installationId !== 91n) return Promise.reject(new Error('GitHub repository synchronization failed'));
+    return Promise.resolve([
+      { id: 7_001n, owner: 'trace-fixture-org', name: 'web', fullName: 'trace-fixture-org/web', private: true, defaultBranch: 'main', htmlUrl: 'https://github.com/trace-fixture-org/web' },
+      { id: 7_002n, owner: 'trace-fixture-org', name: 'api', fullName: 'trace-fixture-org/api', private: false, defaultBranch: 'main', htmlUrl: 'https://github.com/trace-fixture-org/api' },
+    ]);
+  }
+
   verifyInstallation(code: string, installationId: bigint): Promise<{ user: GithubAuthorizedUser; installation: GithubInstallationAccess }> {
     if (code !== 'fake-installation-verification-code' || installationId !== 91n) return Promise.reject(new Error('GitHub installation verification failed'));
     return Promise.resolve({
@@ -66,6 +85,7 @@ export class UnavailableGithubAuthorizationAdapter implements GithubAuthorizatio
   authorize(code: string): Promise<GithubAuthorizationResult> { void code; return Promise.reject(new Error('GitHub authorization is not configured')); }
   installationUrl(input: { state: string; appSlug: string }): string { void input; throw new Error('GitHub installation is not configured'); }
   installation(installationId: bigint): Promise<GithubInstallationAccess> { void installationId; return Promise.reject(new Error('GitHub installation is not configured')); }
+  repositories(installationId: bigint): Promise<GithubRepositoryAccess[]> { void installationId; return Promise.reject(new Error('GitHub installation is not configured')); }
   verifyInstallation(code: string, installationId: bigint): Promise<{ user: GithubAuthorizedUser; installation: GithubInstallationAccess }> { void code; void installationId; return Promise.reject(new Error('GitHub installation is not configured')); }
 }
 
@@ -124,6 +144,38 @@ export class RealGithubAuthorizationAdapter implements GithubAuthorizationAdapte
     };
   }
 
+  async repositories(installationId: bigint): Promise<GithubRepositoryAccess[]> {
+    const tokenResponse = await fetch(`https://api.github.com/app/installations/${installationId.toString()}/access_tokens`, {
+      method: 'POST',
+      headers: { Accept: 'application/vnd.github+json', Authorization: `Bearer ${this.appJwt()}`, 'X-GitHub-Api-Version': '2022-11-28' },
+      signal: AbortSignal.timeout(5_000),
+    });
+    if (!tokenResponse.ok) throw new Error('GitHub repository synchronization failed');
+    const tokenData = await tokenResponse.json() as { token?: string };
+    if (typeof tokenData.token !== 'string' || tokenData.token.length === 0) throw new Error('GitHub repository synchronization failed');
+
+    const repositories: GithubRepositoryAccess[] = [];
+    const seenRepositoryIds = new Set<bigint>();
+    const maximumPages = 1_000;
+    for (let page = 1; page <= maximumPages; page += 1) {
+      const response = await fetch(`https://api.github.com/installation/repositories?per_page=100&page=${page}`, {
+        headers: { Accept: 'application/vnd.github+json', Authorization: `Bearer ${tokenData.token}`, 'X-GitHub-Api-Version': '2022-11-28' },
+        signal: AbortSignal.timeout(5_000),
+      });
+      if (!response.ok) throw new Error('GitHub repository synchronization failed');
+      const value = await response.json() as { repositories?: unknown[] };
+      if (!Array.isArray(value.repositories)) throw new Error('GitHub repository synchronization failed');
+      const pageRepositories = value.repositories.map((item) => this.repository(item));
+      for (const repository of pageRepositories) {
+        if (seenRepositoryIds.has(repository.id)) throw new Error('GitHub repository synchronization failed');
+        seenRepositoryIds.add(repository.id);
+      }
+      repositories.push(...pageRepositories);
+      if (pageRepositories.length < 100) return repositories;
+    }
+    throw new Error('GitHub repository synchronization failed');
+  }
+
   async verifyInstallation(code: string, installationId: bigint): Promise<{ user: GithubAuthorizedUser; installation: GithubInstallationAccess }> {
     const accessToken = await this.exchangeToken(code);
     const [userResponse, installationResponse] = await Promise.all([
@@ -159,6 +211,35 @@ export class RealGithubAuthorizationAdapter implements GithubAuthorizationAdapte
     const tokenData = await tokenResponse.json() as { access_token?: string };
     if (tokenData.access_token === undefined) throw new Error('GitHub token exchange failed');
     return tokenData.access_token;
+  }
+
+  private repository(input: unknown): GithubRepositoryAccess {
+    const value = input as {
+      id?: number;
+      owner?: { login?: string };
+      name?: string;
+      full_name?: string;
+      private?: boolean;
+      default_branch?: string;
+      html_url?: string | null;
+    };
+    if (
+      !Number.isSafeInteger(value.id) || typeof value.owner?.login !== 'string' || value.owner.login.length === 0 ||
+      typeof value.name !== 'string' || value.name.length === 0 || typeof value.full_name !== 'string' || value.full_name.length === 0 ||
+      typeof value.private !== 'boolean' || typeof value.default_branch !== 'string' || value.default_branch.length === 0 ||
+      !(typeof value.html_url === 'string' || value.html_url === null)
+    ) {
+      throw new Error('GitHub repository synchronization failed');
+    }
+    return {
+      id: BigInt(value.id as number),
+      owner: value.owner.login,
+      name: value.name,
+      fullName: value.full_name,
+      private: value.private,
+      defaultBranch: value.default_branch,
+      htmlUrl: value.html_url,
+    };
   }
 
   private appJwt(): string {
