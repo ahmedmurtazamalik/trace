@@ -68,6 +68,8 @@ jobs:
         env:
           NODE_ENV: test
           ALLOW_DEMO_SEED: "true"
+      - name: Build internal libraries for clean-runner tests
+        run: pnpm --filter @trace/config --filter @trace/database --filter @trace/github --filter @trace/shared build
       - run: pnpm test
         env:
           NODE_ENV: test
