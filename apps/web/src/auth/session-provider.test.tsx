@@ -48,7 +48,8 @@ describe("AuthSessionProvider", () => {
     const { result } = renderHook(() => useAuthSession(), {
       wrapper: ({ children }) => <AuthSessionProvider initialSession={session} revokeSession={revokeSession}>{children}</AuthSessionProvider>,
     });
-    await act(async () => result.current.signOut());
+    const didSignOut = await act(async () => result.current.signOut());
+    expect(didSignOut).toBe(true);
     expect(revokeSession).toHaveBeenCalledWith("csrf_value");
     expect(result.current.status).toBe("anonymous");
   });
@@ -61,15 +62,16 @@ describe("AuthSessionProvider", () => {
       wrapper: ({ children }) => <AuthSessionProvider initialSession={session} revokeSession={revokeSession}>{children}</AuthSessionProvider>,
     });
 
-    let pendingLogout!: Promise<void>;
+    let pendingLogout!: Promise<boolean>;
     act(() => { pendingLogout = result.current.signOut(); });
     act(() => result.current.establishSession(freshSession));
+    let didSignOut!: boolean;
     await act(async () => {
       finishLogout({ success: true });
-      await pendingLogout;
+      didSignOut = await pendingLogout;
     });
 
-    expect(result.current.status).toBe("authenticated");
+    expect(didSignOut).toBe(false);
     expect(result.current.user?.username).toBe("fresh.login");
     expect(result.current.isSigningOut).toBe(false);
   });

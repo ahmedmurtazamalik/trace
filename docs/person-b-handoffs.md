@@ -102,12 +102,13 @@ No Person A-owned backend/shared-contract source, root workspace configuration, 
 - Browser RED: 28/34 initially passed; failures isolated Next route-announcer selectors, asynchronous shell readiness, and a real logout/protection redirect race. The logout state machine was corrected and focused tests passed before the complete rerun.
 - Logout-failure RED: 8/9 provider tests passed; the new regression correctly found `isSigningOut` remained true after failed revocation. The provider now restores the authenticated state, resets the transition, rethrows the safe error, and the header renders retryable feedback.
 - Independent-review RED: the first reviewer found literal/encoded backslash open-redirect bypasses and a late-bootstrap overwrite race. Focused tests failed exactly those three cases; return-path decoding/backslash rejection and abortable generation-guarded bootstrap now pass.
-- Final-review RED: the second reviewer found that a pending logout could clear a newer login session. The new test failed only that race (`expected authenticated, received anonymous`); generation-owned logout completion/failure now preserves the newer session and all 14 provider tests pass.
+- Final-review RED: the second reviewer found that a pending logout could clear a newer login session. The new test failed only that race (`expected authenticated, received anonymous`); generation-owned logout completion/failure now preserves the newer session and all provider tests pass.
+- Post-publication review RED: the delayed focused verdict found that a stale successful logout still returned normally, allowing the button handler to redirect a newly authenticated session to `/login`. Provider return-value and button-integration tests failed exactly three assertions (`undefined` vs `true`/`false`, plus one stale redirect). `signOut()` now reports ownership-aware completion and the handler redirects only on `true`; all 15 focused provider/control tests pass.
 
 ### Tests and builds actually run
 - `pnpm --filter @trace/ui test` — PASS, 2/2.
 - `pnpm --filter @trace/ui typecheck` — PASS.
-- `pnpm --filter @trace/web test` — PASS, 42/42 across 9 files.
+- `pnpm --filter @trace/web test` — PASS, 43/43 across 10 files.
 - `pnpm --filter @trace/web lint` — PASS, no warnings or errors.
 - `pnpm --filter @trace/web typecheck` — PASS.
 - `pnpm --filter @trace/web build` — PASS, 14 static pages generated.

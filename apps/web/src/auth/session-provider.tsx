@@ -23,7 +23,7 @@ interface AuthSessionValue {
   error?: string;
   isSigningOut: boolean;
   establishSession(session: AuthSessionResponse): void;
-  signOut(): Promise<void>;
+  signOut(): Promise<boolean>;
 }
 
 interface AuthSessionProviderProps {
@@ -94,12 +94,14 @@ export function AuthSessionProvider({
     setIsSigningOut(true);
     try {
       if (session?.csrfToken) await revokeSession(session.csrfToken);
-      if (generation !== sessionGeneration.current) return;
+      if (generation !== sessionGeneration.current) return false;
       setSession(undefined);
       setError(undefined);
       setStatus("anonymous");
+      return true;
     } catch (reason) {
-      if (generation === sessionGeneration.current) setIsSigningOut(false);
+      if (generation !== sessionGeneration.current) return false;
+      setIsSigningOut(false);
       throw reason;
     }
   }, [revokeSession, session]);

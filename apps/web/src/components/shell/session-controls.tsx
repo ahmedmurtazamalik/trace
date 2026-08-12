@@ -14,8 +14,8 @@ export function SessionControls() {
   async function handleSignOut() {
     setError(undefined);
     try {
-      await session?.signOut();
-      router.replace("/login");
+      const didSignOut = await session?.signOut();
+      if (didSignOut) router.replace("/login");
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Trace could not sign out. Please try again.");
     }
