@@ -32,5 +32,6 @@ import { GITHUB_AUTHORIZATION_ADAPTER } from './github.tokens';
       },
     },
   ],
+  exports: [GITHUB_AUTHORIZATION_ADAPTER],
 })
 export class GithubModule {}

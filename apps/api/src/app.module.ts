@@ -7,9 +7,10 @@ import { AuthModule } from './modules/auth/auth.module';
 import { DependencyHealthService } from './modules/health/dependency-health.service';
 import { HealthController } from './modules/health/health.controller';
 import { GithubModule } from './modules/github/github.module';
+import { RepositoriesModule } from './modules/repositories/repositories.module';
 
 @Module({
-  imports: [TraceConfigModule, PrismaModule, RedisModule, AuthModule, GithubModule],
+  imports: [TraceConfigModule, PrismaModule, RedisModule, AuthModule, GithubModule, RepositoriesModule],
   controllers: [HealthController],
   providers: [DependencyHealthService],
 })

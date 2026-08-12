@@ -1,0 +1,34 @@
+{
+  "items": [
+    {
+      "id": "activity_commit_1",
+      "repository": {
+        "id": "repo_1",
+        "fullName": "trace-fixture-org/trace",
+        "url": "https://github.com/trace-fixture-org/trace"
+      },
+      "contributor": {
+        "id": "contributor_1",
+        "username": "alice-dev",
+        "displayName": null,
+        "avatarUrl": null
+      },
+      "source": "github",
+      "type": "commit",
+      "occurredAt": "2026-08-12T09:30:00.000Z",
+      "facts": {
+        "sha": "0123456789abcdef0123456789abcdef01234567",
+        "message": "Add repository synchronization",
+        "branch": "main",
+        "filesChanged": 4,
+        "additions": 120,
+        "deletions": 18,
+        "url": null
+      }
+    }
+  ],
+  "pageInfo": {
+    "nextCursor": null,
+    "hasNextPage": false
+  }
+}

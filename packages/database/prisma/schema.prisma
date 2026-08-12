@@ -125,6 +125,7 @@ model GithubInstallation {
   createdAt            DateTime          @default(now()) @map("created_at")
   updatedAt            DateTime          @updatedAt @map("updated_at")
   suspendedAt          DateTime?         @map("suspended_at")
+  syncGeneration       Int               @default(0) @map("sync_generation")
   githubAccount        GithubAccount     @relation(fields: [githubAccountId], references: [id], onDelete: Restrict)
   repositories         Repository[]
   webhookDeliveries    GithubWebhookDelivery[]
@@ -143,6 +144,8 @@ model Repository {
   private            Boolean
   defaultBranch      String                    @map("default_branch")
   htmlUrl            String?                   @map("html_url")
+  accessRemovedAt     DateTime?                 @map("access_removed_at")
+  lastSyncSequence    BigInt                    @default(0) @map("last_sync_sequence")
   createdAt          DateTime                  @default(now()) @map("created_at")
   updatedAt          DateTime                  @updatedAt @map("updated_at")
   installation       GithubInstallation        @relation(fields: [githubInstallationId], references: [id], onDelete: Restrict)
@@ -153,6 +156,7 @@ model Repository {
   webhookDeliveries  GithubWebhookDelivery[]
 
   @@index([githubInstallationId])
+  @@index([githubInstallationId, accessRemovedAt])
   @@index([owner, name])
   @@map("repositories")
 }
@@ -162,6 +166,7 @@ model UserRepository {
   userId          String     @map("user_id")
   repositoryId    String     @map("repository_id")
   trackingEnabled Boolean    @default(false) @map("tracking_enabled")
+  accessRemovedAt DateTime?  @map("access_removed_at")
   createdAt       DateTime   @default(now()) @map("created_at")
   updatedAt       DateTime   @updatedAt @map("updated_at")
   user            User       @relation(fields: [userId], references: [id], onDelete: Cascade)
