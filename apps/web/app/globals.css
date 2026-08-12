@@ -355,7 +355,10 @@ main#main-content { max-width: 1540px; margin: 0 auto; padding: clamp(1.65rem, 4
 .activity-filter-grid label { display: grid; gap: .35rem; color: #53647a; font-size: .68rem; font-weight: 800; }
 .activity-filter-grid input, .activity-filter-grid select { min-width: 0; min-height: 2.5rem; padding: .55rem .65rem; border: 1px solid #c9d5e3; border-radius: .65rem; color: #172033; background: white; font: inherit; }
 .activity-filter-grid input:focus-visible, .activity-filter-grid select:focus-visible { outline: 3px solid #93c5fd; outline-offset: 2px; }
-.activity-timeline { position: relative; display: grid; gap: .75rem; padding-left: 1.2rem; }
+.activity-timeline { position: relative; display: grid; gap: 1rem; padding-left: 1.2rem; }
+.activity-day-group { display: grid; gap: .7rem; }
+.activity-day-group > h2 { margin: 0; color: #5f7087; font-size: .72rem; font-weight: 850; letter-spacing: .06em; text-transform: uppercase; }
+.activity-day-group > ul { display: grid; gap: .75rem; margin: 0; padding: 0; list-style: none; }
 .activity-timeline::before { content: ""; position: absolute; left: .25rem; top: 1rem; bottom: 1rem; width: 2px; background: linear-gradient(#60a5fa, #dbeafe); }
 .activity-event-card { position: relative; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: .9rem; align-items: start; padding: 1rem 1.1rem; }
 .activity-event-card::before { content: ""; position: absolute; left: -1.25rem; top: 1.55rem; width: .6rem; height: .6rem; border: 3px solid white; border-radius: 50%; background: #2563eb; box-shadow: 0 0 0 2px #93c5fd; }

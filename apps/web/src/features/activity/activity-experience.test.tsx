@@ -56,7 +56,7 @@ describe("Day 5 activity experience", () => {
     const loadActivity = vi.fn()
       .mockResolvedValueOnce(activityFixturePages.first)
       .mockReturnValueOnce(secondPage)
-      .mockResolvedValue({ items: [], pageInfo: { nextCursor: null, hasNextPage: false } });
+      .mockResolvedValue(activityFixturePages.first);
     renderExperience({ loadActivity });
     await screen.findByRole("heading", { name: "Refine activity timeline" });
     await userEvent.click(screen.getByRole("button", { name: "Load more activity" }));
@@ -64,14 +64,34 @@ describe("Day 5 activity experience", () => {
     resolveSecondPage(activityFixturePages.second);
     await waitFor(() => expect(loadActivity).toHaveBeenLastCalledWith(expect.objectContaining({ repositoryId: "repo-02" })));
     expect(screen.queryByRole("heading", { name: "Draft activity filters" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Load more activity" })).toBeEnabled();
+  });
+
+  it("restores filters when URL-derived props change", async () => {
+    const loadActivity = vi.fn().mockResolvedValue(activityFixturePages.first);
+    const { rerender } = render(<ActivityExperience loadActivity={loadActivity} initialFilters={{ source: "github", type: "push" }} />);
+    expect(await screen.findByLabelText("Activity type")).toHaveValue("push");
+    rerender(<ActivityExperience loadActivity={loadActivity} initialFilters={{ source: "cli", type: "local_commit" }} />);
+    await waitFor(() => expect(screen.getByLabelText("Source")).toHaveValue("cli"));
+    expect(screen.getByLabelText("Activity type")).toHaveValue("local_commit");
+    expect(loadActivity).toHaveBeenLastCalledWith(expect.objectContaining({ source: "cli", type: "local_commit" }));
+  });
+
+  it("groups timeline events by day with semantic list hierarchy", async () => {
+    renderExperience({ loadActivity: vi.fn().mockResolvedValue({ items: activityFixturePages.first.items.concat(activityFixturePages.second.items[1]), pageInfo: { nextCursor: null, hasNextPage: false } }) });
+    const timeline = await screen.findByRole("region", { name: "Development activity timeline" });
+    expect(within(timeline).getAllByRole("heading", { level: 2 })).toHaveLength(2);
+    expect(within(timeline).getAllByRole("list")).toHaveLength(2);
+    expect(within(timeline).getAllByRole("listitem")).toHaveLength(3);
   });
 
   it("shows actionable empty and forbidden states", async () => {
     const empty: ActivityListResponse = { items: [], pageInfo: { nextCursor: null, hasNextPage: false } };
     const { rerender } = render(<ActivityExperience loadActivity={vi.fn().mockResolvedValue(empty)} />);
     expect(await screen.findByRole("heading", { name: "No development activity yet" })).toBeInTheDocument();
-    rerender(<ActivityExperience loadActivity={vi.fn().mockRejectedValue(new Error("You cannot view this activity."))} />);
-    expect(await screen.findByRole("alert")).toHaveTextContent("cannot view");
+    rerender(<ActivityExperience loadActivity={vi.fn().mockRejectedValue(new Error("database password: super-secret"))} />);
+    expect(await screen.findByRole("alert")).toHaveTextContent("Trace could not load activity");
+    expect(screen.getByRole("alert")).not.toHaveTextContent("super-secret");
     expect(screen.getByRole("button", { name: "Retry" })).toBeEnabled();
   });
 

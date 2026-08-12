@@ -309,3 +309,11 @@ No Person A-owned backend, worker, shared-contract, root workspace, or infrastru
 ### Next-day joint gate
 - Integrate Person A Day 6 when it is actually published, then rerun seam checks against that exact tree.
 - Publish/open the Day 6 PR only when Ali explicitly requests that external action.
+
+### Delayed Day 5 review remediation
+- Validated URL `source` and `type` values through shared schemas and safely dropped invalid or incompatible values.
+- Restored bidirectional filter synchronization for browser Back/Forward navigation.
+- Cleared stale pagination loading state when filters change.
+- Added semantic day-group headings, lists, and list items to the Activity timeline.
+- Replaced raw loader messages with safe normalized user-facing errors and added contract validation to the fixture adapter.
+- Added focused component and desktop/mobile Playwright regressions for all five findings.

@@ -1,34 +1,43 @@
 "use client";
 
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import type { ActivityListQuery, ActivityListResponse } from "@trace/shared";
+import { activityListQuerySchema, activityListResponseSchema, activitySourceSchema, activityTypeSchema, type ActivityListQuery, type ActivityListResponse } from "@trace/shared";
 import { ActivityExperience, type ActivityFilters } from "./activity-experience";
 import { activityFixtureItems } from "@/mocks/fixtures/activity";
 
 async function loadFixtureActivity(query: Partial<ActivityListQuery>): Promise<ActivityListResponse> {
+  const parsedQuery = activityListQuerySchema.parse(query);
   const filtered = activityFixtureItems.filter((item) =>
-    (query.date === undefined || item.occurredAt.slice(0, 10) === query.date) &&
-    (query.repositoryId === undefined || item.repository.id === query.repositoryId) &&
-    (query.contributorId === undefined || item.contributor?.id === query.contributorId) &&
-    (query.source === undefined || item.source === query.source) &&
-    (query.type === undefined || item.type === query.type));
-  const start = query.cursor === "activity-page-2" ? 2 : 0;
+    (parsedQuery.date === undefined || item.occurredAt.slice(0, 10) === parsedQuery.date) &&
+    (parsedQuery.repositoryId === undefined || item.repository.id === parsedQuery.repositoryId) &&
+    (parsedQuery.contributorId === undefined || item.contributor?.id === parsedQuery.contributorId) &&
+    (parsedQuery.source === undefined || item.source === parsedQuery.source) &&
+    (parsedQuery.type === undefined || item.type === parsedQuery.type));
+  const start = parsedQuery.cursor === "activity-page-2" ? 2 : 0;
   const items = filtered.slice(start, start + 2);
   const hasNextPage = start + items.length < filtered.length;
-  return { items, pageInfo: { nextCursor: hasNextPage ? "activity-page-2" : null, hasNextPage } };
+  return activityListResponseSchema.parse({ items, pageInfo: { nextCursor: hasNextPage ? "activity-page-2" : null, hasNextPage } });
 }
+
+function optionalValue(value: string | null) { return value || undefined; }
+function validSource(value: string | null) { const result = activitySourceSchema.safeParse(value); return result.success ? result.data : undefined; }
+function validType(value: string | null) { const result = activityTypeSchema.safeParse(value); return result.success ? result.data : undefined; }
 
 export function ActivityRoute() {
   const pathname = usePathname();
   const router = useRouter();
   const searchParams = useSearchParams();
   const initialFilters: ActivityFilters = {
-    date: searchParams.get("date") || undefined,
-    repositoryId: searchParams.get("repositoryId") || undefined,
-    contributorId: searchParams.get("contributorId") || undefined,
-    source: (searchParams.get("source") as ActivityFilters["source"]) || undefined,
-    type: (searchParams.get("type") as ActivityFilters["type"]) || undefined,
+    date: optionalValue(searchParams.get("date")),
+    repositoryId: optionalValue(searchParams.get("repositoryId")),
+    contributorId: optionalValue(searchParams.get("contributorId")),
+    source: validSource(searchParams.get("source")),
+    type: validType(searchParams.get("type")),
   };
+  if (initialFilters.source && initialFilters.type) {
+    const validPair = activityListQuerySchema.safeParse({ ...initialFilters, timezone: "UTC" });
+    if (!validPair.success) initialFilters.type = undefined;
+  }
   function update(filters: ActivityFilters) {
     const next = new URLSearchParams(searchParams.toString());
     next.delete("cursor");
