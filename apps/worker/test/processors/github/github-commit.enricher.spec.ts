@@ -101,6 +101,30 @@ describe('GitHub commit API enricher', () => {
     expect(facts.committer).toBeNull();
   });
 
+  it('rejects a present GitHub user object without a valid stable identity', async () => {
+    const request = jest.fn<ReturnType<typeof fetch>, Parameters<typeof fetch>>()
+      .mockResolvedValueOnce(response({ token: 'installation-token' }))
+      .mockResolvedValueOnce(response({
+        sha: 'a'.repeat(40),
+        commit: {
+          author: { date: '2026-08-12T11:59:00.000Z' },
+          committer: { date: '2026-08-12T12:00:00.000Z' },
+        },
+        author: { id: 0, login: 'present-but-invalid' },
+        committer: null,
+        stats: { additions: 0, deletions: 0 },
+        files: [],
+      }));
+
+    await expect(new GithubCommitApiEnricher({ appId: '123', privateKey: appPrivateKey, request }).commit({
+      githubInstallationId: 91n,
+      githubRepositoryId: 7_001n,
+      owner: 'trace-fixture-org',
+      name: 'web',
+      sha: 'a'.repeat(40),
+    })).rejects.toThrow('GitHub commit enrichment failed.');
+  });
+
   it('rejects provider pages beyond the documented 100-file bound', async () => {
     const files = Array.from({ length: 101 }, (_, index) => ({
       filename: `src/file-${index}.ts`, status: 'modified', additions: 1, deletions: 0,

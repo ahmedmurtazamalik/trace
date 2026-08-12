@@ -102,7 +102,7 @@ export class GithubCommitApiEnricher implements GithubCommitEnricher {
     if (
       !Number.isSafeInteger(identity.id) || (identity.id as number) <= 0
       || typeof identity.login !== 'string' || identity.login.length === 0 || identity.login.length > 256
-    ) return null;
+    ) throw new Error('identity response');
     if (!(identity.name === undefined || identity.name === null || (typeof identity.name === 'string' && identity.name.length <= 256))) {
       throw new Error('identity response');
     }
