@@ -67,3 +67,20 @@ test("connect uses the backend github.com URL and callback errors remain closed"
   await page.getByRole("button", { name: "Connect GitHub" }).click();
   await expect(page).toHaveURL(/^https:\/\/github\.com\//);
 });
+
+test("connected account can start or repair GitHub App installation", async ({ page }) => {
+  await authenticated(page);
+  await page.route("**/api/v1/github/status", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({
+    ...connected,
+    installationAuthorization: { status: "NOT_INSTALLED", installation: null },
+    accessibleRepositoryCount: 0,
+    trackedRepositoryCount: 0,
+  }) }));
+  await page.route("**/api/v1/github/installation", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({
+    installationUrl: "https://github.com/apps/trace/installations/new?state=opaque",
+  }) }));
+
+  await page.goto("/github");
+  await page.getByRole("button", { name: "Install GitHub App" }).click();
+  await expect(page).toHaveURL(/^https:\/\/github\.com\/apps\/trace\/installations\/new/);
+});

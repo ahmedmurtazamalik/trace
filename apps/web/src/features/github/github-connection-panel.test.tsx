@@ -33,6 +33,7 @@ function renderPanel(overrides: Partial<React.ComponentProps<typeof GithubConnec
   const props = {
     loadStatus: vi.fn().mockResolvedValue(disconnected),
     beginConnection: vi.fn().mockResolvedValue({ authorizationUrl: "https://github.com/login/oauth/authorize?client_id=trace&state=opaque" }),
+    beginInstallation: vi.fn().mockResolvedValue({ installationUrl: "https://github.com/apps/trace/installations/new?state=opaque" }),
     revokeConnection: vi.fn().mockResolvedValue({ success: true, historyRetained: true }),
     navigate: vi.fn(),
     callbackResult: undefined,
@@ -58,25 +59,51 @@ describe("GitHub connection UX", () => {
     expect(screen.getByText("2 tracked")).toBeInTheDocument();
   });
 
-  it("confirms disconnect, sends in-memory CSRF, and refreshes the retained backend state", async () => {
+  it("offers installation and suspended-installation recovery through the backend URL", async () => {
+    const notInstalled = {
+      ...connected,
+      installationAuthorization: { status: "NOT_INSTALLED" as const, installation: null },
+      accessibleRepositoryCount: 0,
+      trackedRepositoryCount: 0,
+    };
+    const props = renderPanel({ loadStatus: vi.fn().mockResolvedValue(notInstalled) });
+    await userEvent.click(await screen.findByRole("button", { name: "Install GitHub App" }));
+    expect(props.beginInstallation).toHaveBeenCalledOnce();
+    expect(props.navigate).toHaveBeenCalledWith(expect.stringMatching(/^https:\/\/github\.com\/apps\//));
+
+    const suspended = {
+      ...connected,
+      installationAuthorization: { ...connected.installationAuthorization, status: "SUSPENDED" as const },
+      accessibleRepositoryCount: 0,
+    };
+    const suspendedProps = renderPanel({ loadStatus: vi.fn().mockResolvedValue(suspended) });
+    await userEvent.click(await screen.findByRole("button", { name: "Update GitHub App installation" }));
+    expect(suspendedProps.beginInstallation).toHaveBeenCalledOnce();
+  });
+
+  it("confirms disconnect, sends in-memory CSRF, and keeps history messaging", async () => {
     const revokeConnection = vi.fn().mockResolvedValue({ success: true, historyRetained: true });
-    const loadStatus = vi.fn()
-      .mockResolvedValueOnce(connected)
-      .mockResolvedValueOnce({
-        ...reconnect,
-        installationAuthorization: { status: "NOT_INSTALLED" as const, installation: null },
-        accessibleRepositoryCount: 0,
-        trackedRepositoryCount: 0,
-      });
+    const loadStatus = vi.fn().mockResolvedValueOnce(connected).mockResolvedValueOnce(reconnect);
     renderPanel({ loadStatus, revokeConnection });
     await screen.findByText("@alice-dev");
     await userEvent.click(screen.getByRole("button", { name: "Disconnect GitHub" }));
     expect(screen.getByRole("dialog")).toHaveTextContent("Historical activity remains in Trace");
     await userEvent.click(screen.getByRole("button", { name: "Confirm disconnect" }));
     await waitFor(() => expect(revokeConnection).toHaveBeenCalledWith("csrf-value"));
-    await waitFor(() => expect(loadStatus).toHaveBeenCalledTimes(2));
-    expect(await screen.findByRole("button", { name: "Reconnect GitHub" })).toBeInTheDocument();
-    expect(screen.getByRole("status")).toHaveTextContent("disconnected");
+    expect(await screen.findByRole("status")).toHaveTextContent("disconnected");
+    expect(await screen.findByRole("heading", { name: "Reconnect GitHub" })).toBeInTheDocument();
+    expect(loadStatus).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps a successful disconnect truthful when the status refresh is unavailable", async () => {
+    const loadStatus = vi.fn().mockResolvedValueOnce(connected).mockRejectedValueOnce(new Error("offline"));
+    renderPanel({ loadStatus });
+    await screen.findByText("@alice-dev");
+    await userEvent.click(screen.getByRole("button", { name: "Disconnect GitHub" }));
+    await userEvent.click(screen.getByRole("button", { name: "Confirm disconnect" }));
+
+    expect(await screen.findByRole("heading", { name: "Reconnect GitHub" })).toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent("Historical activity remains");
   });
 
   it("renders reconnect, suspended installation, and closed callback feedback safely", async () => {
