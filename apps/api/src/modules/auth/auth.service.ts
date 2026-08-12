@@ -307,7 +307,7 @@ export class AuthService {
   }
 
   private async issuePasswordReset(user: User, email: string, requestId?: string): Promise<void> {
-    await this.rateLimits.withLock('password-reset-issuance', user.id, RESET_ISSUANCE_LOCK_MS, async () => {
+    await this.rateLimits.withLock('password-reset-issuance', user.id, RESET_ISSUANCE_LOCK_MS, async (assertOwned) => {
       const rawToken = createOpaqueToken();
       const tokenHash = hashResetToken(rawToken);
       const expiresAt = new Date(Date.now() + RESET_TTL_MS);
@@ -334,6 +334,10 @@ export class AuthService {
         return;
       }
 
+      if (!await assertOwned()) {
+        await this.prisma.passwordResetToken.deleteMany({ where: { id: token.id, consumedAt: null } });
+        return;
+      }
       await this.prisma.passwordResetToken.updateMany({
         where: { userId: user.id, id: { not: token.id }, consumedAt: null },
         data: { consumedAt: new Date() },

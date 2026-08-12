@@ -120,7 +120,7 @@ The implemented `/api/v1/auth` endpoints are documented in `docs/api.md`. Authen
 - Authenticated mutations require the response's CSRF token in `X-CSRF-Token`.
 - Redis-backed fixed-window limits apply first per direct client address and then per normalized account/identifier, so already-blocked traffic cannot churn principal keys. Forwarded-address headers are not trusted by the application.
 - Password-reset tokens expire after 30 minutes, are stored only as SHA-256 hashes, are single-use, and revoke every active session when consumed.
-- Forgot-password responses remain identical for known and unknown identifiers. Eligible-account issuance runs asynchronously behind a per-user Redis lock, while the public response completes in the same randomized minimum window even if delivery is slower.
+- Forgot-password responses remain identical for known and unknown identifiers. Eligible-account issuance runs asynchronously behind a renewable per-user Redis lock, while the public response completes in the same randomized minimum window even if delivery is slower. Ownership is rechecked before retiring older tokens, so expired owners cannot mutate newer issuance state.
 - A replacement reset token does not invalidate the previous token until the delivery boundary succeeds. Failed replacements are deleted; successful replacements consume prior outstanding tokens.
 - Security-relevant successful transitions are recorded without raw passwords, session tokens, CSRF tokens, or reset tokens.
 
