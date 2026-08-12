@@ -1,0 +1,8 @@
+{
+  "name": "@trace/web",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {"dev":"next dev","build":"next build","start":"next start","lint":"next lint","typecheck":"tsc --noEmit","test":"vitest run","test:e2e":"playwright test"},
+  "dependencies": {"@tanstack/react-query":"^5.66.0","@trace/ui":"workspace:*","clsx":"^2.1.1","lucide-react":"^0.468.0","msw":"^2.7.0","next":"14.2.35","react":"^18.3.1","react-dom":"^18.3.1","react-hook-form":"^7.54.2"},
+  "devDependencies": {"@playwright/test":"^1.49.1","@testing-library/jest-dom":"^6.6.3","@testing-library/react":"^16.1.0","@testing-library/user-event":"^14.5.2","@types/node":"^22.10.7","@types/react":"^18.3.18","@types/react-dom":"^18.3.5","autoprefixer":"^10.4.20","eslint":"^8.57.1","eslint-config-next":"14.2.35","jsdom":"^25.0.1","postcss":"^8.5.1","tailwindcss":"^3.4.17","typescript":"^5.7.3","vitest":"^2.1.9"}
+}

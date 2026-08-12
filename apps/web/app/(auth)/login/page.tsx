@@ -1,0 +1,4 @@
+import Link from "next/link";
+import { Input, Label } from "@trace/ui";
+import { AuthShell } from "@/components/auth/auth-shell";
+export default function LoginPage() { return <AuthShell title="Welcome back." description="Sign in to review your development activity." note="Sign-in behavior begins on Day 2. This form is a non-functional layout preview."><form className="auth-form"><Label htmlFor="username">Username</Label><Input id="username" autoComplete="username" placeholder="your-username" disabled/><Label htmlFor="password">Password</Label><Input id="password" type="password" autoComplete="current-password" placeholder="••••••••" disabled/><button type="button" disabled>Sign in — available Day 2</button><div className="auth-links"><Link href="/forgot-password">Forgot password?</Link><Link href="/register">Create an account</Link></div></form></AuthShell>; }

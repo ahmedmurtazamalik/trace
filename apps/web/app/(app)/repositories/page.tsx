@@ -1,0 +1,5 @@
+import { BookOpen, Search } from "lucide-react";
+import { Badge, Card } from "@trace/ui";
+import { PageShell } from "@/components/page-shell";
+const repos = [{name:"trace/web",visibility:"Private",branch:"main"},{name:"trace/api",visibility:"Private",branch:"main"},{name:"atlas/docs",visibility:"Public",branch:"trunk"}];
+export default function RepositoriesPage() { return <PageShell eyebrow="Source control" title="Repositories" description="See which repositories Trace can access and which ones you choose to track." upcoming="Repository search and tracking controls arrive on Day 4."><Card className="preview-list-card"><div className="fake-search"><Search size={17}/><span>Search repositories…</span></div>{repos.map(repo => <article className="repo-row" key={repo.name}><span className="repo-icon"><BookOpen size={18}/></span><div><strong>{repo.name}</strong><p>Default branch: {repo.branch}</p></div><Badge>{repo.visibility}</Badge><span className="tracking-label">Not connected</span></article>)}</Card></PageShell>; }
