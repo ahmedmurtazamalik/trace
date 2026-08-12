@@ -1,0 +1,59 @@
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { connectGithub, disconnectGithub, getGithubStatus, GithubApiError } from "./github";
+
+const connected = {
+  accountConnection: { status: "CONNECTED" as const, account: { id: "github-account-1", username: "alice-dev", displayName: "Alice Developer", avatarUrl: "https://avatars.githubusercontent.com/u/12345" } },
+  installationAuthorization: { status: "ACTIVE" as const, installation: { id: "installation-1", accountType: "ORGANIZATION" as const, accountLogin: "trace-example" } },
+  accessibleRepositoryCount: 4,
+  trackedRepositoryCount: 2,
+  historyRetained: true as const,
+};
+
+function response(body: unknown, status = 200) {
+  return new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
+}
+
+describe("GitHub API client", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("validates status and connect responses with cookie credentials", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(response(connected))
+      .mockResolvedValueOnce(response({ authorizationUrl: "https://github.com/login/oauth/authorize?client_id=trace&state=opaque-state" }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(getGithubStatus()).resolves.toEqual(connected);
+    await expect(connectGithub()).resolves.toEqual(expect.objectContaining({ authorizationUrl: expect.stringMatching(/^https:\/\/github\.com\//) }));
+    expect(fetchMock.mock.calls.map(([url, init]) => [url, init.method, init.credentials])).toEqual([
+      ["http://localhost:3001/api/v1/github/status", "GET", "include"],
+      ["http://localhost:3001/api/v1/github/connect", "GET", "include"],
+    ]);
+  });
+
+  it("sends disconnect CSRF only in the canonical header", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(response({ success: true, historyRetained: true }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(disconnectGithub("csrf-value")).resolves.toEqual({ success: true, historyRetained: true });
+    expect(fetchMock).toHaveBeenCalledWith("http://localhost:3001/api/v1/github/connection", expect.objectContaining({
+      method: "DELETE",
+      credentials: "include",
+      body: undefined,
+      headers: { "x-csrf-token": "csrf-value" },
+    }));
+  });
+
+  it("rejects malformed successes and hides raw backend failures", async () => {
+    vi.stubGlobal("fetch", vi.fn()
+      .mockResolvedValueOnce(response({ accountConnection: null }))
+      .mockResolvedValueOnce(response({ code: "GITHUB_CALLBACK_FAILED", message: "raw provider secret", requestId: "request-1" }, 502)));
+
+    await expect(getGithubStatus()).rejects.toMatchObject({ code: "INVALID_RESPONSE" });
+    await expect(connectGithub()).rejects.toEqual(expect.objectContaining({
+      name: "GithubApiError",
+      code: "GITHUB_CALLBACK_FAILED",
+      message: "GitHub could not complete the connection. Please try again.",
+    }));
+    expect(new GithubApiError("NETWORK_ERROR", "safe", 0)).toBeInstanceOf(Error);
+  });
+});

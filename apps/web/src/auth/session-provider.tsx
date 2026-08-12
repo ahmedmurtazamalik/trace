@@ -20,6 +20,7 @@ type RevokeSession = typeof logout;
 interface AuthSessionValue {
   status: SessionStatus;
   user?: PublicUser;
+  csrfToken?: string;
   error?: string;
   isSigningOut: boolean;
   establishSession(session: AuthSessionResponse): void;
@@ -109,11 +110,12 @@ export function AuthSessionProvider({
   const value = useMemo<AuthSessionValue>(() => ({
     status,
     user: session?.user,
+    csrfToken: session?.csrfToken,
     error,
     isSigningOut,
     establishSession,
     signOut,
-  }), [error, establishSession, isSigningOut, session?.user, signOut, status]);
+  }), [error, establishSession, isSigningOut, session?.csrfToken, session?.user, signOut, status]);
 
   return <AuthSessionContext.Provider value={value}>{children}</AuthSessionContext.Provider>;
 }

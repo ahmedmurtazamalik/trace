@@ -94,7 +94,18 @@ pnpm --filter @trace/web build
 pnpm --filter @trace/web test:e2e
 ```
 
-Playwright starts a fresh non-reused Trace server on port 3100 and verifies desktop Chrome and Pixel 5 behavior, including authentication success/error paths, recovery privacy, protected return paths, CSRF logout, responsive route shells, and keyboard skip navigation.
+Playwright starts a fresh non-reused Trace server on port 3100 and verifies desktop Chrome and Pixel 5 behavior, including authentication success/error paths, recovery privacy, protected return paths, CSRF logout, GitHub connection/disconnect states, responsive route shells, and keyboard skip navigation.
+
+## GitHub integration
+
+The `/github` route consumes the frozen `@trace/shared` GitHub schemas through `src/api/github.ts`.
+
+- Trace identity, GitHub account connection, and GitHub App installation authorization remain separate.
+- Connect uses only the backend-provided, schema-validated HTTPS `github.com` URL.
+- Disconnect sends the in-memory CSRF token in `x-csrf-token` and retains historical activity.
+- Callback UI reads only the closed `result` and `reason` enums; raw provider and state values are ignored.
+- Day 3 tests use contract-shaped responses and do not require Person A's same-day backend or real GitHub credentials.
+- Repository rows on the GitHub page are explicitly illustrative Day 4 previews.
 
 ## Live-backend limitations
 

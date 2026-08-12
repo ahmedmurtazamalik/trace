@@ -51,6 +51,17 @@ This deliberately avoids revealing whether an account exists.
 
 Reset links are single-use and expire after 30 minutes. A missing, invalid, consumed, or expired token displays a safe invalid-link message.
 
+## Connect GitHub
+
+1. Sign in to Trace and open **GitHub** in the workspace navigation.
+2. Review the separate account-connection and App-installation sections. GitHub never replaces your Trace sign-in.
+3. Select **Connect GitHub** or **Reconnect GitHub**. Trace follows only the secure GitHub URL supplied by its backend.
+4. After returning, Trace shows safe connected, reconnect, denial, expired-session, or connection-error feedback without displaying OAuth or state details.
+5. Connected users can review the linked GitHub username, installation owner, accessible repository count, and tracked repository count.
+6. To disconnect, select **Disconnect GitHub**, review the confirmation, then select **Confirm disconnect**. Historical activity remains in Trace.
+
+Repository rows on the GitHub page are labelled illustrative. Real repository access and tracking controls arrive in the repository-management work.
+
 ## Accessibility
 
 - Every field has a programmatic label.
