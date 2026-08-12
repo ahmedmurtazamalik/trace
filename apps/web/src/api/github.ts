@@ -5,10 +5,12 @@ import {
   githubConnectionStatusSchema,
   githubDisconnectResponseSchema,
   githubErrorCodeSchema,
+  githubInstallationStartResponseSchema,
   type GithubConnectResponse,
   type GithubConnectionStatus,
   type GithubDisconnectResponse,
   type GithubErrorCode,
+  type GithubInstallationStartResponse,
 } from "@trace/shared";
 
 const API_ORIGIN = (process.env.NEXT_PUBLIC_API_ORIGIN ?? "http://localhost:3001").replace(/\/$/, "");
@@ -80,6 +82,11 @@ export function getGithubStatus(options: RequestOptions = {}): Promise<GithubCon
 /** Requests a backend-generated, contract-validated github.com authorization URL. */
 export function connectGithub(options: RequestOptions = {}): Promise<GithubConnectResponse> {
   return request("/api/v1/github/connect", "GET", githubConnectResponseSchema, options);
+}
+
+/** Requests the backend-generated GitHub App installation URL. */
+export function getGithubInstallation(options: RequestOptions = {}): Promise<GithubInstallationStartResponse> {
+  return request("/api/v1/github/installation", "GET", githubInstallationStartResponseSchema, options);
 }
 
 /** Disconnects GitHub without deleting retained Trace activity. */

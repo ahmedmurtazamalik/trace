@@ -4,16 +4,18 @@ import { useEffect, useState } from "react";
 import { AlertTriangle, CheckCircle2, Github, History, LockKeyhole, RefreshCw, ShieldCheck } from "lucide-react";
 import { Badge, Button, Card } from "@trace/ui";
 import type { GithubCallbackResult, GithubConnectionStatus } from "@trace/shared";
-import { connectGithub, disconnectGithub, getGithubStatus, GithubApiError } from "@/api/github";
+import { connectGithub, disconnectGithub, getGithubInstallation, getGithubStatus, GithubApiError } from "@/api/github";
 import { useAuthSession } from "@/auth/session-provider";
 
 type LoadStatus = typeof getGithubStatus;
 type BeginConnection = typeof connectGithub;
+type BeginInstallation = typeof getGithubInstallation;
 type RevokeConnection = typeof disconnectGithub;
 
 interface GithubConnectionPanelProps {
   loadStatus?: LoadStatus;
   beginConnection?: BeginConnection;
+  beginInstallation?: BeginInstallation;
   revokeConnection?: RevokeConnection;
   navigate?: (url: string) => void;
   callbackResult?: GithubCallbackResult;
@@ -35,6 +37,7 @@ function errorMessage(error: unknown) {
 export function GithubConnectionPanel({
   loadStatus = getGithubStatus,
   beginConnection = connectGithub,
+  beginInstallation = getGithubInstallation,
   revokeConnection = disconnectGithub,
   navigate = (url) => window.location.assign(url),
   callbackResult,
@@ -42,7 +45,7 @@ export function GithubConnectionPanel({
   const { csrfToken } = useAuthSession();
   const [status, setStatus] = useState<GithubConnectionStatus>();
   const [loading, setLoading] = useState(true);
-  const [pending, setPending] = useState<"connect" | "disconnect">();
+  const [pending, setPending] = useState<"connect" | "install" | "disconnect">();
   const [error, setError] = useState<string>();
   const [notice, setNotice] = useState<string>();
   const [confirmDisconnect, setConfirmDisconnect] = useState(false);
@@ -72,6 +75,18 @@ export function GithubConnectionPanel({
     }
   }
 
+  async function install() {
+    setPending("install");
+    setError(undefined);
+    try {
+      const result = await beginInstallation();
+      navigate(result.installationUrl);
+    } catch (reason) {
+      setError(errorMessage(reason));
+      setPending(undefined);
+    }
+  }
+
   async function disconnect() {
     if (!csrfToken) {
       setError("Your security session is no longer valid. Please sign in again.");
@@ -81,13 +96,20 @@ export function GithubConnectionPanel({
     setError(undefined);
     try {
       const result = await revokeConnection(csrfToken);
-      setStatus({
-        accountConnection: { status: "DISCONNECTED", account: null },
-        installationAuthorization: { status: "NOT_INSTALLED", installation: null },
-        accessibleRepositoryCount: 0,
-        trackedRepositoryCount: 0,
-        historyRetained: result.historyRetained,
-      });
+      try {
+        setStatus(await loadStatus());
+      } catch {
+        const account = status?.accountConnection.account;
+        setStatus({
+          accountConnection: account
+            ? { status: "RECONNECT_REQUIRED", account }
+            : { status: "DISCONNECTED", account: null },
+          installationAuthorization: { status: "NOT_INSTALLED", installation: null },
+          accessibleRepositoryCount: 0,
+          trackedRepositoryCount: 0,
+          historyRetained: result.historyRetained,
+        });
+      }
       setConfirmDisconnect(false);
       setNotice("GitHub disconnected. Historical activity remains in Trace.");
     } catch (reason) {
@@ -141,6 +163,11 @@ export function GithubConnectionPanel({
         <span className="eyebrow">APP INSTALLATION</span>
         <h3>{status.installationAuthorization.status === "ACTIVE" ? "Installation active" : status.installationAuthorization.status === "SUSPENDED" ? "Installation suspended" : "Not installed"}</h3>
         <p>{installation ? <><strong>{installation.accountLogin}</strong> · {installation.accountType === "ORGANIZATION" ? "Organization" : "Personal"}</> : "Install the Trace GitHub App after connecting to choose repository access."}</p>
+        {status.accountConnection.status === "CONNECTED" && status.installationAuthorization.status !== "ACTIVE" && <div className="github-actions">
+          <Button onClick={install} disabled={Boolean(pending)}>
+            {pending === "install" ? "Opening GitHub…" : status.installationAuthorization.status === "SUSPENDED" ? "Update GitHub App installation" : "Install GitHub App"}
+          </Button>
+        </div>}
       </Card>
       <Card className="github-status-card">
         <div className="github-card-icon"><LockKeyhole aria-hidden="true" size={20} /></div>

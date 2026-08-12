@@ -166,3 +166,18 @@ No Person A-owned backend/shared-contract source, root workspace configuration, 
 ### Next-day joint gate
 - Day 3 frontend is ready when final gates pass and the branch is pushed.
 - Day 4 depends on the repository contract frozen by Person A at the end of Day 3.
+
+## Day 3 integration repair — Person B
+
+### Done
+- Added the shared-contract-validated `GET /api/v1/github/installation` frontend adapter.
+- Added **Install GitHub App** for connected accounts without an installation.
+- Added **Update GitHub App installation** for connected accounts with a suspended installation.
+- Kept account reconnection ahead of installation repair when account authorization is `RECONNECT_REQUIRED`.
+- Replaced the guessed post-disconnect `DISCONNECTED` state with a fresh backend status read, preserving the backend's `RECONNECT_REQUIRED` lifecycle.
+- Added focused API, component, and browser regressions for installation start/recovery and disconnect refresh.
+
+### Ownership and remaining joint gate
+- Person B-owned frontend and handoff files changed; no backend or shared-contract source was modified.
+- The root lockfile was regenerated because merged `apps/web` and `packages/ui` manifests were absent from it; this reproducibility repair requires integration-owner review.
+- Person A still needs to change backend callback redirects from `/settings/github` to the implemented `/github` route before the complete OAuth/App callback journey is release-ready.

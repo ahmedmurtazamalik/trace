@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { connectGithub, disconnectGithub, getGithubStatus, GithubApiError } from "./github";
+import { connectGithub, disconnectGithub, getGithubInstallation, getGithubStatus, GithubApiError } from "./github";
 
 const connected = {
   accountConnection: { status: "CONNECTED" as const, account: { id: "github-account-1", username: "alice-dev", displayName: "Alice Developer", avatarUrl: "https://avatars.githubusercontent.com/u/12345" } },
@@ -41,6 +41,21 @@ describe("GitHub API client", () => {
       body: undefined,
       headers: { "x-csrf-token": "csrf-value" },
     }));
+  });
+
+  it("starts GitHub App installation through the contract endpoint", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(response({
+      installationUrl: "https://github.com/apps/trace/installations/new?state=opaque-state",
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(getGithubInstallation()).resolves.toEqual({
+      installationUrl: "https://github.com/apps/trace/installations/new?state=opaque-state",
+    });
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://localhost:3001/api/v1/github/installation",
+      expect.objectContaining({ method: "GET", credentials: "include" }),
+    );
   });
 
   it("rejects malformed successes and hides raw backend failures", async () => {
