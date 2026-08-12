@@ -15,6 +15,7 @@ const rawEnvironmentSchema = z
     GITHUB_APP_PRIVATE_KEY: z.string().min(1).optional(),
     GITHUB_APP_CLIENT_ID: z.string().min(1).optional(),
     GITHUB_APP_CLIENT_SECRET: z.string().min(1).optional(),
+    GITHUB_CALLBACK_URL: z.url().optional(),
     GITHUB_WEBHOOK_SECRET: z.string().min(1).optional(),
     LLM_API_KEY: z.string().min(1).optional(),
     STORAGE_BUCKET: z.string().min(1).optional(),
@@ -48,6 +49,7 @@ export interface TraceConfig {
     privateKey?: string;
     clientId?: string;
     clientSecret?: string;
+    callbackUrl?: string;
     webhookSecret?: string;
   };
   llmApiKey?: string;
@@ -83,6 +85,7 @@ export function loadConfig(environment: NodeJS.ProcessEnv | Record<string, strin
       privateKey: value.GITHUB_APP_PRIVATE_KEY,
       clientId: value.GITHUB_APP_CLIENT_ID,
       clientSecret: value.GITHUB_APP_CLIENT_SECRET,
+      callbackUrl: value.GITHUB_CALLBACK_URL,
       webhookSecret: value.GITHUB_WEBHOOK_SECRET,
     },
     llmApiKey: value.LLM_API_KEY,
