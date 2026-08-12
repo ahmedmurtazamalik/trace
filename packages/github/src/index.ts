@@ -23,6 +23,7 @@ export interface GithubAuthorizationAdapter {
   authorize(code: string): Promise<GithubAuthorizationResult>;
   installationUrl(input: { state: string; appSlug: string }): string;
   installation(installationId: bigint): Promise<GithubInstallationAccess>;
+  verifyInstallation(code: string, installationId: bigint): Promise<{ user: GithubAuthorizedUser; installation: GithubInstallationAccess }>;
 }
 
 export class FakeGithubAuthorizationAdapter implements GithubAuthorizationAdapter {
@@ -50,6 +51,14 @@ export class FakeGithubAuthorizationAdapter implements GithubAuthorizationAdapte
   installation(installationId: bigint): Promise<GithubInstallationAccess> {
     return Promise.resolve({ id: installationId, accountType: 'ORGANIZATION', accountLogin: 'trace-fixture-org', suspended: false });
   }
+
+  verifyInstallation(code: string, installationId: bigint): Promise<{ user: GithubAuthorizedUser; installation: GithubInstallationAccess }> {
+    if (code !== 'fake-installation-verification-code' || installationId !== 91n) return Promise.reject(new Error('GitHub installation verification failed'));
+    return Promise.resolve({
+      user: { id: 583_231n, username: 'fake-octocat', displayName: 'Fake Octocat', avatarUrl: 'https://avatars.githubusercontent.com/u/583231' },
+      installation: { id: installationId, accountType: 'ORGANIZATION', accountLogin: 'trace-fixture-org', suspended: false },
+    });
+  }
 }
 
 export class UnavailableGithubAuthorizationAdapter implements GithubAuthorizationAdapter {
@@ -57,6 +66,7 @@ export class UnavailableGithubAuthorizationAdapter implements GithubAuthorizatio
   authorize(code: string): Promise<GithubAuthorizationResult> { void code; return Promise.reject(new Error('GitHub authorization is not configured')); }
   installationUrl(input: { state: string; appSlug: string }): string { void input; throw new Error('GitHub installation is not configured'); }
   installation(installationId: bigint): Promise<GithubInstallationAccess> { void installationId; return Promise.reject(new Error('GitHub installation is not configured')); }
+  verifyInstallation(code: string, installationId: bigint): Promise<{ user: GithubAuthorizedUser; installation: GithubInstallationAccess }> { void code; void installationId; return Promise.reject(new Error('GitHub installation is not configured')); }
 }
 
 export class RealGithubAuthorizationAdapter implements GithubAuthorizationAdapter {
@@ -112,6 +122,43 @@ export class RealGithubAuthorizationAdapter implements GithubAuthorizationAdapte
       accountLogin: value.account.login,
       suspended: value.suspended_at != null,
     };
+  }
+
+  async verifyInstallation(code: string, installationId: bigint): Promise<{ user: GithubAuthorizedUser; installation: GithubInstallationAccess }> {
+    const accessToken = await this.exchangeToken(code);
+    const [userResponse, installationResponse] = await Promise.all([
+      fetch('https://api.github.com/user', {
+        headers: { Accept: 'application/vnd.github+json', Authorization: `Bearer ${accessToken}`, 'X-GitHub-Api-Version': '2022-11-28' },
+        signal: AbortSignal.timeout(5_000),
+      }),
+      fetch(`https://api.github.com/user/installations/${installationId.toString()}`, {
+        headers: { Accept: 'application/vnd.github+json', Authorization: `Bearer ${accessToken}`, 'X-GitHub-Api-Version': '2022-11-28' },
+        signal: AbortSignal.timeout(5_000),
+      }),
+    ]);
+    if (!userResponse.ok || !installationResponse.ok) throw new Error('GitHub installation verification failed');
+    const user = await userResponse.json() as { id?: number; login?: string; name?: string | null; avatar_url?: string | null };
+    const value = await installationResponse.json() as { id?: number; account?: { login?: string; type?: string }; suspended_at?: string | null };
+    if (!Number.isSafeInteger(user.id) || typeof user.login !== 'string' || !Number.isSafeInteger(value.id) || BigInt(value.id as number) !== installationId || typeof value.account?.login !== 'string') {
+      throw new Error('GitHub installation verification failed');
+    }
+    return {
+      user: { id: BigInt(user.id as number), username: user.login, displayName: user.name ?? null, avatarUrl: user.avatar_url ?? null },
+      installation: { id: installationId, accountType: value.account.type === 'Organization' ? 'ORGANIZATION' : 'USER', accountLogin: value.account.login, suspended: value.suspended_at != null },
+    };
+  }
+
+  private async exchangeToken(code: string): Promise<string> {
+    const tokenResponse = await fetch('https://github.com/login/oauth/access_token', {
+      method: 'POST',
+      headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ client_id: this.input.clientId, client_secret: this.input.clientSecret, code }),
+      signal: AbortSignal.timeout(5_000),
+    });
+    if (!tokenResponse.ok) throw new Error('GitHub token exchange failed');
+    const tokenData = await tokenResponse.json() as { access_token?: string };
+    if (tokenData.access_token === undefined) throw new Error('GitHub token exchange failed');
+    return tokenData.access_token;
   }
 
   private appJwt(): string {

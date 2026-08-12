@@ -175,9 +175,16 @@ describe('GitHub connection API', () => {
       .expect(302);
     const installationStart = await request(server).get('/api/v1/github/installation').set('Cookie', sessionCookie).expect(200);
     const installationState = new URL((installationStart.body as { installationUrl: string }).installationUrl).searchParams.get('state');
-    await request(server)
+    const setupCallback = await request(server)
       .get('/api/v1/github/installation/callback')
       .query({ installation_id: '91', setup_action: 'install', state: installationState })
+      .set('Cookie', sessionCookie)
+      .expect(302);
+    const verificationState = new URL(setupCallback.headers.location as string).searchParams.get('state');
+    expect(setupCallback.headers.location).toContain('https://github.com/login/oauth/authorize');
+    await request(server)
+      .get('/api/v1/github/callback')
+      .query({ code: 'fake-installation-verification-code', state: verificationState })
       .set('Cookie', sessionCookie)
       .expect(302);
     const status = await request(server).get('/api/v1/github/status').set('Cookie', sessionCookie).expect(200);
@@ -186,6 +193,22 @@ describe('GitHub connection API', () => {
       installationAuthorization: { status: 'ACTIVE', installation: { accountType: 'ORGANIZATION', accountLogin: 'trace-fixture-org' } },
     });
     expect(JSON.stringify(status.body)).not.toMatch(/token|secret/i);
+  });
+
+  it('rejects a substituted installation id unless the linked GitHub user can access it', async () => {
+    const identity = await registerIdentity({ username, email });
+    const oauthState = await connectState(identity.cookie);
+    await request(server).get('/api/v1/github/callback').query({ code: 'fake-success-code', state: oauthState }).set('Cookie', identity.cookie).expect(302);
+    const start = await request(server).get('/api/v1/github/installation').set('Cookie', identity.cookie).expect(200);
+    const setupState = new URL((start.body as { installationUrl: string }).installationUrl).searchParams.get('state');
+    const setup = await request(server).get('/api/v1/github/installation/callback')
+      .query({ installation_id: '999', setup_action: 'install', state: setupState }).set('Cookie', identity.cookie).expect(302);
+    const verificationState = new URL(setup.headers.location as string).searchParams.get('state');
+    const verification = await request(server).get('/api/v1/github/callback')
+      .query({ code: 'fake-installation-verification-code', state: verificationState }).set('Cookie', identity.cookie).expect(302);
+    expect(verification.headers.location).toBe('http://localhost:3000/settings/github?result=error&reason=callback_failed');
+    const status = await request(server).get('/api/v1/github/status').set('Cookie', identity.cookie).expect(200);
+    expect(status.body).toMatchObject({ installationAuthorization: { status: 'NOT_INSTALLED', installation: null } });
   });
 
   it('reports reconnect required after disconnect and connected after a successful reconnect', async () => {

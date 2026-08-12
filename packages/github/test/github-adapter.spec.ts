@@ -16,6 +16,14 @@ describe('GitHub authorization adapters', () => {
     expect(installUrl.searchParams.get('state')).toBe('install-state');
   });
 
+  it('verifies an exact installation through the user-scoped grant', async () => {
+    const adapter = new FakeGithubAuthorizationAdapter();
+    const verified = await adapter.verifyInstallation('fake-installation-verification-code', 91n);
+    expect(verified.user.id).toBe(583231n);
+    expect(verified.installation.id).toBe(91n);
+    await expect(adapter.verifyInstallation('fake-installation-verification-code', 999n)).rejects.toThrow('verification failed');
+  });
+
   it('builds the real authorization URL without exposing secrets', () => {
     const adapter = new RealGithubAuthorizationAdapter({
       clientId: 'client-id', clientSecret: 'client-secret', appId: '123', privateKey: 'invalid-test-key',
@@ -33,5 +41,6 @@ describe('GitHub authorization adapters', () => {
     expect(() => adapter.installationUrl({ state: 'state', appSlug: 'trace-app' })).toThrow('not configured');
     await expect(adapter.authorize('code')).rejects.toThrow('not configured');
     await expect(adapter.installation(91n)).rejects.toThrow('not configured');
+    await expect(adapter.verifyInstallation('code', 91n)).rejects.toThrow('not configured');
   });
 });

@@ -19,7 +19,7 @@ const STATE_TTL_MS = 10 * 60 * 1_000;
 const LINK_LIMIT = 10;
 const LINK_WINDOW_MS = 15 * 60 * 1_000;
 const hash = (value: string): string => createHash('sha256').update(value).digest('hex');
-type StatePurpose = 'OAUTH' | 'INSTALLATION';
+type StatePurpose = 'OAUTH' | 'INSTALLATION' | 'INSTALLATION_VERIFY';
 
 @Injectable()
 export class GithubService {
@@ -47,10 +47,20 @@ export class GithubService {
     const parsed = githubCallbackQuerySchema.safeParse(input);
     if (!parsed.success) return this.redirect({ result: 'error', reason: 'callback_failed' });
     const query: GithubCallbackQuery = parsed.data;
-    const state = await this.consumeState(query.state, session, 'OAUTH');
+    const state = await this.consumeState(query.state, session, ['OAUTH', 'INSTALLATION_VERIFY']);
     if (state === null) return this.redirect({ result: 'error', reason: session === null ? 'session_expired' : 'state_invalid' });
     if ('error' in query) return this.redirect({ result: 'error', reason: 'access_denied' });
     try {
+      if (state.purpose === 'INSTALLATION_VERIFY') {
+        if (state.installationId === null) return this.redirect({ result: 'error', reason: 'callback_failed' });
+        const verified = await this.adapter.verifyInstallation(query.code, state.installationId);
+        const account = await this.prisma.githubAccount.findUnique({ where: { userId: state.userId } });
+        if (account === null || account.unlinkedAt !== null || account.githubUserId !== verified.user.id) {
+          return this.redirect({ result: 'error', reason: 'callback_failed' });
+        }
+        const persisted = await this.persistInstallation(state.userId, verified.installation);
+        return this.redirect(persisted ? { result: 'connected' } : { result: 'error', reason: 'callback_failed' });
+      }
       const authorized = (await this.adapter.authorize(query.code)).user;
       const linked = await this.prisma.$transaction(async (transaction) => {
         await transaction.$queryRaw`SELECT id FROM users WHERE id = ${state.userId} FOR UPDATE`;
@@ -95,9 +105,11 @@ export class GithubService {
     const state = await this.consumeState(query.state, session, 'INSTALLATION');
     if (state === null) return this.redirect({ result: 'error', reason: session === null ? 'session_expired' : 'state_invalid' });
     try {
-      const installation = await this.adapter.installation(BigInt(query.installation_id));
-      const persisted = await this.persistInstallation(state.userId, installation);
-      return this.redirect(persisted ? { result: 'connected' } : { result: 'error', reason: 'callback_failed' });
+      const installationId = BigInt(query.installation_id);
+      await this.adapter.installation(installationId);
+      const verificationState = randomBytes(32).toString('base64url');
+      await this.storeState(state.userId, state.sessionId, verificationState, 'INSTALLATION_VERIFY', installationId.toString());
+      return this.adapter.authorizationUrl({ state: verificationState, callbackUrl: this.callbackUrl() });
     } catch {
       return this.redirect({ result: 'error', reason: 'callback_failed' });
     }
@@ -150,17 +162,19 @@ export class GithubService {
     await this.limiter.consume(`github-${scope}-user`, userId, LINK_LIMIT, LINK_WINDOW_MS);
   }
 
-  private async storeState(userId: string, sessionId: string, state: string, purpose: StatePurpose): Promise<void> {
-    await this.prisma.githubOauthState.create({ data: { userId, sessionId, purpose, stateTokenHash: hash(state), expiresAt: new Date(Date.now() + STATE_TTL_MS) } });
+  private async storeState(userId: string, sessionId: string, state: string, purpose: StatePurpose, intendedRedirect?: string): Promise<void> {
+    await this.prisma.githubOauthState.create({ data: { userId, sessionId, purpose, intendedRedirect, stateTokenHash: hash(state), expiresAt: new Date(Date.now() + STATE_TTL_MS) } });
   }
 
-  private async consumeState(state: string, session: { userId: string; sessionId: string } | null, purpose: StatePurpose): Promise<{ userId: string } | null> {
+  private async consumeState(state: string, session: { userId: string; sessionId: string } | null, purposes: StatePurpose | StatePurpose[]): Promise<{ userId: string; sessionId: string; purpose: StatePurpose; installationId: bigint | null } | null> {
     if (session === null) return null;
     return this.prisma.$transaction(async (transaction) => {
       const record = await transaction.githubOauthState.findUnique({ where: { stateTokenHash: hash(state) } });
-      if (record === null || record.userId !== session.userId || record.sessionId !== session.sessionId || record.purpose !== purpose || record.consumedAt !== null || record.expiresAt <= new Date()) return null;
+      const allowed = Array.isArray(purposes) ? purposes : [purposes];
+      if (record === null || record.userId !== session.userId || record.sessionId !== session.sessionId || !allowed.includes(record.purpose as StatePurpose) || record.consumedAt !== null || record.expiresAt <= new Date()) return null;
       const consumed = await transaction.githubOauthState.updateMany({ where: { id: record.id, consumedAt: null }, data: { consumedAt: new Date() } });
-      return consumed.count === 1 ? { userId: record.userId } : null;
+      const installationId = record.purpose === 'INSTALLATION_VERIFY' && record.intendedRedirect !== null ? BigInt(record.intendedRedirect) : null;
+      return consumed.count === 1 ? { userId: record.userId, sessionId: record.sessionId, purpose: record.purpose as StatePurpose, installationId } : null;
     });
   }
 
