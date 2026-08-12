@@ -288,27 +288,32 @@ No Person A-owned backend, worker, shared-contract, root workspace, or infrastru
 No Person A-owned backend, worker, shared-contract, root workspace, or infrastructure file was changed.
 
 ### Contract and mock-versus-real status
-- Contract: frozen `packages/shared/src/dashboard.ts`, `packages/shared/src/activity.ts`, and Day 4 API documentation.
-- Mock-backed: dashboard load, all dashboard states, date/repository filters, metrics, and recent activity.
-- Real adapter: not yet; canonical `/api/v1/dashboard` remains scheduled for Person A Day 7.
-- Person A Day 6 processing: not present on remote `main`, any remote branch, or any PR at the initial, pre-verification, and final integration fetches, so integrated-tree proof against that unpublished work remains externally blocked.
+- Exact integrated `origin/main`: `1a9229ad4749c39ca0a0b97897e02270fb71e7b4`.
+- Contract: frozen `packages/shared/src/dashboard.ts` and `packages/shared/src/activity.ts`.
+- Real: Person A's GitHub push processor is on `origin/main`; it persists canonical commit, contributor, branch, file-change, addition, deletion, and occurrence-time facts compatible with the shared Activity summary.
+- Mock: Dashboard and Activity screens still load deterministic schema-validated fixtures. Both screens disclose this in the UI.
+- Unfinished: no `/api/v1/activity` or `/api/v1/dashboard` route exists on the integrated tree, so the processed database facts are not yet reachable by these screens. This remains teammate/backend-owned work and no backend, worker, database, or shared-contract file was changed to hide it.
 
-### TDD and verification
-- Expected RED: dashboard feature module absent.
-- Focused GREEN: dashboard component suite PASS, 8/8.
-- Expected RED: an empty date escaped the required frozen query boundary; the control now rejects empty intermediate values and sends no invalid request or URL update.
-- Dashboard Playwright journey: PASS, 2/2 across desktop and mobile.
-- Combined Activity/Dashboard browser regression after shared-card refactor: PASS, 4/4.
-- Full suite, build, ownership, and exact-main coherence results are recorded at the final Day 6 gate.
+### TDD and final integrated verification
+- Expected RED/GREEN history: dashboard feature absence, required-date handling, hostile URL values, browser-history synchronization, and stale-request ownership were each captured by focused regressions before their Person B fixes.
+- UI test: PASS, 2/2; UI typecheck: PASS.
+- Web test: PASS, 85/85; web lint and typecheck: PASS with no lint warnings or errors.
+- Full Playwright desktop/mobile suite: PASS, 54/54, including timezone-aware Dashboard and Activity date boundaries across both projects.
+- Independent-review RED/GREEN: fixed unsafe raw Dashboard errors, stale facts during failed filter changes, factually incorrect fixture-date relabeling, timezone-incorrect Activity day groups and fixture filtering, malformed Activity date/timezone URL handling, and the inaccurate historical `Today` label; focused component suite PASS, 21/21, and focused browser suite PASS, 6/6.
+- Production build: PASS with 14/14 static pages generated under `NODE_ENV=production`.
+- `git diff --check`: PASS.
+- Ownership inspection: PASS; every Day 6 diff path is under `apps/web/**` or `docs/person-b-handoffs.md`.
+- Rebase/conflicts: clean rebase of all three Person B commits onto the exact main SHA; zero conflicts. Final divergence before publication: main behind 0 / Day 6 ahead 4 (including this integration closeout commit).
 
 ### Issues and important notes
-- Dashboard data is deterministic illustrative data validated by `dashboardResponseSchema`; it is not live database, webhook, or Activity API data.
-- Day 5 PR #14 is merged into `main` as `846770f`; both GitHub CI jobs passed.
-- `day6` is local-only after the final coherence gate; `.hermes/` remains excluded.
+- Dashboard data is deterministic illustrative data from `apps/web/src/mocks/fixtures/dashboard.ts`; it is not live database, webhook, or Activity API data.
+- Activity remains deterministic illustrative data from `apps/web/src/mocks/fixtures/activity.ts` for the same missing-route reason.
+- Person A Day 6 was proven on live `origin/main` by commits `6f2a794`, `b86ca9f`, and `1a9229a`; GitHub showed no corresponding merged or open PR.
+- `.hermes/` remains local-only, untracked, and excluded from commits.
 
 ### Next-day joint gate
-- Integrate Person A Day 6 when it is actually published, then rerun seam checks against that exact tree.
-- Publish/open the Day 6 PR only when Ali explicitly requests that external action.
+- Ali can open the Day 6 PR after the verified rebased branch is pushed.
+- A later backend-owned phase must publish the canonical Activity and Dashboard read routes before fixture-to-live frontend integration can be truthfully completed.
 
 ### Delayed Day 5 review remediation
 - Validated URL `source` and `type` values through shared schemas and safely dropped invalid or incompatible values.

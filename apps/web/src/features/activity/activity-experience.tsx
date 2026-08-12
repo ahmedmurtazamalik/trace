@@ -20,9 +20,14 @@ const validTypesBySource: Record<ActivitySource, Set<ActivityType>> = {
 
 function filtered(filters: ActivityFilters) { return Object.fromEntries(Object.entries(filters).filter(([, value]) => value !== undefined && value !== "")) as ActivityFilters; }
 function filterKey(filters: ActivityFilters) { return JSON.stringify(filtered(filters)); }
-function groupByDay(items: ActivitySummary[]) {
+function localDateKey(value: string, timezone: string) {
+  const parts = new Intl.DateTimeFormat("en-US", { timeZone: timezone, year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(new Date(value));
+  const part = (type: Intl.DateTimeFormatPartTypes) => parts.find((item) => item.type === type)?.value ?? "";
+  return `${part("year")}-${part("month")}-${part("day")}`;
+}
+function groupByDay(items: ActivitySummary[], timezone: string) {
   return items.reduce<Record<string, ActivitySummary[]>>((groups, item) => {
-    const date = item.occurredAt.slice(0, 10);
+    const date = localDateKey(item.occurredAt, timezone);
     (groups[date] ??= []).push(item);
     return groups;
   }, {});
@@ -103,7 +108,7 @@ export function ActivityExperience({ loadActivity, initialFilters = {}, timezone
     {loading && items.length === 0 ? <Card className="activity-state-card" role="status">Loading development activity…</Card>
       : error !== undefined && items.length === 0 ? <Card className="activity-state-card activity-state-error" role="alert"><p>{error}</p><Button className="trace-button-secondary" onClick={() => void reload()}>Retry</Button></Card>
       : items.length === 0 ? <Card className="activity-state-card"><h2>{Object.keys(filters).length ? "No activity matches these filters" : "No development activity yet"}</h2><p>{Object.keys(filters).length ? "Clear filters or choose a broader combination." : "Activity appears after a tracked repository sends development events."}</p>{Object.keys(filters).length > 0 && <Button className="trace-button-secondary" onClick={clear}>Clear filters</Button>}</Card>
-      : <section className="activity-timeline" aria-label="Development activity timeline">{Object.entries(groupByDay(items)).map(([date, group]) => <section className="activity-day-group" key={date}><h2>{new Date(`${date}T12:00:00.000Z`).toLocaleDateString("en-US", { dateStyle: "long", timeZone: timezone })}</h2><ul>{group?.map((item) => <li key={item.id}><ActivitySummaryCard headingLevel={3} item={item} timezone={timezone} /></li>)}</ul></section>)}</section>}
+      : <section className="activity-timeline" aria-label="Development activity timeline">{Object.entries(groupByDay(items, timezone)).map(([date, group]) => <section className="activity-day-group" key={date}><h2>{new Date(`${date}T12:00:00.000Z`).toLocaleDateString("en-US", { dateStyle: "long", timeZone: "UTC" })}</h2><ul>{group?.map((item) => <li key={item.id}><ActivitySummaryCard headingLevel={3} item={item} timezone={timezone} /></li>)}</ul></section>)}</section>}
     {nextCursor !== null && <div className="activity-pagination"><Button className="trace-button-secondary" disabled={loadingMore} onClick={() => void loadMore()}>{loadingMore ? "Loading…" : "Load more activity"}</Button></div>}
     {pageError !== undefined && <div className="activity-notice-error" role="alert">{pageError} <Button className="trace-button-secondary" onClick={() => void loadMore()}>Retry</Button></div>}
   </div>;

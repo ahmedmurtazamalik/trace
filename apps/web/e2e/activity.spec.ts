@@ -44,9 +44,16 @@ test("browser history restores URL-derived activity filters", async ({ page }) =
 });
 
 test("invalid activity query values fall back without crashing", async ({ page }) => {
-  await page.goto("/activity?source=bogus&type=future_event");
+  await page.goto("/activity?source=bogus&type=future_event&date=not-a-date&timezone=Not%2FAZone");
   await expect(page.getByRole("heading", { level: 1, name: "Activity" })).toBeVisible();
   await expect(page.getByLabel("Source")).toHaveValue("");
   await expect(page.getByLabel("Activity type")).toHaveValue("");
   await expect(page.getByLabel("Development activity timeline")).toBeVisible();
+});
+
+test("activity date filtering follows the selected timezone", async ({ page }) => {
+  await page.goto("/activity?date=2026-08-11&timezone=Pacific%2FHonolulu");
+  await expect(page.getByRole("heading", { name: "Refine activity timeline" })).toBeVisible();
+  await page.goto("/activity?date=2026-08-12&timezone=Pacific%2FHonolulu");
+  await expect(page.getByRole("heading", { name: "No activity matches these filters" })).toBeVisible();
 });

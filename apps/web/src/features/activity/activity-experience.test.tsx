@@ -85,6 +85,15 @@ describe("Day 5 activity experience", () => {
     expect(within(timeline).getAllByRole("listitem")).toHaveLength(3);
   });
 
+  it("groups timeline events by their selected timezone day", async () => {
+    const first = { ...activityFixturePages.first.items[0], id: "late", occurredAt: "2026-08-12T23:30:00.000Z" };
+    const second = { ...activityFixturePages.first.items[1], id: "early", occurredAt: "2026-08-13T00:30:00.000Z" };
+    renderExperience({ timezone: "America/Los_Angeles", loadActivity: vi.fn().mockResolvedValue({ items: [first, second], pageInfo: { nextCursor: null, hasNextPage: false } }) });
+    const timeline = await screen.findByRole("region", { name: "Development activity timeline" });
+    expect(within(timeline).getAllByRole("heading", { level: 2 })).toHaveLength(1);
+    expect(within(timeline).getByRole("heading", { level: 2 })).toHaveTextContent("August 12, 2026");
+  });
+
   it("shows actionable empty and forbidden states", async () => {
     const empty: ActivityListResponse = { items: [], pageInfo: { nextCursor: null, hasNextPage: false } };
     const { rerender } = render(<ActivityExperience loadActivity={vi.fn().mockResolvedValue(empty)} />);

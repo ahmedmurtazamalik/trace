@@ -92,10 +92,20 @@ describe("Day 6 dashboard experience", () => {
   });
 
   it("offers a retry after a safe load error", async () => {
-    const loadDashboard = vi.fn().mockRejectedValue(new Error("Dashboard is temporarily unavailable."));
+    const loadDashboard = vi.fn().mockRejectedValue(new Error("database password: super-secret"));
     render(<DashboardExperience loadDashboard={loadDashboard} initialDate="2026-08-12" />);
-    expect(await screen.findByRole("alert")).toHaveTextContent("temporarily unavailable");
+    expect(await screen.findByRole("alert")).toHaveTextContent("Trace could not load the dashboard. Try again.");
+    expect(screen.getByRole("alert")).not.toHaveTextContent("super-secret");
     await userEvent.click(screen.getByRole("button", { name: "Retry" }));
     expect(loadDashboard).toHaveBeenCalledTimes(2);
+  });
+
+  it("clears old facts and surfaces a safe error when a changed filter fails", async () => {
+    const loadDashboard = vi.fn().mockResolvedValueOnce(dashboardFixtures.ready).mockRejectedValue(new Error("internal database detail"));
+    const { rerender } = render(<DashboardExperience loadDashboard={loadDashboard} initialDate="2026-08-12" />);
+    expect(await screen.findByLabelText("Development activity metrics")).toBeInTheDocument();
+    rerender(<DashboardExperience loadDashboard={loadDashboard} initialDate="2026-08-11" />);
+    expect(await screen.findByRole("alert")).toHaveTextContent("Trace could not load the dashboard. Try again.");
+    expect(screen.queryByLabelText("Development activity metrics")).not.toBeInTheDocument();
   });
 });

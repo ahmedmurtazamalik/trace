@@ -38,9 +38,9 @@ export function DashboardExperience({ loadDashboard, initialDate, initialReposit
 
   const reload = useCallback(() => {
     const request = ++generation.current;
-    setLoading(true); setError(undefined);
+    setLoading(true); setError(undefined); setData(undefined);
     return loadDashboard(query).then((response) => { if (request === generation.current) setData(response); })
-      .catch((cause: unknown) => { if (request === generation.current) setError(cause instanceof Error ? cause.message : "Trace could not load the dashboard."); })
+      .catch(() => { if (request === generation.current) setError("Trace could not load the dashboard. Try again."); })
       .finally(() => { if (request === generation.current) setLoading(false); });
   }, [loadDashboard, query]);
   useEffect(() => { void reload(); return () => { generation.current += 1; }; }, [reload]);
@@ -55,6 +55,7 @@ export function DashboardExperience({ loadDashboard, initialDate, initialReposit
   if (error !== undefined && data === undefined) return <Card className="dashboard-state dashboard-state-error" role="alert"><p>{error}</p><Button className="trace-button-secondary" onClick={() => void reload()}>Retry</Button></Card>;
   if (data === undefined) return null;
   const action = stateActions[data.state];
+  const selectedDate = new Date(`${data.date}T12:00:00.000Z`).toLocaleDateString("en-US", { dateStyle: "long", timeZone: "UTC" });
 
   return <div className="dashboard-experience">
     <Card className="dashboard-disclosure" role="note"><strong>Illustrative dashboard</strong><span>Deterministic contract fixtures are shown; no live Activity API is connected yet.</span></Card>
@@ -69,7 +70,7 @@ export function DashboardExperience({ loadDashboard, initialDate, initialReposit
         {metrics.map(({ key, label, note, icon: Icon, accent }, index) => <Card role="article" className="metric-card" data-accent={accent} key={key} style={{ "--card-index": index } as React.CSSProperties}><div className="metric-topline"><span>{label}</span><span className="metric-icon"><Icon aria-hidden="true" size={17} /></span></div><strong>{data.metrics[key].toLocaleString("en-US")}</strong><div className="metric-footer"><small>{note}</small></div></Card>)}
       </section>
       <Card className="dashboard-recent">
-        <header className="section-heading"><div><span className="eyebrow">Today</span><h2>Recent development activity</h2></div><Badge>{data.recentActivity.length} shown</Badge></header>
+        <header className="section-heading"><div><span className="eyebrow">{selectedDate}</span><h2>Recent development activity</h2></div><Badge>{data.recentActivity.length} shown</Badge></header>
         <div className="activity-timeline">{data.recentActivity.map((item, index) => <ActivitySummaryCard headingLevel={3} index={index} item={item} key={item.id} timezone={data.timezone} />)}</div>
       </Card>
     </>}

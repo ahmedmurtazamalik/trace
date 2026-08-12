@@ -30,6 +30,15 @@ test("dashboard history restores filters and invalid contract values fall back s
   await page.goForward();
   await expect(page.getByLabel("Date")).toHaveValue("2026-08-12");
 
+  await page.getByLabel("Date").fill("2026-08-11");
+  await expect(page.getByRole("heading", { name: "No development activity for this view" })).toBeVisible();
+
+  await page.goto("/dashboard?date=2026-08-11&timezone=Pacific%2FHonolulu");
+  await expect(page.getByLabel("Development activity metrics")).toBeVisible();
+  await expect(page.getByText("August 11, 2026", { exact: true })).toBeVisible();
+  await page.goto("/dashboard?date=2026-08-12&timezone=Pacific%2FHonolulu");
+  await expect(page.getByRole("heading", { name: "No development activity for this view" })).toBeVisible();
+
   await page.goto("/dashboard?date=not-a-date&timezone=Not%2FAZone");
   await expect(page.getByRole("heading", { level: 1, name: "Development dashboard" })).toBeVisible();
   await expect(page.getByLabel("Date")).toHaveValue("2026-08-12");
