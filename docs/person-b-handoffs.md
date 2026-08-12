@@ -128,4 +128,41 @@ No Person A-owned backend/shared-contract source, root workspace configuration, 
 
 ### Next-day joint gate
 - Frontend Day 2 authentication functionality is ready after final quality gates.
-- Before claiming live end-to-end integration, run API/PostgreSQL/Redis and execute registration, session reload, protected navigation, and logout against the real backend.
+- Live local integration verified registration/login session behavior and CSRF logout against API/PostgreSQL/Redis; password-reset delivery remains intentionally unavailable until a bounded provider exists.
+
+## Day 3 — GitHub integration UX
+
+### Done
+- Added a typed GitHub API boundary consuming the frozen Day 2 shared schemas for connect, status, and disconnect.
+- Separated Trace identity, linked GitHub account, and GitHub App installation authorization in the UI.
+- Implemented disconnected, connecting, connected, reconnect-required, suspended-installation, callback-result, service-error, and retained-history states.
+- Connect navigation accepts only the contract-validated backend `https://github.com/` URL; no PAT or provider token enters the frontend.
+- Disconnect requires confirmation, sends the in-memory CSRF token through the canonical header, and explicitly retains historical activity.
+- Added responsive status cards and a clearly labelled illustrative Day 4 repository preview.
+- Added focused API, component, and desktop/mobile browser coverage plus setup/user documentation.
+
+### Contract and boundary
+- Source: `packages/shared/src/github.ts`, frozen at Person A's Day 2 gate.
+- Fixtures: `packages/shared/test/fixtures/github/*.json`.
+- Endpoints: `/api/v1/github/connect`, `/callback`, `/status`, `/connection`.
+- Person A-owned backend/shared files changed: NONE.
+- Mock-backed: all GitHub Day 3 browser flows; Person A's same-day GitHub backend is not required.
+- Real GitHub credentials, OAuth exchange, installation tokens, repository synchronization, and tracking behavior are not implemented or claimed.
+
+### TDD and verification
+- Expected RED: focused suites failed because `src/api/github.ts` and `github-connection-panel.tsx` did not exist.
+- Focused GREEN: 7/7 API/component tests passed after the minimal contract-backed implementation.
+- Final web regression: 50/50 tests across 12 files.
+- UI package: 2/2 tests; UI type-check passed.
+- Web lint and type-check: passed with no warnings or errors.
+- Playwright: 38/38 desktop/mobile scenarios verified. The initial run passed 36/38 and exposed one ambiguous test selector caused by Next's route announcer; after narrowing only that assertion, the affected Day 3 spec passed 4/4 without rerunning the unchanged scenarios.
+- Production build: passed with `NODE_ENV=production`; 14/14 static pages generated. The persisted local shell had `NODE_ENV=development`, which caused the first prerender attempt to mix Next development/production runtimes.
+- Scope, secret/persistence scan, and `git diff --check`: passed.
+
+### Problems/risks
+- Repository preview data is illustrative and visibly labelled; Day 4 must consume Person A's frozen Day 3 repository contract.
+- Real callback/connect integration waits for Person A's Day 3 backend and configured GitHub application.
+
+### Next-day joint gate
+- Day 3 frontend is ready when final gates pass and the branch is pushed.
+- Day 4 depends on the repository contract frozen by Person A at the end of Day 3.

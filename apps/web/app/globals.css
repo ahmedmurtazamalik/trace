@@ -263,6 +263,39 @@ main#main-content { max-width: 1540px; margin: 0 auto; padding: clamp(1.65rem, 4
 .trace-state-error { color: var(--danger); }
 .integration-card { display: grid; grid-template-columns: auto 1fr auto; gap: 1rem; align-items: center; }
 .integration-card p, .settings-grid p { color: #53647a; font-size: .78rem; line-height: 1.58; }
+.github-stack { display: grid; gap: 1rem; }
+.github-loading, .github-error-card { display: flex; align-items: center; gap: .8rem; padding: 1.25rem; color: #334155; font-weight: 700; }
+.github-error-card { align-items: flex-start; color: var(--danger); }
+.github-error-card h2 { margin: 0; color: #172033; }
+.github-error-card p { color: #9f1239; }
+.github-notice { display: flex; align-items: center; gap: .65rem; padding: .78rem .9rem; border: 1px solid; border-radius: .8rem; font-size: .78rem; font-weight: 680; }
+.github-notice-success { border-color: #bbf7d0; background: #f0fdf4; color: #166534; }
+.github-notice-error { border-color: #fecaca; background: #fff1f2; color: #9f1239; }
+.github-hero-card { position: relative; overflow: hidden; display: grid; grid-template-columns: auto 1fr; gap: 1.15rem; padding: 1.45rem; background: linear-gradient(135deg, #fff 28%, #f4f8ff); }
+.github-hero-card::after { content: ""; position: absolute; right: -4rem; bottom: -6rem; width: 13rem; height: 13rem; border-radius: 50%; background: #2563eb0c; }
+.github-hero-warning { border-color: #f4c56f; background: linear-gradient(135deg, #fff 28%, #fff9ec); }
+.github-hero-icon, .github-card-icon { display: grid; place-items: center; color: white; background: #111827; box-shadow: 0 8px 22px #11182724; }
+.github-hero-icon { width: 3.4rem; height: 3.4rem; border-radius: 1rem; }
+.github-card-icon { width: 2.35rem; height: 2.35rem; margin-bottom: 1rem; border-radius: .75rem; color: var(--signal); background: #eaf2ff; box-shadow: inset 0 0 0 1px #2563eb14; }
+.github-hero-copy { position: relative; z-index: 1; min-width: 0; }
+.github-heading-row { display: flex; justify-content: space-between; align-items: center; gap: 1rem; }
+.github-stack .eyebrow { color: #49627d; font-size: .62rem; font-weight: 820; letter-spacing: .14em; }
+.github-hero-copy h2, .github-repository-preview h2 { margin: .4rem 0 .45rem; font-size: 1.25rem; letter-spacing: -.03em; }
+.github-hero-copy p, .github-status-card p, .github-repository-preview p { margin: 0; color: #53647a; font-size: .78rem; line-height: 1.6; }
+.github-actions, .github-dialog-actions { display: flex; flex-wrap: wrap; gap: .65rem; margin-top: 1rem; }
+.trace-button-secondary { border-color: #cbd5e1; background: white; color: #26364a; box-shadow: none; }
+.trace-button-danger { border-color: #b91c1c; background: #b91c1c; color: white; }
+.github-status-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1rem; }
+.github-status-card { min-height: 190px; padding: 1.25rem; }
+.github-status-card h3 { margin: .45rem 0; font-size: 1rem; letter-spacing: -.02em; }
+.github-repository-preview { display: grid; grid-template-columns: minmax(0, .8fr) minmax(320px, 1.2fr); gap: 1.4rem; align-items: center; padding: 1.3rem; }
+.github-preview-rows { display: grid; gap: .55rem; }
+.github-preview-rows > div { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: .8rem .9rem; border: 1px solid #e0e8f2; border-radius: .75rem; background: #f8fbff; }
+.github-preview-rows span { display: grid; gap: .18rem; }
+.github-preview-rows small { color: #66778c; font-size: .68rem; }
+.github-dialog h2 { margin-top: 0; }
+.github-dialog p { color: #53647a; line-height: 1.6; }
+.github-dialog-actions { justify-content: flex-end; }
 .settings-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
 .settings-grid > .trace-card { transition: transform .2s ease, box-shadow .2s ease; }
 .settings-grid > .trace-card:hover { transform: translateY(-3px); box-shadow: 0 16px 38px #1e3a5f13; }
@@ -389,6 +422,8 @@ main#main-content { max-width: 1540px; margin: 0 auto; padding: clamp(1.65rem, 4
   .repo-row { grid-template-columns: auto minmax(0, 1fr) auto; padding: .72rem 0; }
   .repo-row .tracking-label { grid-column: 2 / 4; }
   .settings-grid { grid-template-columns: 1fr; }
+  .github-status-grid, .github-repository-preview { grid-template-columns: 1fr; }
+  .github-status-card { min-height: auto; }
   .integration-card { grid-template-columns: auto 1fr; }
   .integration-card .trace-badge { grid-column: 2; }
   .auth-panel { padding: 1.5rem; }
