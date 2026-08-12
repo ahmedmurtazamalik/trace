@@ -63,6 +63,12 @@ export function GithubConnectionPanel({
     return () => controller.abort();
   }, [loadStatus]);
 
+  useEffect(() => {
+    const restoreNavigation = () => setPending((current) => current === "connect" || current === "install" ? undefined : current);
+    window.addEventListener("pageshow", restoreNavigation);
+    return () => window.removeEventListener("pageshow", restoreNavigation);
+  }, []);
+
   async function begin() {
     setPending("connect");
     setError(undefined);

@@ -51,6 +51,16 @@ describe("GitHub connection UX", () => {
     expect(props.navigate).toHaveBeenCalledWith(expect.stringMatching(/^https:\/\/github\.com\//));
   });
 
+  it("restores the connect action when browser Back returns from GitHub", async () => {
+    renderPanel();
+    await userEvent.click(await screen.findByRole("button", { name: "Connect GitHub" }));
+    expect(screen.getByRole("button", { name: "Opening GitHub…" })).toBeDisabled();
+
+    window.dispatchEvent(new PageTransitionEvent("pageshow", { persisted: true }));
+
+    expect(await screen.findByRole("button", { name: "Connect GitHub" })).toBeEnabled();
+  });
+
   it("separates the linked account, installation, and repository counts", async () => {
     renderPanel({ loadStatus: vi.fn().mockResolvedValue(connected) });
     expect(await screen.findByText("@alice-dev")).toBeInTheDocument();

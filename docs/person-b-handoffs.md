@@ -182,3 +182,38 @@ No Person A-owned backend/shared-contract source, root workspace configuration, 
 - The branch now includes PR #9's synchronized dependency manifests, audited lockfile, clean-runner CI preparation, and authoritative disconnect refresh.
 - The installation/recovery controls and safe refresh-failure fallback remain additional Person B repairs on top of that updated `main`.
 - Person A still needs to change backend callback redirects from `/settings/github` to the implemented `/github` route before the complete OAuth/App callback journey is release-ready.
+
+## Day 4 task 1 — Repository management foundation (Person B)
+
+### Done
+- Replaced the static repository placeholder with an interactive responsive management screen.
+- Added a deterministic adapter whose list and tracking results are parsed by the frozen `@trace/shared` repository schemas.
+- Kept GitHub App accessibility and per-user Trace tracking visibly separate.
+- Added trimmed search with stable `?search=` URL state, clear-search behavior, and no-results feedback.
+- Added explicit pending tracking completion, safe rollback/error feedback, inaccessible historical repositories, nullable GitHub URLs, visibility, branch, contributor, and last-activity states.
+- Added focused adapter/component tests and a desktop/mobile browser journey.
+
+### Problems and resolutions
+- The initial pending-state test used an immediately rejected promise, so the pending state completed before the assertion. The test now controls the promise and proves the button is disabled before releasing the failure.
+- Person A's Day 4 repository endpoints are same-day work, so this slice uses visibly disclosed deterministic fixtures rather than claiming live GitHub repository data.
+
+### Verification
+- Web unit/component tests: 58/58 passed.
+- Repository browser journey: 2/2 desktop/mobile passed.
+- Web lint and type-check: passed.
+- Canonical production build: passed, 14/14 pages.
+- `git diff --check`: passed.
+
+### Files
+- `apps/web/app/(app)/repositories/page.tsx`
+- `apps/web/app/globals.css`
+- `apps/web/e2e/repositories.spec.ts`
+- `apps/web/src/features/repositories/repository-fixture-adapter.ts`
+- `apps/web/src/features/repositories/repository-fixture-adapter.test.ts`
+- `apps/web/src/features/repositories/repository-management-panel.tsx`
+- `apps/web/src/features/repositories/repository-management-panel.test.tsx`
+- `apps/web/src/features/repositories/repository-route.tsx`
+
+### Next
+- Add detail-route shell and explicit loading/empty/forbidden/server-error fixture scenarios.
+- Integrate Person A's list/detail/tracking endpoints only after their independent Day 4 contract-compatible implementation is available.
