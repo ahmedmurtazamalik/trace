@@ -11,6 +11,13 @@ const connected = {
   trackedRepositoryCount: 2,
   historyRetained: true,
 };
+const reconnectRequired = {
+  accountConnection: { status: "RECONNECT_REQUIRED", account: connected.accountConnection.account },
+  installationAuthorization: { status: "NOT_INSTALLED", installation: null },
+  accessibleRepositoryCount: 0,
+  trackedRepositoryCount: 0,
+  historyRetained: true,
+};
 
 async function authenticated(page: Page) {
   await page.route("**/api/v1/auth/me", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(session) }));
@@ -18,10 +25,16 @@ async function authenticated(page: Page) {
 
 test("connected GitHub status stays separate from installation and disconnect retains history", async ({ page }) => {
   await authenticated(page);
-  await page.route("**/api/v1/github/status", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(connected) }));
+  let disconnected = false;
+  await page.route("**/api/v1/github/status", (route) => route.fulfill({
+    status: 200,
+    contentType: "application/json",
+    body: JSON.stringify(disconnected ? reconnectRequired : connected),
+  }));
   let csrf: string | undefined;
   await page.route("**/api/v1/github/connection", async (route) => {
     csrf = route.request().headers()["x-csrf-token"];
+    disconnected = true;
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ success: true, historyRetained: true }) });
   });
 
@@ -33,6 +46,7 @@ test("connected GitHub status stays separate from installation and disconnect re
   await expect(page.getByRole("dialog")).toContainText("Historical activity remains in Trace");
   await page.getByRole("button", { name: "Confirm disconnect" }).click();
   await expect(page.getByRole("status")).toContainText("Historical activity remains");
+  await expect(page.getByRole("button", { name: "Reconnect GitHub" })).toBeVisible();
   expect(csrf).toBe("csrf_opaque_value");
 });
 

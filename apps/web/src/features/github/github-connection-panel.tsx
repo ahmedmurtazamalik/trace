@@ -96,8 +96,11 @@ export function GithubConnectionPanel({
     setError(undefined);
     try {
       const result = await revokeConnection(csrfToken);
+      let historyRetained = result.historyRetained;
       try {
-        setStatus(await loadStatus());
+        const authoritativeStatus = await loadStatus();
+        setStatus(authoritativeStatus);
+        historyRetained = historyRetained && authoritativeStatus.historyRetained;
       } catch {
         const account = status?.accountConnection.account;
         setStatus({
@@ -112,6 +115,9 @@ export function GithubConnectionPanel({
       }
       setConfirmDisconnect(false);
       setNotice("GitHub disconnected. Historical activity remains in Trace.");
+      if (!historyRetained) {
+        setError("Trace could not confirm retained GitHub history. Please refresh and try again.");
+      }
     } catch (reason) {
       setError(errorMessage(reason));
     } finally {

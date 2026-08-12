@@ -179,5 +179,6 @@ No Person A-owned backend/shared-contract source, root workspace configuration, 
 
 ### Ownership and remaining joint gate
 - Person B-owned frontend and handoff files changed; no backend or shared-contract source was modified.
-- The root lockfile was regenerated because merged `apps/web` and `packages/ui` manifests were absent from it; this reproducibility repair requires integration-owner review.
+- The branch now includes PR #9's synchronized dependency manifests, audited lockfile, clean-runner CI preparation, and authoritative disconnect refresh.
+- The installation/recovery controls and safe refresh-failure fallback remain additional Person B repairs on top of that updated `main`.
 - Person A still needs to change backend callback redirects from `/settings/github` to the implemented `/github` route before the complete OAuth/App callback journey is release-ready.
