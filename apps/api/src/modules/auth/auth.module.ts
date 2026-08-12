@@ -27,6 +27,6 @@ import { SessionAuthGuard } from './session-auth.guard';
         : new UnavailablePasswordResetDelivery(),
     },
   ],
-  exports: [AuthService, SessionAuthGuard, CsrfGuard],
+  exports: [AuthService, AuthRateLimitService, SessionAuthGuard, CsrfGuard],
 })
 export class AuthModule {}

@@ -12,10 +12,12 @@ const rawEnvironmentSchema = z
     LOG_LEVEL: z.enum(['error', 'warn', 'info', 'debug']).default('info'),
     FRONTEND_ORIGIN: z.url().default('http://localhost:3000'),
     GITHUB_APP_ID: z.string().min(1).optional(),
+    GITHUB_APP_SLUG: z.string().regex(/^[a-z0-9-]+$/).optional(),
     GITHUB_APP_PRIVATE_KEY: z.string().min(1).optional(),
     GITHUB_APP_CLIENT_ID: z.string().min(1).optional(),
     GITHUB_APP_CLIENT_SECRET: z.string().min(1).optional(),
     GITHUB_CALLBACK_URL: z.url().optional(),
+    GITHUB_INSTALLATION_CALLBACK_URL: z.url().optional(),
     GITHUB_WEBHOOK_SECRET: z.string().min(1).optional(),
     LLM_API_KEY: z.string().min(1).optional(),
     STORAGE_BUCKET: z.string().min(1).optional(),
@@ -46,10 +48,12 @@ export interface TraceConfig {
   frontendOrigin: string;
   github: {
     appId?: string;
+    appSlug?: string;
     privateKey?: string;
     clientId?: string;
     clientSecret?: string;
     callbackUrl?: string;
+    installationCallbackUrl?: string;
     webhookSecret?: string;
   };
   llmApiKey?: string;
@@ -82,10 +86,12 @@ export function loadConfig(environment: NodeJS.ProcessEnv | Record<string, strin
     frontendOrigin: value.FRONTEND_ORIGIN,
     github: {
       appId: value.GITHUB_APP_ID,
+      appSlug: value.GITHUB_APP_SLUG,
       privateKey: value.GITHUB_APP_PRIVATE_KEY,
       clientId: value.GITHUB_APP_CLIENT_ID,
       clientSecret: value.GITHUB_APP_CLIENT_SECRET,
       callbackUrl: value.GITHUB_CALLBACK_URL,
+      installationCallbackUrl: value.GITHUB_INSTALLATION_CALLBACK_URL,
       webhookSecret: value.GITHUB_WEBHOOK_SECRET,
     },
     llmApiKey: value.LLM_API_KEY,

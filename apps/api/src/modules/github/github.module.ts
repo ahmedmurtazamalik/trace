@@ -17,10 +17,18 @@ import { GITHUB_AUTHORIZATION_ADAPTER } from './github.tokens';
       inject: [TRACE_CONFIG],
       useFactory: (config: TraceConfig) => {
         if (config.nodeEnv === 'test') return new FakeGithubAuthorizationAdapter();
-        if (config.github.clientId === undefined || config.github.clientSecret === undefined) {
+        if (
+          config.github.clientId === undefined || config.github.clientSecret === undefined ||
+          config.github.appId === undefined || config.github.privateKey === undefined
+        ) {
           return new UnavailableGithubAuthorizationAdapter();
         }
-        return new RealGithubAuthorizationAdapter({ clientId: config.github.clientId, clientSecret: config.github.clientSecret });
+        return new RealGithubAuthorizationAdapter({
+          clientId: config.github.clientId,
+          clientSecret: config.github.clientSecret,
+          appId: config.github.appId,
+          privateKey: config.github.privateKey,
+        });
       },
     },
   ],

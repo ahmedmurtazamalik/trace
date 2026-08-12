@@ -1,3 +1,5 @@
+import { createSign } from 'node:crypto';
+
 export interface GithubAuthorizedUser {
   id: bigint;
   username: string;
@@ -14,17 +16,16 @@ export interface GithubInstallationAccess {
 
 export interface GithubAuthorizationResult {
   user: GithubAuthorizedUser;
-  installation: GithubInstallationAccess | null;
 }
 
 export interface GithubAuthorizationAdapter {
   authorizationUrl(input: { state: string; callbackUrl: string }): string;
   authorize(code: string): Promise<GithubAuthorizationResult>;
+  installationUrl(input: { state: string; appSlug: string }): string;
+  installation(installationId: bigint): Promise<GithubInstallationAccess>;
 }
 
 export class FakeGithubAuthorizationAdapter implements GithubAuthorizationAdapter {
-  constructor(private readonly input: { installation?: GithubInstallationAccess } = {}) {}
-
   authorizationUrl(input: { state: string; callbackUrl: string }): string {
     const url = new URL('https://github.com/login/oauth/authorize');
     url.searchParams.set('client_id', 'fake-client-id');
@@ -34,37 +35,43 @@ export class FakeGithubAuthorizationAdapter implements GithubAuthorizationAdapte
   }
 
   authorize(code: string): Promise<GithubAuthorizationResult> {
-    if (code !== 'fake-success-code' && code !== 'fake-installation-code') {
-      return Promise.reject(new Error('GitHub authorization failed'));
-    }
+    if (code !== 'fake-success-code') return Promise.reject(new Error('GitHub authorization failed'));
     return Promise.resolve({
       user: { id: 583_231n, username: 'fake-octocat', displayName: 'Fake Octocat', avatarUrl: 'https://avatars.githubusercontent.com/u/583231' },
-      installation: this.input.installation ?? (code === 'fake-installation-code'
-        ? { id: 91n, accountType: 'ORGANIZATION', accountLogin: 'trace-fixture-org', suspended: false }
-        : null),
     });
+  }
+
+  installationUrl(input: { state: string; appSlug: string }): string {
+    const url = new URL(`https://github.com/apps/${input.appSlug}/installations/new`);
+    url.searchParams.set('state', input.state);
+    return url.toString();
+  }
+
+  installation(installationId: bigint): Promise<GithubInstallationAccess> {
+    return Promise.resolve({ id: installationId, accountType: 'ORGANIZATION', accountLogin: 'trace-fixture-org', suspended: false });
   }
 }
 
 export class UnavailableGithubAuthorizationAdapter implements GithubAuthorizationAdapter {
-  authorizationUrl(input: { state: string; callbackUrl: string }): string {
-    void input;
-    throw new Error('GitHub authorization is not configured');
-  }
-
-  authorize(code: string): Promise<GithubAuthorizationResult> {
-    void code;
-    return Promise.reject(new Error('GitHub authorization is not configured'));
-  }
+  authorizationUrl(input: { state: string; callbackUrl: string }): string { void input; throw new Error('GitHub authorization is not configured'); }
+  authorize(code: string): Promise<GithubAuthorizationResult> { void code; return Promise.reject(new Error('GitHub authorization is not configured')); }
+  installationUrl(input: { state: string; appSlug: string }): string { void input; throw new Error('GitHub installation is not configured'); }
+  installation(installationId: bigint): Promise<GithubInstallationAccess> { void installationId; return Promise.reject(new Error('GitHub installation is not configured')); }
 }
 
 export class RealGithubAuthorizationAdapter implements GithubAuthorizationAdapter {
-  constructor(private readonly input: { clientId: string; clientSecret: string }) {}
+  constructor(private readonly input: { clientId: string; clientSecret: string; appId: string; privateKey: string }) {}
 
   authorizationUrl(input: { state: string; callbackUrl: string }): string {
     const url = new URL('https://github.com/login/oauth/authorize');
     url.searchParams.set('client_id', this.input.clientId);
     url.searchParams.set('redirect_uri', input.callbackUrl);
+    url.searchParams.set('state', input.state);
+    return url.toString();
+  }
+
+  installationUrl(input: { state: string; appSlug: string }): string {
+    const url = new URL(`https://github.com/apps/${input.appSlug}/installations/new`);
     url.searchParams.set('state', input.state);
     return url.toString();
   }
@@ -86,28 +93,34 @@ export class RealGithubAuthorizationAdapter implements GithubAuthorizationAdapte
     if (!userResponse.ok) throw new Error('GitHub user lookup failed');
     const user = await userResponse.json() as { id?: number; login?: string; name?: string | null; avatar_url?: string | null };
     if (!Number.isSafeInteger(user.id) || typeof user.login !== 'string') throw new Error('GitHub user lookup failed');
-    const installationResponse = await fetch('https://api.github.com/user/installations?per_page=100', {
-      headers: { Accept: 'application/vnd.github+json', Authorization: `Bearer ${tokenData.access_token}`, 'X-GitHub-Api-Version': '2022-11-28' },
+    return { user: { id: BigInt(user.id as number), username: user.login, displayName: user.name ?? null, avatarUrl: user.avatar_url ?? null } };
+  }
+
+  async installation(installationId: bigint): Promise<GithubInstallationAccess> {
+    const response = await fetch(`https://api.github.com/app/installations/${installationId.toString()}`, {
+      headers: { Accept: 'application/vnd.github+json', Authorization: `Bearer ${this.appJwt()}`, 'X-GitHub-Api-Version': '2022-11-28' },
       signal: AbortSignal.timeout(5_000),
     });
-    let installation: GithubInstallationAccess | null = null;
-    if (installationResponse.ok) {
-      const payload = await installationResponse.json() as {
-        installations?: Array<{ id?: number; account?: { login?: string; type?: string }; suspended_at?: string | null }>;
-      };
-      const first = payload.installations?.[0];
-      if (first !== undefined && Number.isSafeInteger(first.id) && typeof first.account?.login === 'string') {
-        installation = {
-          id: BigInt(first.id as number),
-          accountType: first.account.type === 'Organization' ? 'ORGANIZATION' : 'USER',
-          accountLogin: first.account.login,
-          suspended: first.suspended_at != null,
-        };
-      }
+    if (!response.ok) throw new Error('GitHub installation lookup failed');
+    const value = await response.json() as { id?: number; account?: { login?: string; type?: string }; suspended_at?: string | null };
+    if (!Number.isSafeInteger(value.id) || BigInt(value.id as number) !== installationId || typeof value.account?.login !== 'string') {
+      throw new Error('GitHub installation lookup failed');
     }
     return {
-      user: { id: BigInt(user.id as number), username: user.login, displayName: user.name ?? null, avatarUrl: user.avatar_url ?? null },
-      installation,
+      id: installationId,
+      accountType: value.account.type === 'Organization' ? 'ORGANIZATION' : 'USER',
+      accountLogin: value.account.login,
+      suspended: value.suspended_at != null,
     };
+  }
+
+  private appJwt(): string {
+    const encode = (value: object): string => Buffer.from(JSON.stringify(value)).toString('base64url');
+    const now = Math.floor(Date.now() / 1_000);
+    const unsigned = `${encode({ alg: 'RS256', typ: 'JWT' })}.${encode({ iat: now - 30, exp: now + 540, iss: this.input.appId })}`;
+    const signer = createSign('RSA-SHA256');
+    signer.update(unsigned);
+    signer.end();
+    return `${unsigned}.${signer.sign(this.input.privateKey, 'base64url')}`;
   }
 }

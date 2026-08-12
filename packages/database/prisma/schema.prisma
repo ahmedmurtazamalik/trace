@@ -81,6 +81,7 @@ model UserSession {
   revokedAt        DateTime? @map("revoked_at")
   lastUsedAt       DateTime  @default(now()) @map("last_used_at")
   user             User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  githubOauthStates GithubOauthState[]
 
   @@index([userId, expiresAt])
   @@map("user_sessions")
@@ -262,16 +263,20 @@ model ActivityEvent {
 }
 
 model GithubOauthState {
-  id               String    @id @default(cuid())
-  userId           String    @map("user_id")
-  stateTokenHash   String    @unique @map("state_token_hash")
-  intendedRedirect String?   @map("intended_redirect")
-  createdAt        DateTime  @default(now()) @map("created_at")
-  expiresAt        DateTime  @map("expires_at")
-  consumedAt       DateTime? @map("consumed_at")
-  user             User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id               String      @id @default(cuid())
+  userId           String      @map("user_id")
+  sessionId        String      @map("session_id")
+  purpose          String      @default("OAUTH") @db.VarChar(20)
+  stateTokenHash   String      @unique @map("state_token_hash")
+  intendedRedirect String?     @map("intended_redirect")
+  createdAt        DateTime    @default(now()) @map("created_at")
+  expiresAt        DateTime    @map("expires_at")
+  consumedAt       DateTime?   @map("consumed_at")
+  user             User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  session          UserSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
 
   @@index([userId, expiresAt])
+  @@index([sessionId, purpose, expiresAt])
   @@map("github_oauth_states")
 }
 

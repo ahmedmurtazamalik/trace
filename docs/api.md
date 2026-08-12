@@ -146,6 +146,8 @@ Day 3 implements the browser/backend GitHub connection handoff. Schemas and type
 | --- | --- | --- | --- | --- | --- |
 | `GET` | `/api/v1/github/connect` | `200` | authenticated session; no body | `GithubConnectResponse` containing a backend-generated HTTPS `github.com` authorization URL; the same operation is used when reconnecting | `401 UNAUTHENTICATED`; `429 RATE_LIMITED` |
 | `GET` | `/api/v1/github/callback?code=...&state=...` or `?error=access_denied&state=...` | `302` | success or provider-denial `GithubCallbackQuery`; browser session cookie | Redirect to the configured frontend GitHub settings route with a closed `GithubCallbackResult` query result | `GITHUB_STATE_INVALID`; `GITHUB_CALLBACK_FAILED` are converted to safe closed callback results, never raw provider text |
+| `GET` | `/api/v1/github/installation` | `200` | authenticated connected session; no body | `GithubInstallationStartResponse` containing a state-bound `github.com/apps/.../installations/new` URL | `401 UNAUTHENTICATED`; `409 GITHUB_RECONNECT_REQUIRED`; `429 RATE_LIMITED` |
+| `GET` | `/api/v1/github/installation/callback?installation_id=...&setup_action=...&state=...` | `302` | validated App setup callback; initiating browser session cookie | verifies the selected installation through GitHub App authentication, persists ownership, and redirects with a closed result | state/session/provider failures become closed callback results |
 | `GET` | `/api/v1/github/status` | `200` | authenticated session | `GithubConnectionStatus` | `401 UNAUTHENTICATED` |
 | `DELETE` | `/api/v1/github/connection` | `200` | authenticated session + `X-CSRF-Token`; no body | `GithubDisconnectResponse` with `historyRetained: true` | `401 UNAUTHENTICATED`; `403 CSRF_INVALID`; `409 GITHUB_NOT_CONNECTED` |
 
@@ -158,7 +160,7 @@ Disconnect never deletes historical activity. The frontend may show local `conne
 
 The contract fixtures cover connected, disconnected, reconnect-required plus suspended installation, callback success/provider-denial query variants, safe callback results, connect URL/state consistency, and disconnect history retention.
 
-OAuth state is random, stored only as a SHA-256 digest, bound to the initiating live Trace session, expires after 10 minutes, and is consumed once before provider exchange. Account and installation persistence runs atomically under the Trace user row lock. A GitHub account or installation already linked to another Trace account is not reassigned.
+OAuth and installation setup use separate random states stored only as SHA-256 digests. Each state is bound to the exact initiating live Trace session, expires after 10 minutes, has a fixed purpose, and is consumed once before provider work. Account and installation persistence runs atomically under the Trace user row lock. A GitHub account or installation already linked to another Trace account is not reassigned. Connect/install starts are Redis-rate-limited by direct socket address first and user second and fail closed if Redis is unavailable.
 
 `GITHUB_CALLBACK_URL` is the public callback URL registered with GitHub. Missing provider credentials leave liveness and unrelated APIs available; GitHub connect fails closed with `503 SERVICE_UNAVAILABLE`. Day 3 stores no OAuth or installation token and returns no provider credential, app private key, webhook secret, or raw provider error.
 
@@ -166,10 +168,10 @@ OAuth state is random, stored only as a SHA-256 digest, bound to the initiating 
 
 Repository contracts are frozen in `packages/shared/src/repositories.ts`; fixtures live under `packages/shared/test/fixtures/repositories/`.
 
-- List/detail DTOs expose stable opaque IDs, owner/name/full name, privacy/default branch, nullable URL, and separate `accessible` and per-user `trackingEnabled` flags.
+- List/detail DTOs expose stable opaque IDs, owner/name/full name, privacy/default branch, nullable URL, last activity, contributor count, and separate `accessible` and per-user `trackingEnabled` flags.
 - Lists use stable cursor pagination (`cursor`, `limit`, `pageInfo`) plus optional trimmed `search`.
 - Tracking responses contain only `{ repositoryId, trackingEnabled }`; provider credentials and installation tokens never enter repository DTOs.
-- Canonical future routes are `GET /api/v1/repositories`, `GET /api/v1/repositories/:id`, `PUT /api/v1/repositories/:id/tracking`, and `DELETE /api/v1/repositories/:id/tracking`.
+- Canonical future routes are `GET /api/v1/repositories`, `GET /api/v1/repositories/:id`, `POST /api/v1/repositories/:id/tracking`, and `DELETE /api/v1/repositories/:id/tracking`.
 - Person B may implement Day 4 UI against these schemas and fixtures without waiting for Person A's Day 4 repository behavior.
 
 ## Provisional later-day contracts

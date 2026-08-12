@@ -1,5 +1,10 @@
 import { Controller, Delete, Get, Query, Redirect, Req, UseGuards } from '@nestjs/common';
-import type { GithubConnectionStatus, GithubConnectResponse, GithubDisconnectResponse } from '@trace/shared';
+import type {
+  GithubConnectionStatus,
+  GithubConnectResponse,
+  GithubDisconnectResponse,
+  GithubInstallationStartResponse,
+} from '@trace/shared';
 import type { Request } from 'express';
 import { CurrentSession } from '../auth/current-session.decorator';
 import { CsrfGuard } from '../auth/csrf.guard';
@@ -15,16 +20,34 @@ export class GithubController {
 
   @Get('connect')
   @UseGuards(SessionAuthGuard)
-  connect(@CurrentSession() session: AuthenticatedSession): Promise<GithubConnectResponse> {
-    return this.github.connect(session.user.id);
+  connect(@CurrentSession() session: AuthenticatedSession, @Req() request: Request): Promise<GithubConnectResponse> {
+    return this.github.connect(session.user.id, session.session.id, this.directAddress(request));
   }
 
   @Get('callback')
   @Redirect()
   async callback(@Query() query: unknown, @Req() request: Request): Promise<{ url: string; statusCode: number }> {
-    const rawToken = readSessionCookie(request);
-    const session = rawToken === undefined ? null : await this.auth.authenticate(rawToken);
-    return { url: await this.github.callback(query, session?.user.id ?? null), statusCode: 302 };
+    const session = await this.optionalSession(request);
+    return {
+      url: await this.github.callback(query, session === null ? null : { userId: session.user.id, sessionId: session.session.id }),
+      statusCode: 302,
+    };
+  }
+
+  @Get('installation')
+  @UseGuards(SessionAuthGuard)
+  startInstallation(@CurrentSession() session: AuthenticatedSession, @Req() request: Request): Promise<GithubInstallationStartResponse> {
+    return this.github.startInstallation(session.user.id, session.session.id, this.directAddress(request));
+  }
+
+  @Get('installation/callback')
+  @Redirect()
+  async installationCallback(@Query() query: unknown, @Req() request: Request): Promise<{ url: string; statusCode: number }> {
+    const session = await this.optionalSession(request);
+    return {
+      url: await this.github.installationCallback(query, session === null ? null : { userId: session.user.id, sessionId: session.session.id }),
+      statusCode: 302,
+    };
   }
 
   @Get('status')
@@ -38,5 +61,14 @@ export class GithubController {
   async disconnect(@CurrentSession() session: AuthenticatedSession): Promise<GithubDisconnectResponse> {
     await this.github.disconnect(session.user.id);
     return { success: true, historyRetained: true };
+  }
+
+  private async optionalSession(request: Request): Promise<AuthenticatedSession | null> {
+    const rawToken = readSessionCookie(request);
+    return rawToken === undefined ? null : this.auth.authenticate(rawToken);
+  }
+
+  private directAddress(request: Request): string {
+    return request.socket.remoteAddress ?? 'unknown';
   }
 }

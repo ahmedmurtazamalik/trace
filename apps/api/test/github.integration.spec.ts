@@ -39,7 +39,9 @@ describe('GitHub connection API', () => {
     process.env.REDIS_URL = 'redis://localhost:6379';
     process.env.SESSION_SECRET = 'test-only-session-secret-at-least-32-characters';
     process.env.GITHUB_APP_CLIENT_ID = 'test-client-id';
+    process.env.GITHUB_APP_SLUG = 'trace-test-app';
     process.env.GITHUB_CALLBACK_URL = 'http://localhost:3001/api/v1/github/callback';
+    process.env.GITHUB_INSTALLATION_CALLBACK_URL = 'http://localhost:3001/api/v1/github/installation/callback';
     app = await createApplication();
     await app.init();
     server = app.getHttpServer() as Server;
@@ -111,7 +113,7 @@ describe('GitHub connection API', () => {
       .expect(200, { success: true, historyRetained: true });
 
     const disconnected = await request(server).get('/api/v1/github/status').set('Cookie', sessionCookie).expect(200);
-    expect(disconnected.body).toMatchObject({ accountConnection: { status: 'DISCONNECTED', account: null } });
+    expect(disconnected.body).toMatchObject({ accountConnection: { status: 'RECONNECT_REQUIRED', account: { username: 'fake-octocat' } } });
   });
 
   it('binds single-use state to the originating live Trace session and closes provider failures', async () => {
@@ -122,6 +124,14 @@ describe('GitHub connection API', () => {
 
     const withoutSession = await request(server).get('/api/v1/github/callback').query({ code: 'fake-success-code', state }).expect(302);
     expect(withoutSession.headers.location).toBe('http://localhost:3000/settings/github?result=error&reason=session_expired');
+
+    const sameUserLogin = await request(server).post('/api/v1/auth/login').send({ username, password }).expect(200);
+    const wrongSameUserSession = await request(server)
+      .get('/api/v1/github/callback')
+      .query({ code: 'fake-success-code', state })
+      .set('Cookie', cookie(sameUserLogin))
+      .expect(302);
+    expect(wrongSameUserSession.headers.location).toBe('http://localhost:3000/settings/github?result=error&reason=state_invalid');
 
     const second = await request(server)
       .post('/api/v1/auth/register')
@@ -160,7 +170,14 @@ describe('GitHub connection API', () => {
     const state = new URL((connect.body as { authorizationUrl: string }).authorizationUrl).searchParams.get('state');
     await request(server)
       .get('/api/v1/github/callback')
-      .query({ code: 'fake-installation-code', state })
+      .query({ code: 'fake-success-code', state })
+      .set('Cookie', sessionCookie)
+      .expect(302);
+    const installationStart = await request(server).get('/api/v1/github/installation').set('Cookie', sessionCookie).expect(200);
+    const installationState = new URL((installationStart.body as { installationUrl: string }).installationUrl).searchParams.get('state');
+    await request(server)
+      .get('/api/v1/github/installation/callback')
+      .query({ installation_id: '91', setup_action: 'install', state: installationState })
       .set('Cookie', sessionCookie)
       .expect(302);
     const status = await request(server).get('/api/v1/github/status').set('Cookie', sessionCookie).expect(200);
@@ -169,6 +186,28 @@ describe('GitHub connection API', () => {
       installationAuthorization: { status: 'ACTIVE', installation: { accountType: 'ORGANIZATION', accountLogin: 'trace-fixture-org' } },
     });
     expect(JSON.stringify(status.body)).not.toMatch(/token|secret/i);
+  });
+
+  it('reports reconnect required after disconnect and connected after a successful reconnect', async () => {
+    const identity = await registerIdentity({ username, email });
+    const firstState = await connectState(identity.cookie);
+    await request(server).get('/api/v1/github/callback').query({ code: 'fake-success-code', state: firstState }).set('Cookie', identity.cookie).expect(302);
+    await request(server).delete('/api/v1/github/connection').set('Cookie', identity.cookie).set('X-CSRF-Token', identity.csrfToken).expect(200);
+    const disconnected = await request(server).get('/api/v1/github/status').set('Cookie', identity.cookie).expect(200);
+    expect(disconnected.body).toMatchObject({ accountConnection: { status: 'RECONNECT_REQUIRED', account: { username: 'fake-octocat' } } });
+    const reconnectState = await connectState(identity.cookie);
+    const reconnected = await request(server).get('/api/v1/github/callback').query({ code: 'fake-success-code', state: reconnectState }).set('Cookie', identity.cookie).expect(302);
+    expect(reconnected.headers.location).toBe('http://localhost:3000/settings/github?result=connected');
+    const status = await request(server).get('/api/v1/github/status').set('Cookie', identity.cookie).expect(200);
+    expect(status.body).toMatchObject({ accountConnection: { status: 'CONNECTED' } });
+  });
+
+  it('rate limits GitHub linking by direct address and user', async () => {
+    const identity = await registerIdentity({ username, email });
+    for (let attempt = 0; attempt < 10; attempt += 1) {
+      await request(server).get('/api/v1/github/connect').set('Cookie', identity.cookie).expect(200);
+    }
+    await request(server).get('/api/v1/github/connect').set('Cookie', identity.cookie).expect(429);
   });
 
   it('does not let another Trace user claim an already linked GitHub account', async () => {

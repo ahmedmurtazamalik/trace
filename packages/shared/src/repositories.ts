@@ -11,6 +11,8 @@ export const repositorySummarySchema = z.object({
   url: z.url().nullable(),
   accessible: z.boolean(),
   trackingEnabled: z.boolean(),
+  lastActivityAt: z.iso.datetime().nullable(),
+  contributorCount: z.number().int().nonnegative(),
 }).strict();
 
 export const repositoryListQuerySchema = paginationQuerySchema.extend({

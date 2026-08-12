@@ -20,6 +20,19 @@ export const githubConnectResponseSchema = z.object({
   ),
 });
 
+export const githubInstallationStartResponseSchema = z.object({
+  installationUrl: z.url().refine(
+    (value) => value.startsWith('https://github.com/apps/'),
+    'Installation URL must be an HTTPS github.com App URL',
+  ),
+});
+
+export const githubInstallationCallbackQuerySchema = z.object({
+  installation_id: z.coerce.string().regex(/^\d+$/),
+  setup_action: z.enum(['install', 'update']),
+  state: z.string().min(32).max(512),
+});
+
 export const githubCallbackQuerySchema = z.union([
   z.object({
     code: z.string().min(1).max(512),
@@ -76,6 +89,8 @@ export const githubErrorCodeSchema = z.enum([
 ]);
 
 export type GithubConnectResponse = z.infer<typeof githubConnectResponseSchema>;
+export type GithubInstallationStartResponse = z.infer<typeof githubInstallationStartResponseSchema>;
+export type GithubInstallationCallbackQuery = z.infer<typeof githubInstallationCallbackQuerySchema>;
 export type GithubCallbackQuery = z.infer<typeof githubCallbackQuerySchema>;
 export type GithubCallbackResult = z.infer<typeof githubCallbackResultSchema>;
 export type GithubConnectionStatus = z.infer<typeof githubConnectionStatusSchema>;
