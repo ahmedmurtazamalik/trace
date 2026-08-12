@@ -198,6 +198,24 @@ The closed sources are `github | cli`; the closed activity types are `commit | p
 
 Dashboard responses contain the requested date/timezone, a truthful state (`READY`, `GITHUB_NOT_CONNECTED`, `NO_TRACKED_REPOSITORIES`, `NO_ACTIVITY`, or `PARTIAL`), deterministic non-negative metrics, and at most 20 canonical recent activity items. No productivity score, inferred effort, ranking, or model-generated metric is part of the contract.
 
+## Day 5 GitHub webhook acceptance
+
+`POST /api/v1/webhooks/github` is the server-to-server GitHub App webhook endpoint. It accepts only `application/json` push deliveries with these required headers:
+
+- `X-GitHub-Event: push`
+- `X-GitHub-Delivery: <canonical UUID>`
+- `X-Hub-Signature-256: sha256=<64 lowercase hex characters>`
+
+The endpoint reads at most 256 KiB into a raw buffer. It verifies the HMAC-SHA256 signature over those exact bytes with a timing-safe comparison before decoding JSON. The signed push envelope then validates bounded ref, SHA, installation, stable repository ID, repository full name, sender, and commit-array fields. Missing/malformed headers or schema return `400`; invalid signatures return `401`; oversized bodies return `413`. None creates a delivery row or queue job.
+
+A valid push is authorized from current server state using the stable GitHub installation and repository IDs. The installation must be active, its account linked, the repository currently assigned to it with provider access intact, and at least one enabled Trace user membership must have current access and tracking enabled. Valid but wholly untracked, suspended, disconnected, removed-access, or disabled-user deliveries return `202 { "accepted": false, "reason": "untracked" }` without persistence or queueing so GitHub does not retry irrelevant deliveries.
+
+Accepted pushes return `202 { "accepted": true }`. A PostgreSQL advisory transaction lock serializes the canonical delivery UUID. The unique delivery row stores the bounded validated JSON payload and its SHA-256 digest; duplicate IDs are accepted only when event, digest, installation ID, and repository ID match exactly. Current authorization is revalidated even for retries. Conflicting reuse returns `409 WEBHOOK_DELIVERY_CONFLICT`.
+
+The API publishes one BullMQ job named `process-github-webhook`, using deterministic ID `github-webhook-<delivery-row-id>`, five bounded exponential-backoff attempts, and `{ "deliveryId": "<delivery-row-id>" }` as its entire Redis payload. The database row is the durable source of the validated payload. If queue publication fails after persistence, GitHub's retry reuses the row and safely repairs the deterministic job while authority remains live; a later retry cannot re-enqueue after access or tracking is revoked.
+
+`apps/worker/src/queues/github/github-webhook.worker.ts` provides the Day 5 worker lifecycle boundary with concurrency restricted to 1–32, bounded durable-reference validation, idempotent graceful close, queue-idle observation for acceptance tests, and a sanitized terminal-failure callback containing only delivery ID plus `WEBHOOK_PROCESSING_FAILED`. Day 6 supplies commit processing through the injected processor; Day 5 does not enrich commits, call AI, or generate reports.
+
 ## Provisional later-day contracts
 
 Report schemas remain provisional until the scheduled Day 7 report-contract freeze.

@@ -6,8 +6,13 @@ import { TRACE_CONFIG } from '../../common/config/config.token';
 import { GithubWebhookQueue } from './github-webhook.queue';
 
 interface PushPayload {
+  ref: string;
+  before: string;
+  after: string;
   installation: { id: number };
   repository: { id: number; full_name: string };
+  sender: { id: number; login: string };
+  commits: Record<string, unknown>[];
 }
 
 @Injectable()
@@ -18,10 +23,16 @@ export class WebhooksService {
     private readonly queue: GithubWebhookQueue,
   ) {}
 
-  async acceptPush(deliveryId: string, signature: string, rawBody: Buffer, payload: unknown): Promise<{ accepted: true } | { accepted: false; reason: 'untracked' }> {
+  async acceptPush(deliveryId: string, signature: string, rawBody: Buffer): Promise<{ accepted: true } | { accepted: false; reason: 'untracked' }> {
     const secret = this.config.github.webhookSecret;
     if (secret === undefined || !this.validSignature(secret, signature, rawBody)) {
       throw new HttpException({ code: 'WEBHOOK_SIGNATURE_INVALID', message: 'Webhook signature is invalid.' }, HttpStatus.UNAUTHORIZED);
+    }
+    let payload: unknown;
+    try {
+      payload = JSON.parse(rawBody.toString('utf8')) as unknown;
+    } catch {
+      throw new HttpException({ code: 'WEBHOOK_PAYLOAD_INVALID', message: 'Webhook payload is invalid.' }, HttpStatus.BAD_REQUEST);
     }
     if (!this.isPushPayload(payload)) {
       throw new HttpException({ code: 'WEBHOOK_PAYLOAD_INVALID', message: 'Webhook payload is invalid.' }, HttpStatus.BAD_REQUEST);
@@ -34,16 +45,16 @@ export class WebhooksService {
     const durableDeliveryId = await this.prisma.$transaction(async (transaction) => {
       await transaction.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${deliveryId}, 0))`;
       const existingDelivery = await transaction.githubWebhookDelivery.findUnique({ where: { githubDeliveryId: deliveryId } });
-      if (existingDelivery !== null) {
-        if (
+      if (
+        existingDelivery !== null
+        && (
           existingDelivery.eventName !== 'push'
           || existingDelivery.payloadHash !== payloadHash
           || existingDelivery.githubInstallationId !== githubInstallationId
           || existingDelivery.githubRepositoryId !== githubRepositoryId
-        ) {
-          throw new HttpException({ code: 'WEBHOOK_DELIVERY_CONFLICT', message: 'Webhook delivery ID conflicts with prior content.' }, HttpStatus.CONFLICT);
-        }
-        return { deliveryId: existingDelivery.id };
+        )
+      ) {
+        throw new HttpException({ code: 'WEBHOOK_DELIVERY_CONFLICT', message: 'Webhook delivery ID conflicts with prior content.' }, HttpStatus.CONFLICT);
       }
       const installation = await transaction.githubInstallation.findUnique({ where: { githubInstallationId } });
       if (installation === null) {
@@ -79,6 +90,9 @@ export class WebhooksService {
         return { deliveryId: null };
       }
 
+      if (existingDelivery !== null) {
+        return { deliveryId: existingDelivery.id };
+      }
       const delivery = await transaction.githubWebhookDelivery.create({
         data: {
           githubDeliveryId: deliveryId,
@@ -88,6 +102,7 @@ export class WebhooksService {
           installationId: installation.id,
           repositoryId: repository.id,
           payloadHash,
+          payload: payload as object,
         },
       });
       return { deliveryId: delivery.id };
@@ -110,12 +125,35 @@ export class WebhooksService {
   private isPushPayload(payload: unknown): payload is PushPayload {
     if (typeof payload !== 'object' || payload === null) return false;
     const value = payload as Record<string, unknown>;
-    const installation = value.installation;
-    const repository = value.repository;
-    return typeof installation === 'object' && installation !== null
-      && Number.isSafeInteger((installation as Record<string, unknown>).id)
-      && typeof repository === 'object' && repository !== null
-      && Number.isSafeInteger((repository as Record<string, unknown>).id)
-      && typeof (repository as Record<string, unknown>).full_name === 'string';
+    const installation = this.record(value.installation);
+    const repository = this.record(value.repository);
+    const sender = this.record(value.sender);
+    return typeof value.ref === 'string'
+      && /^refs\/(heads|tags)\/[\x20-\x7e]{1,255}$/.test(value.ref)
+      && typeof value.before === 'string'
+      && /^[a-f0-9]{40,64}$/i.test(value.before)
+      && typeof value.after === 'string'
+      && /^[a-f0-9]{40,64}$/i.test(value.after)
+      && installation !== null
+      && this.providerId(installation.id)
+      && repository !== null
+      && this.providerId(repository.id)
+      && typeof repository.full_name === 'string'
+      && /^[^/\s]{1,100}\/[^/\s]{1,100}$/.test(repository.full_name)
+      && sender !== null
+      && this.providerId(sender.id)
+      && typeof sender.login === 'string'
+      && /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$/.test(sender.login)
+      && Array.isArray(value.commits)
+      && value.commits.length <= 2_048
+      && value.commits.every((commit) => this.record(commit) !== null);
+  }
+
+  private record(value: unknown): Record<string, unknown> | null {
+    return typeof value === 'object' && value !== null && !Array.isArray(value) ? value as Record<string, unknown> : null;
+  }
+
+  private providerId(value: unknown): value is number {
+    return Number.isSafeInteger(value) && typeof value === 'number' && value > 0;
   }
 }

@@ -1,6 +1,6 @@
 import { RequestMethod, ValidationPipe, type INestApplication } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
-import { json, urlencoded } from 'express';
+import { json, raw, urlencoded, type ErrorRequestHandler } from 'express';
 import { AppModule } from './app.module';
 import { ApiExceptionFilter } from './common/errors/api-exception.filter';
 import { TRACE_CONFIG } from './common/config/config.token';
@@ -10,13 +10,23 @@ export async function createApplication(): Promise<INestApplication> {
   const app = await NestFactory.create(AppModule, { bodyParser: false });
   const config = app.get<TraceConfig>(TRACE_CONFIG);
 
-  app.use(json({
-    limit: '1mb',
-    verify: (request, _response, buffer) => {
-      (request as typeof request & { rawBody?: Buffer }).rawBody = Buffer.from(buffer);
-    },
-  }));
+  app.use('/api/v1/webhooks/github', raw({ type: 'application/json', limit: '256kb' }));
+  app.use(json({ limit: '1mb' }));
   app.use(urlencoded({ extended: false, limit: '64kb' }));
+  const payloadLimitHandler: ErrorRequestHandler = (error, _request, response, next) => {
+    const unknownError: unknown = error;
+    if (
+      typeof unknownError === 'object'
+      && unknownError !== null
+      && 'type' in unknownError
+      && unknownError.type === 'entity.too.large'
+    ) {
+      response.status(413).json({ code: 'WEBHOOK_PAYLOAD_TOO_LARGE', message: 'Webhook payload is too large.', requestId: 'unknown' });
+      return;
+    }
+    next(error);
+  };
+  app.use(payloadLimitHandler);
   app.useGlobalPipes(new ValidationPipe({
     whitelist: true,
     forbidNonWhitelisted: true,

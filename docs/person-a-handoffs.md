@@ -199,3 +199,31 @@ Final recorded results:
 - GitHub activity normalization/processing remains Day 6.
 - Activity/dashboard endpoint implementation remains Day 7; Day 4 publishes only their frozen contracts and fixtures.
 - The GitHub App installation-start frontend action remains outside Person A ownership and was not implemented.
+
+---
+
+## Day 5 — Person A
+
+### Done
+
+- Added `POST /api/v1/webhooks/github` with a route-specific 256 KiB raw JSON parser. HMAC-SHA256 is verified against the exact request bytes before JSON decoding.
+- Enforced canonical delivery UUIDs, supported `push` events, strict signature format, and a bounded push envelope containing ref/SHAs, installation, stable repository ID, sender, and commits.
+- Resolved installation/repository authority exclusively from current server state. Suspended installations, disconnected accounts, removed repository access, disabled users, removed memberships, and wholly untracked repositories are acknowledged without persistence or queueing.
+- Serialized delivery IDs transactionally with a PostgreSQL advisory lock and retained the unique database constraint. Identical retries repair queue publication; conflicting delivery-ID reuse fails closed.
+- Persisted the validated bounded JSON payload plus its digest in the delivery ledger through migration `20260812144000_webhook_payload`.
+- Added deterministic BullMQ jobs containing only the durable delivery-row ID, with five exponential-backoff attempts and bounded completed/failed job retention.
+- Added the `@trace/worker` workspace package and graceful GitHub queue lifecycle foundation under `apps/worker/src/queues/github/**`. Processing and terminal-failure handling are injected Day 6 boundaries; no commit enrichment or activity persistence was implemented early.
+- Added real PostgreSQL/Redis integration coverage for valid, duplicate, malformed, invalid-signature, oversized, unsupported, untracked, suspended, disconnected, removed-access, stale-retry, queue-reference, retry, failure-observability, and shutdown behavior.
+- No `apps/web/**` or `packages/ui/**` files were changed.
+
+### Integration boundary
+
+- Redis jobs contain `{ deliveryId }` only. Day 6 reads the durable row and processes its validated `payload`.
+- Worker terminal-failure callbacks receive only the delivery row ID and stable code `WEBHOOK_PROCESSING_FAILED`; raw exception or payload text is not passed to observability.
+- The queue and API both default to `github-webhook-deliveries`. Worker concurrency must remain within 1–32.
+- Webhook retries revalidate current installation, repository, user, membership, and tracking authority before re-enqueueing.
+
+### Deferred by plan
+
+- Push/commit normalization, enrichment, activity persistence, and processing-state transitions remain Day 6.
+- AI calls and report generation remain outside webhook request and worker acceptance infrastructure.

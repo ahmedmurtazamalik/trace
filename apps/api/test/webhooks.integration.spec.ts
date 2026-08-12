@@ -48,7 +48,15 @@ describe('GitHub webhook acceptance', () => {
 
   async function cleanup(): Promise<void> {
     await queue.obliterate({ force: true });
-    await prisma.githubWebhookDelivery.deleteMany({ where: { githubDeliveryId: deliveryId } });
+    await prisma.githubWebhookDelivery.deleteMany({
+      where: {
+        OR: [
+          { githubDeliveryId: deliveryId },
+          { githubInstallationId: 820_001n },
+          { githubRepositoryId: 830_001n },
+        ],
+      },
+    });
     const user = await prisma.user.findUnique({
       where: { username },
       include: { githubAccount: { include: { installations: true } } },
@@ -127,6 +135,10 @@ describe('GitHub webhook acceptance', () => {
     await postPush(payload).expect(202, { accepted: true });
 
     const delivery = await prisma.githubWebhookDelivery.findUniqueOrThrow({ where: { githubDeliveryId: deliveryId } });
+    const persistedPayload = await prisma.$queryRaw<Array<{ payload: unknown }>>`
+      SELECT payload FROM github_webhook_deliveries WHERE id = ${delivery.id}
+    `;
+    expect(persistedPayload[0]?.payload).toEqual(JSON.parse(payload));
     expect(delivery).toMatchObject({
       eventName: 'push',
       githubInstallationId: 820_001n,
@@ -166,6 +178,102 @@ describe('GitHub webhook acceptance', () => {
     await postPush(pushPayload()).expect(202, { accepted: false, reason: 'untracked' });
 
     await expect(prisma.githubWebhookDelivery.count({ where: { githubDeliveryId: deliveryId } })).resolves.toBe(0);
+    await expect(queue.getJobCounts()).resolves.toMatchObject({ waiting: 0, delayed: 0, active: 0 });
+  });
+
+  it('rejects an invalid signature without persisting or queueing the delivery', async () => {
+    await trackedRepository();
+    await request(server)
+      .post('/api/v1/webhooks/github')
+      .set('Content-Type', 'application/json')
+      .set('X-GitHub-Event', 'push')
+      .set('X-GitHub-Delivery', deliveryId)
+      .set('X-Hub-Signature-256', `sha256=${'0'.repeat(64)}`)
+      .send(pushPayload())
+      .expect(401);
+
+    await expect(prisma.githubWebhookDelivery.count({ where: { githubDeliveryId: deliveryId } })).resolves.toBe(0);
+    await expect(queue.getJobCounts()).resolves.toMatchObject({ waiting: 0, delayed: 0, active: 0 });
+  });
+
+  it('rejects a malformed GitHub delivery ID before persistence or queueing', async () => {
+    await trackedRepository();
+    const payload = pushPayload();
+    await request(server)
+      .post('/api/v1/webhooks/github')
+      .set('Content-Type', 'application/json')
+      .set('X-GitHub-Event', 'push')
+      .set('X-GitHub-Delivery', 'not-a-delivery-id')
+      .set('X-Hub-Signature-256', signature(payload))
+      .send(payload)
+      .expect(400);
+
+    await expect(prisma.githubWebhookDelivery.count()).resolves.toBe(0);
+    await expect(queue.getJobCounts()).resolves.toMatchObject({ waiting: 0, delayed: 0, active: 0 });
+  });
+
+  it('does not re-enqueue a persisted delivery after tracking is revoked', async () => {
+    await trackedRepository();
+    const payload = pushPayload();
+    await postPush(payload).expect(202, { accepted: true });
+    await queue.obliterate({ force: true });
+    const repository = await prisma.repository.findUniqueOrThrow({ where: { githubRepositoryId: 830_001n } });
+    await prisma.userRepository.updateMany({ where: { repositoryId: repository.id }, data: { trackingEnabled: false } });
+
+    await postPush(payload).expect(202, { accepted: false, reason: 'untracked' });
+    const jobs = await queue.getJobs(['wait', 'delayed', 'active', 'completed', 'failed']);
+    expect(jobs).toHaveLength(0);
+  });
+
+  it('rejects unsupported events without persistence or queueing', async () => {
+    await trackedRepository();
+    const payload = pushPayload();
+    await request(server)
+      .post('/api/v1/webhooks/github')
+      .set('Content-Type', 'application/json')
+      .set('X-GitHub-Event', 'issues')
+      .set('X-GitHub-Delivery', deliveryId)
+      .set('X-Hub-Signature-256', signature(payload))
+      .send(payload)
+      .expect(400);
+    await expect(prisma.githubWebhookDelivery.count()).resolves.toBe(0);
+  });
+
+  it('rejects oversized payloads before persistence or queueing', async () => {
+    await trackedRepository();
+    const payload = JSON.stringify({ padding: 'x'.repeat(256 * 1024) });
+    await request(server)
+      .post('/api/v1/webhooks/github')
+      .set('Content-Type', 'application/json')
+      .set('X-GitHub-Event', 'push')
+      .set('X-GitHub-Delivery', deliveryId)
+      .set('X-Hub-Signature-256', signature(payload))
+      .send(payload)
+      .expect(413);
+    await expect(prisma.githubWebhookDelivery.count()).resolves.toBe(0);
+  });
+
+  it.each([
+    ['suspended installation', async () => prisma.githubInstallation.updateMany({ where: { githubInstallationId: 820_001n }, data: { suspendedAt: new Date() } })],
+    ['disconnected account', async () => prisma.githubAccount.updateMany({ where: { githubUserId: 810_001n }, data: { unlinkedAt: new Date() } })],
+    ['removed repository access', async () => prisma.repository.updateMany({ where: { githubRepositoryId: 830_001n }, data: { accessRemovedAt: new Date() } })],
+  ])('acknowledges %s without persistence or queueing', async (_label, revoke) => {
+    await trackedRepository();
+    await revoke();
+    await postPush(pushPayload()).expect(202, { accepted: false, reason: 'untracked' });
+    await expect(prisma.githubWebhookDelivery.count()).resolves.toBe(0);
+    await expect(queue.getJobCounts()).resolves.toMatchObject({ waiting: 0, delayed: 0, active: 0 });
+  });
+
+  it('rejects a signed malformed push payload before persistence or queueing', async () => {
+    await trackedRepository();
+    const payload = JSON.stringify({
+      installation: { id: 820_001 },
+      repository: { id: 830_001, full_name: 'day5-webhook-org/tracked' },
+    });
+
+    await postPush(payload).expect(400);
+    await expect(prisma.githubWebhookDelivery.count()).resolves.toBe(0);
     await expect(queue.getJobCounts()).resolves.toMatchObject({ waiting: 0, delayed: 0, active: 0 });
   });
 });

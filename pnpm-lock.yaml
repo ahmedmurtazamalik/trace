@@ -183,6 +183,28 @@ importers:
         specifier: ^2.1.9
         version: 2.1.9(@types/node@22.18.0)(jsdom@25.0.1)(msw@2.15.0(@types/node@22.18.0)(typescript@5.9.2))
 
+  apps/worker:
+    dependencies:
+      bullmq:
+        specifier: 5.58.5
+        version: 5.58.5
+    devDependencies:
+      '@types/jest':
+        specifier: 29.5.14
+        version: 29.5.14
+      '@types/node':
+        specifier: 22.18.0
+        version: 22.18.0
+      jest:
+        specifier: 29.7.0
+        version: 29.7.0(@types/node@22.18.0)
+      ts-jest:
+        specifier: 29.4.12
+        version: 29.4.12(@babel/core@7.29.7)(@jest/transform@29.7.0)(@jest/types@29.6.3)(babel-jest@29.7.0(@babel/core@7.29.7))(jest-util@29.7.0)(jest@29.7.0)(typescript@5.9.2)
+      typescript:
+        specifier: 5.9.2
+        version: 5.9.2
+
   packages/config:
     dependencies:
       zod:
