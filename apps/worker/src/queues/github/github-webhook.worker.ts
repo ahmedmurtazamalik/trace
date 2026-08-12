@@ -66,6 +66,7 @@ export class GithubWebhookWorker {
       this.worker = undefined;
       this.queue = undefined;
       await Promise.allSettled([worker?.close(true), queue?.close()]);
+      await Promise.allSettled([worker?.disconnect(), queue?.disconnect()]);
       this.runPromise = undefined;
       throw new Error('Webhook worker startup failed.', { cause: error });
     }
