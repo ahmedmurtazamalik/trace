@@ -287,9 +287,25 @@ main#main-content { max-width: 1540px; margin: 0 auto; padding: clamp(1.65rem, 4
 .auth-brand .brand-type small { color: #718198; }
 .auth-copy h1 { margin: .68rem 0 .62rem; font-size: clamp(2.1rem, 4vw, 3.25rem); line-height: 1; letter-spacing: -.06em; }
 .auth-copy p { color: #53647a; line-height: 1.65; }
-.auth-form { display: grid; margin-top: 2rem; }
+.auth-form { display: grid; gap: .15rem; margin-top: 2rem; }
+.auth-field { display: grid; }
 .auth-form .trace-input { margin-bottom: 1rem; }
-.auth-form button { margin-top: .35rem; }
+.auth-field .trace-input[aria-invalid="true"] { margin-bottom: .3rem; border-color: #dc2626; box-shadow: 0 0 0 4px #dc262612; }
+.field-error { margin: 0 0 .9rem; color: #b91c1c; font-size: .72rem; font-weight: 650; line-height: 1.45; }
+.auth-alert { margin-bottom: 1rem; padding: .78rem .88rem; border: 1px solid; border-radius: .72rem; font-size: .76rem; font-weight: 650; line-height: 1.5; }
+.auth-alert-error { border-color: #fecaca; background: #fff1f2; color: #9f1239; }
+.auth-alert-success { border-color: #bbf7d0; background: #f0fdf4; color: #166534; }
+.auth-form button { min-height: 46px; margin-top: .35rem; }
+.session-loading { min-height: 100vh; display: flex; align-items: center; justify-content: center; gap: .75rem; color: #334155; font-weight: 700; background: #f8fbff; }
+.session-spinner { width: 1.1rem; height: 1.1rem; border: 2px solid #bfdbfe; border-top-color: #2563eb; border-radius: 999px; animation: session-spin .8s linear infinite; }
+.session-controls { display: flex; align-items: center; gap: .8rem; }
+.session-identity { display: grid; justify-items: end; color: #334155; line-height: 1.15; }
+.session-identity span { font-size: .76rem; font-weight: 800; }
+.session-identity small { color: #64748b; font-size: .65rem; }
+.session-control-error { max-width: 12rem; color: #b91c1c; font-size: .68rem; font-weight: 700; line-height: 1.25; }
+.session-controls button { min-height: 38px; display: inline-flex; align-items: center; gap: .42rem; padding: .5rem .7rem; border: 1px solid #cbd5e1; border-radius: .65rem; background: white; color: #334155; font-size: .72rem; font-weight: 750; cursor: pointer; transition: border-color .18s ease, color .18s ease, transform .18s ease; }
+.session-controls button:hover { border-color: #93c5fd; color: #1d4ed8; transform: translateY(-1px); }
+@keyframes session-spin { to { transform: rotate(360deg); } }
 .auth-links { display: flex; justify-content: space-between; gap: 1rem; margin-top: 1rem; color: #56677d; font-size: .73rem; }
 .auth-links a { color: #1d4ed8; font-weight: 750; }
 .planned-note { margin-top: 1.5rem; padding: .78rem; border: 1px solid #bae6fd; border-radius: .72rem; background: #ecfeff; color: #155e75; font-size: .7rem; line-height: 1.5; }

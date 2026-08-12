@@ -1,4 +1,2 @@
-import Link from "next/link";
-import { Input, Label } from "@trace/ui";
-import { AuthShell } from "@/components/auth/auth-shell";
-export default function RegisterPage() { return <AuthShell title="Create your workspace." description="Start with a Trace account, then connect development sources." note="Registration behavior begins on Day 2. No account will be created from this preview."><form className="auth-form"><Label htmlFor="username">Username</Label><Input id="username" placeholder="choose-a-username" disabled/><Label htmlFor="email">Email</Label><Input id="email" type="email" placeholder="you@example.com" disabled/><Label htmlFor="password">Password</Label><Input id="password" type="password" placeholder="Minimum 12 characters" disabled/><button type="button" disabled>Create account — available Day 2</button><div className="auth-links"><span>Already have an account?</span><Link href="/login">Sign in</Link></div></form></AuthShell>; }
+import { RegisterRoute } from "@/features/auth/register-route";
+export default function RegisterPage() { return <RegisterRoute />; }
