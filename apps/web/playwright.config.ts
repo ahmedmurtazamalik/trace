@@ -4,7 +4,7 @@ export default defineConfig({
   testDir: "./e2e",
   use: { baseURL: "http://127.0.0.1:3100", trace: "on-first-retry" },
   webServer: {
-    command: "pnpm dev --port 3100",
+    command: "pnpm build && pnpm start --port 3100",
     url: "http://127.0.0.1:3100",
     reuseExistingServer: false,
   },

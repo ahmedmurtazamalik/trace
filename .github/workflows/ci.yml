@@ -1,0 +1,85 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_ENV: test
+  DATABASE_URL: postgresql://trace:trace_dev_password@localhost:5432/trace?schema=public
+  REDIS_URL: redis://localhost:6379
+  SESSION_SECRET: test-only-session-secret-at-least-32-characters
+  GITHUB_APP_CLIENT_ID: test-client-id
+  GITHUB_APP_SLUG: trace-test-app
+  GITHUB_CALLBACK_URL: http://localhost:3001/api/v1/github/callback
+  GITHUB_INSTALLATION_CALLBACK_URL: http://localhost:3001/api/v1/github/installation/callback
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: trace
+          POSTGRES_USER: trace
+          POSTGRES_PASSWORD: trace_dev_password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U trace -d trace"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 15
+      redis:
+        image: redis:8-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.15.1
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm db:generate
+      - run: pnpm db:migrate
+      - run: pnpm test
+      - run: pnpm test:integration
+      - run: pnpm lint
+      - run: pnpm typecheck
+      - run: pnpm build
+      - run: pnpm audit --prod
+
+  browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.15.1
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @trace/web exec playwright install --with-deps chromium
+      - run: pnpm --filter @trace/web test:e2e
