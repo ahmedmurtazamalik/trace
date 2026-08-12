@@ -12,7 +12,11 @@ export class GithubWebhookQueue implements OnModuleDestroy {
 
   constructor(@Inject(TRACE_CONFIG) config: TraceConfig) {
     this.queue = new Queue(GITHUB_WEBHOOK_QUEUE, {
-      connection: { url: config.redisUrl },
+      connection: {
+        url: config.redisUrl,
+        maxRetriesPerRequest: 1,
+        retryStrategy: (attempts): number | null => attempts > 2 ? null : 100,
+      },
       defaultJobOptions: {
         attempts: 5,
         backoff: { type: 'exponential', delay: 1_000 },

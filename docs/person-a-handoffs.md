@@ -207,21 +207,22 @@ Final recorded results:
 ### Done
 
 - Added `POST /api/v1/webhooks/github` with a route-specific 256 KiB raw JSON parser. HMAC-SHA256 is verified against the exact request bytes before JSON decoding.
-- Enforced canonical delivery UUIDs, supported `push` events, strict signature format, and a bounded push envelope containing ref/SHAs, installation, stable repository ID, sender, and commits.
+- Enforced canonical delivery UUIDs, supported `push` events, strict signature format, and a bounded push envelope containing ref/SHAs, installation, stable repository ID, sender, and strictly validated nested commit fields.
 - Resolved installation/repository authority exclusively from current server state. Suspended installations, disconnected accounts, removed repository access, disabled users, removed memberships, and wholly untracked repositories are acknowledged without persistence or queueing.
-- Serialized delivery IDs transactionally with a PostgreSQL advisory lock and retained the unique database constraint. Identical retries repair queue publication only while the ledger row remains pending; in-flight/terminal rows acknowledge late retries without recreating removed BullMQ jobs. Conflicting delivery-ID reuse fails closed.
-- Persisted the validated bounded JSON payload plus its digest in the delivery ledger through migration `20260812144000_webhook_payload`.
+- Serialized account/user authority with disconnect and disable flows, then serialized delivery IDs transactionally with a PostgreSQL advisory lock and retained the unique database constraint. Conflicting delivery-ID reuse fails closed.
+- Persisted the validated bounded JSON payload, digest, and durable `publishedAt` queue-publication marker through upgrade-safe migration `20260812144000_webhook_payload`; legacy rows are retained but terminally quarantined before the payload column becomes non-null.
 - Added deterministic BullMQ jobs containing only the durable delivery-row ID, with five exponential-backoff attempts and bounded completed/failed job retention.
-- Added the `@trace/worker` workspace package and graceful GitHub queue lifecycle foundation under `apps/worker/src/queues/github/**`. Processing and terminal-failure handling are injected Day 6 boundaries; no commit enrichment or activity persistence was implemented early.
+- Added autonomous startup/periodic publication reconciliation for pending rows, independent of GitHub retries and later authority changes. Request-path publication is bounded and deterministic re-adds close the Redis/marker crash window.
+- Added the `@trace/worker` workspace package with Redis readiness, SIGINT/SIGTERM handling, bounded graceful shutdown, sanitized BullMQ failure persistence, and awaited terminal observability. Processing remains an injected Day 6 boundary and the executable fails closed until a real processor is composed.
 - Added real PostgreSQL/Redis integration coverage for valid, duplicate, malformed, invalid-signature, oversized, unsupported, untracked, suspended, disconnected, removed-access, stale-retry, queue-reference, retry, failure-observability, and shutdown behavior.
 - No `apps/web/**` or `packages/ui/**` files were changed.
 
 ### Integration boundary
 
 - Redis jobs contain `{ deliveryId }` only. Day 6 reads the durable row and processes its validated `payload`.
-- Worker terminal-failure callbacks receive only the delivery row ID and stable code `WEBHOOK_PROCESSING_FAILED`; raw exception or payload text is not passed to observability.
+- Worker terminal-failure callbacks receive only the delivery row ID and stable code `WEBHOOK_PROCESSING_FAILED`; raw exception or payload text is neither passed to observability nor retained in BullMQ failure fields.
 - The queue and API both default to `github-webhook-deliveries`. Worker concurrency must remain within 1–32.
-- Webhook retries revalidate current installation, repository, user, membership, and tracking authority before re-enqueueing.
+- Webhook retries revalidate current installation, repository, user, membership, and tracking authority. Already accepted pending rows retain an independent durable publication obligation, so later revocation cannot strand them.
 
 ### Deferred by plan
 

@@ -4,6 +4,8 @@ export interface GithubWebhookWorkerOptions {
   redisUrl: string;
   queueName?: string;
   concurrency?: number;
+  startupTimeoutMs?: number;
+  shutdownTimeoutMs?: number;
   processDelivery(deliveryId: string): Promise<void>;
   recordTerminalFailure(deliveryId: string, code: 'WEBHOOK_PROCESSING_FAILED'): Promise<void>;
 }
@@ -18,6 +20,7 @@ export class GithubWebhookWorker {
   private queue: Queue<GithubWebhookJob> | undefined;
   private worker: Worker<GithubWebhookJob> | undefined;
   private closing: Promise<void> | undefined;
+  private runPromise: Promise<void> | undefined;
 
   constructor(private readonly options: GithubWebhookWorkerOptions) {
     this.queueName = options.queueName ?? 'github-webhook-deliveries';
@@ -27,23 +30,39 @@ export class GithubWebhookWorker {
     }
   }
 
-  start(): Promise<void> {
-    if (this.worker !== undefined) return Promise.resolve();
-    const connection = { url: this.options.redisUrl };
+  async start(): Promise<void> {
+    if (this.worker !== undefined) return;
+    const connection = {
+      url: this.options.redisUrl,
+      maxRetriesPerRequest: null,
+      retryStrategy: (): null => null,
+    };
     this.queue = new Queue<GithubWebhookJob>(this.queueName, { connection });
-    this.worker = new Worker<GithubWebhookJob>(
-      this.queueName,
-      async (job) => this.process(job),
-      { connection, concurrency: this.concurrency, autorun: false },
-    );
-    this.worker.on('failed', (job) => {
-      if (job === undefined || job.attemptsMade < (job.opts.attempts ?? 1)) return;
-      const deliveryId = this.deliveryId(job.data);
-      if (deliveryId === null) return;
-      void this.options.recordTerminalFailure(deliveryId, 'WEBHOOK_PROCESSING_FAILED').catch(() => undefined);
-    });
-    void this.worker.run().catch(() => undefined);
-    return Promise.resolve();
+    this.queue.on('error', () => undefined);
+    try {
+      await this.withTimeout(
+        this.queue.waitUntilReady().then(() => undefined),
+        this.options.startupTimeoutMs ?? 5_000,
+        'Webhook worker startup timed out.',
+      );
+      this.worker = new Worker<GithubWebhookJob>(
+        this.queueName,
+        async (job) => this.process(job),
+        { connection, concurrency: this.concurrency, autorun: false },
+      );
+      this.worker.on('error', () => undefined);
+      this.runPromise = this.worker.run();
+      void this.runPromise.catch(() => undefined);
+      await this.withTimeout(this.worker.waitUntilReady(), this.options.startupTimeoutMs ?? 5_000, 'Webhook worker startup timed out.');
+    } catch (error) {
+      const worker = this.worker;
+      const queue = this.queue;
+      this.worker = undefined;
+      this.queue = undefined;
+      await Promise.allSettled([worker?.close(true), queue?.close()]);
+      this.runPromise = undefined;
+      throw new Error('Webhook worker startup failed.', { cause: error });
+    }
   }
 
   async waitUntilIdle(timeoutMs = 5_000): Promise<void> {
@@ -64,8 +83,12 @@ export class GithubWebhookWorker {
       const queue = this.queue;
       this.worker = undefined;
       this.queue = undefined;
-      await worker?.close();
-      await queue?.close();
+      await this.withTimeout(
+        Promise.all([worker?.close(), queue?.close(), this.runPromise?.catch(() => undefined)]).then(() => undefined),
+        this.options.shutdownTimeoutMs ?? 10_000,
+        'Webhook worker shutdown timed out.',
+      );
+      this.runPromise = undefined;
     })();
     return this.closing;
   }
@@ -73,12 +96,32 @@ export class GithubWebhookWorker {
   private async process(job: Job<GithubWebhookJob>): Promise<void> {
     const deliveryId = this.deliveryId(job.data);
     if (deliveryId === null) throw new Error('Webhook queue reference is invalid.');
-    await this.options.processDelivery(deliveryId);
+    try {
+      await this.options.processDelivery(deliveryId);
+    } catch {
+      const finalAttempt = job.attemptsMade + 1 >= (job.opts.attempts ?? 1);
+      if (finalAttempt) await this.options.recordTerminalFailure(deliveryId, 'WEBHOOK_PROCESSING_FAILED');
+      throw new Error('WEBHOOK_PROCESSING_FAILED');
+    }
   }
 
   private deliveryId(data: GithubWebhookJob): string | null {
     return typeof data.deliveryId === 'string' && /^[A-Za-z0-9_-]{1,128}$/.test(data.deliveryId)
       ? data.deliveryId
       : null;
+  }
+
+  private async withTimeout(operation: Promise<void>, timeoutMs: number, message: string): Promise<void> {
+    let timer: NodeJS.Timeout | undefined;
+    try {
+      await Promise.race([
+        operation,
+        new Promise<never>((_resolve, reject) => {
+          timer = setTimeout(() => reject(new Error(message)), timeoutMs);
+        }),
+      ]);
+    } finally {
+      if (timer !== undefined) clearTimeout(timer);
+    }
   }
 }

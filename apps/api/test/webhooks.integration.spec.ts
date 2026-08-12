@@ -5,6 +5,7 @@ import { PrismaService } from '@trace/database';
 import { Queue } from 'bullmq';
 import request from 'supertest';
 import { createApplication } from '../src/bootstrap';
+import { GithubWebhookPublisher } from '../src/modules/webhooks/github-webhook.publisher';
 
 const webhookSecret = 'day5-test-webhook-secret';
 const deliveryId = '11111111-2222-4333-8444-555555555555';
@@ -228,6 +229,34 @@ describe('GitHub webhook acceptance', () => {
     await postPush(payload).expect(202, { accepted: true });
     const jobs = await queue.getJobs(['wait', 'delayed', 'active', 'completed', 'failed']);
     expect(jobs).toHaveLength(0);
+  });
+
+  it('independently publishes an owed accepted delivery after authority is revoked', async () => {
+    await trackedRepository();
+    const payload = JSON.parse(pushPayload()) as object;
+    const installation = await prisma.githubInstallation.findUniqueOrThrow({ where: { githubInstallationId: 820_001n } });
+    const repository = await prisma.repository.findUniqueOrThrow({ where: { githubRepositoryId: 830_001n } });
+    const delivery = await prisma.githubWebhookDelivery.create({
+      data: {
+        githubDeliveryId: deliveryId,
+        eventName: 'push',
+        githubInstallationId: 820_001n,
+        githubRepositoryId: 830_001n,
+        installationId: installation.id,
+        repositoryId: repository.id,
+        payloadHash: 'a'.repeat(64),
+        payload,
+      },
+    });
+    await prisma.githubAccount.updateMany({ where: { githubUserId: 810_001n }, data: { unlinkedAt: new Date() } });
+
+    const publisher = app.get(GithubWebhookPublisher);
+    await publisher.publishOwed();
+
+    const job = await queue.getJob(`github-webhook-${delivery.id}`);
+    expect(job?.data).toEqual({ deliveryId: delivery.id });
+    const published = await prisma.githubWebhookDelivery.findUniqueOrThrow({ where: { id: delivery.id } });
+    expect(published.publishedAt).toBeInstanceOf(Date);
   });
 
   it('does not re-enqueue a persisted delivery after tracking is revoked', async () => {

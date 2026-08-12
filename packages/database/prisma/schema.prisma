@@ -295,6 +295,7 @@ model GithubWebhookDelivery {
   repositoryId         String?                  @map("repository_id")
   payloadHash          String                   @map("payload_hash")
   payload              Json
+  publishedAt          DateTime?                @map("published_at")
   status               WebhookDeliveryStatus    @default(pending)
   receivedAt           DateTime                 @default(now()) @map("received_at")
   processingStartedAt  DateTime?                @map("processing_started_at")

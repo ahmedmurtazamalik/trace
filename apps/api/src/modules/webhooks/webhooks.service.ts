@@ -3,7 +3,7 @@ import { HttpException, HttpStatus, Inject, Injectable } from '@nestjs/common';
 import { Prisma, PrismaService } from '@trace/database';
 import type { TraceConfig } from '@trace/config';
 import { TRACE_CONFIG } from '../../common/config/config.token';
-import { GithubWebhookQueue } from './github-webhook.queue';
+import { GithubWebhookPublisher } from './github-webhook.publisher';
 
 interface PushPayload {
   ref: string;
@@ -40,7 +40,7 @@ export class WebhooksService {
   constructor(
     private readonly prisma: PrismaService,
     @Inject(TRACE_CONFIG) private readonly config: TraceConfig,
-    private readonly queue: GithubWebhookQueue,
+    private readonly publisher: GithubWebhookPublisher,
   ) {}
 
   async acceptPush(deliveryId: string, signature: string, rawBody: Buffer): Promise<{ accepted: true } | { accepted: false; reason: 'untracked' }> {
@@ -141,9 +141,7 @@ export class WebhooksService {
     if (durableDeliveryId.deliveryId === null) {
       return { accepted: false, reason: 'untracked' };
     }
-    if (durableDeliveryId.shouldEnqueue) {
-      await this.queue.enqueue(durableDeliveryId.deliveryId);
-    }
+    if (durableDeliveryId.shouldEnqueue) await this.publisher.publishOneBounded(durableDeliveryId.deliveryId);
 
     return { accepted: true };
   }

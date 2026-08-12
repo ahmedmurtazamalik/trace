@@ -44,6 +44,19 @@ describe('GitHub webhook worker lifecycle', () => {
     await expect(worker.close()).resolves.toBeUndefined();
   });
 
+  it('fails startup visibly when Redis is unavailable', async () => {
+    worker = new GithubWebhookWorker({
+      redisUrl: 'redis://127.0.0.1:1',
+      queueName,
+      startupTimeoutMs: 250,
+      shutdownTimeoutMs: 500,
+      processDelivery: jest.fn().mockResolvedValue(undefined),
+      recordTerminalFailure: jest.fn().mockResolvedValue(undefined),
+    });
+
+    await expect(worker.start()).rejects.toThrow('Webhook worker startup failed.');
+  });
+
   it('records one sanitized terminal failure after bounded retries are exhausted', async () => {
     const processed = jest.fn<Promise<void>, [string]>().mockRejectedValue(new Error('secret payload fragment'));
     const terminalFailure = jest.fn<Promise<void>, [string, string]>().mockResolvedValue(undefined);
@@ -66,6 +79,9 @@ describe('GitHub webhook worker lifecycle', () => {
     expect(processed).toHaveBeenCalledTimes(2);
     expect(terminalFailure).toHaveBeenCalledTimes(1);
     expect(terminalFailure).toHaveBeenCalledWith('delivery-row-failure', 'WEBHOOK_PROCESSING_FAILED');
+    const failedJob = await queue.getJob('github-webhook-delivery-row-failure');
+    expect(failedJob?.failedReason).toBe('WEBHOOK_PROCESSING_FAILED');
+    expect((failedJob?.stacktrace ?? []).join('\n')).not.toContain('secret payload fragment');
 
     await worker.close();
   });
