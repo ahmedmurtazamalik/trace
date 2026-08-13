@@ -62,6 +62,16 @@ Reset links are single-use and expire after 30 minutes. A missing, invalid, cons
 
 Repository rows on the GitHub page are labelled illustrative. Real repository access and tracking controls arrive in the repository-management work.
 
+## Request and track reports
+
+1. Open **Reports** in the protected workspace.
+2. Choose the development-activity date. Trace displays the detected IANA timezone used for that request.
+3. Select **Create report**.
+4. Use report history to review **Pending**, **Processing**, **Completed**, or **Failed** status and open a detail view.
+5. PDF download remains disabled until the report is completed and a current PDF artifact exists.
+
+Day 8 is a contract preview backed by validated fixtures. The page says so directly: report API handlers, factual aggregation, queue processing, AI generation, storage, and real PDF downloads are not connected yet. Duplicate dates, unavailable generation, expired sessions, empty history, load retries, and safe failures are represented without exposing internal errors.
+
 ## Accessibility
 
 - Every field has a programmatic label.
