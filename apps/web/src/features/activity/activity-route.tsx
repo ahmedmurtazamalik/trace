@@ -1,7 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import { activityListQuerySchema, activityListResponseSchema, activitySourceSchema, activityTypeSchema, type ActivityListQuery, type ActivityListResponse } from "@trace/shared";
 import { ActivityExperience, type ActivityFilters } from "./activity-experience";
 import { activityFixtureItems } from "@/mocks/fixtures/activity";
@@ -44,12 +43,7 @@ function validTimezone(value: string | null) {
 
 export function ActivityRoute() {
   const pathname = usePathname();
-  const router = useRouter();
   const searchParams = useSearchParams();
-  const pendingUrlUpdate = useRef<ReturnType<typeof setTimeout>>();
-  useEffect(() => () => {
-    if (pendingUrlUpdate.current !== undefined) clearTimeout(pendingUrlUpdate.current);
-  }, []);
   const initialFilters: ActivityFilters = {
     date: validDate(searchParams.get("date")),
     repositoryId: optionalValue(searchParams.get("repositoryId")),
@@ -75,11 +69,8 @@ export function ActivityRoute() {
       if (value) next.set(key, value);
       else next.delete(key);
     }
-    if (pendingUrlUpdate.current !== undefined) clearTimeout(pendingUrlUpdate.current);
-    pendingUrlUpdate.current = setTimeout(() => {
-      pendingUrlUpdate.current = undefined;
-      router.replace(next.size === 0 ? pathname : `${pathname}?${next.toString()}`, { scroll: false });
-    }, 0);
+    const url = next.size === 0 ? pathname : `${pathname}?${next.toString()}`;
+    window.history.replaceState(window.history.state, "", url);
   }
   const timezone = validTimezone(searchParams.get("timezone"));
   return <ActivityExperience loadActivity={listActivity} loadRepositories={listRepositories} initialFilters={initialFilters} timezone={timezone} onFiltersChange={update} />;
