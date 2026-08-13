@@ -1,9 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { GitCommitHorizontal, GitPullRequest, Upload } from "lucide-react";
-import { Badge, Button, Card } from "@trace/ui";
+import { Button, Card } from "@trace/ui";
 import type { ActivityListQuery, ActivityListResponse, ActivitySummary, ActivitySource, ActivityType } from "@trace/shared";
+import { ActivitySummaryCard } from "./activity-summary-card";
 
 export type ActivityFilters = Pick<ActivityListQuery, "date" | "repositoryId" | "contributorId" | "source" | "type">;
 export type LoadActivity = (query: Partial<ActivityListQuery>) => Promise<ActivityListResponse>;
@@ -18,9 +18,24 @@ const validTypesBySource: Record<ActivitySource, Set<ActivityType>> = {
   cli: new Set(["working_tree_snapshot", "staged_change", "untracked_file", "local_commit"]),
 };
 
-function contributorName(item: ActivitySummary) { return item.contributor?.displayName ?? item.contributor?.username ?? "Unknown contributor"; }
-function icon(type: string) { if (type === "push") return <Upload aria-hidden="true" size={18} />; if (type === "pull_request") return <GitPullRequest aria-hidden="true" size={18} />; return <GitCommitHorizontal aria-hidden="true" size={18} />; }
 function filtered(filters: ActivityFilters) { return Object.fromEntries(Object.entries(filters).filter(([, value]) => value !== undefined && value !== "")) as ActivityFilters; }
+function filterKey(filters: ActivityFilters) { return JSON.stringify(filtered(filters)); }
+function localDateKey(value: string, timezone: string) {
+  const parts = new Intl.DateTimeFormat("en-US", { timeZone: timezone, year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(new Date(value));
+  const part = (type: Intl.DateTimeFormatPartTypes) => parts.find((item) => item.type === type)?.value ?? "";
+  return `${part("year")}-${part("month")}-${part("day")}`;
+}
+function groupByDay(items: ActivitySummary[], timezone: string) {
+  return items.reduce<Record<string, ActivitySummary[]>>((groups, item) => {
+    const date = localDateKey(item.occurredAt, timezone);
+    (groups[date] ??= []).push(item);
+    return groups;
+  }, {});
+}
+function safeError(cause: unknown, pagination = false) {
+  if (typeof cause === "object" && cause !== null && "status" in cause && cause.status === 403) return "You do not have permission to view this activity.";
+  return pagination ? "Trace could not load more activity. Try again." : "Trace could not load activity. Try again.";
+}
 
 export function ActivityExperience({ loadActivity, initialFilters = {}, timezone = "UTC", onFiltersChange }: ActivityExperienceProps) {
   const [filters, setFilters] = useState<ActivityFilters>(filtered(initialFilters));
@@ -31,6 +46,7 @@ export function ActivityExperience({ loadActivity, initialFilters = {}, timezone
   const [error, setError] = useState<string>();
   const [pageError, setPageError] = useState<string>();
   const requestGeneration = useRef(0);
+  const initialFilterKey = filterKey(initialFilters);
   const query = useMemo(() => ({ ...filters, limit: 25, timezone }), [filters, timezone]);
   const availableTypes = useMemo(() => filters.source === undefined ? typeOptions : typeOptions.filter((option) => validTypesBySource[filters.source!].has(option.value)), [filters.source]);
 
@@ -42,22 +58,27 @@ export function ActivityExperience({ loadActivity, initialFilters = {}, timezone
       setItems(response.items); setNextCursor(response.pageInfo.nextCursor);
     }).catch((cause: unknown) => {
       if (generation !== requestGeneration.current) return;
-      setError(cause instanceof Error ? cause.message : "Trace could not load activity.");
+      setError(safeError(cause));
     }).finally(() => {
       if (generation === requestGeneration.current) setLoading(false);
     });
   }, [loadActivity, query]);
   useEffect(() => { void reload(); return () => { requestGeneration.current += 1; }; }, [reload]);
+  useEffect(() => {
+    const next = JSON.parse(initialFilterKey) as ActivityFilters;
+    setFilters((current) => filterKey(current) === initialFilterKey ? current : next);
+  }, [initialFilterKey]);
 
   function change<K extends keyof ActivityFilters>(key: K, value: ActivityFilters[K] | "") {
     requestGeneration.current += 1;
+    setLoadingMore(false);
     let next = filtered({ ...filters, [key]: value || undefined });
     if (next.source && next.type && !validTypesBySource[next.source].has(next.type)) {
       next = filtered({ ...next, type: undefined });
     }
     setFilters(next); onFiltersChange?.(next);
   }
-  function clear() { requestGeneration.current += 1; setFilters({}); onFiltersChange?.({}); }
+  function clear() { requestGeneration.current += 1; setLoadingMore(false); setFilters({}); onFiltersChange?.({}); }
   async function loadMore() {
     if (nextCursor === null) return;
     const generation = requestGeneration.current;
@@ -67,7 +88,7 @@ export function ActivityExperience({ loadActivity, initialFilters = {}, timezone
       if (generation !== requestGeneration.current) return;
       setItems((current) => { const byId = new Map(current.map((item) => [item.id, item])); response.items.forEach((item) => byId.set(item.id, item)); return [...byId.values()]; });
       setNextCursor(response.pageInfo.nextCursor);
-    } catch (cause) { if (generation === requestGeneration.current) setPageError(cause instanceof Error ? cause.message : "Trace could not load more activity."); }
+    } catch (cause) { if (generation === requestGeneration.current) setPageError(safeError(cause, true)); }
     finally { if (generation === requestGeneration.current) setLoadingMore(false); }
   }
 
@@ -87,9 +108,7 @@ export function ActivityExperience({ loadActivity, initialFilters = {}, timezone
     {loading && items.length === 0 ? <Card className="activity-state-card" role="status">Loading development activity…</Card>
       : error !== undefined && items.length === 0 ? <Card className="activity-state-card activity-state-error" role="alert"><p>{error}</p><Button className="trace-button-secondary" onClick={() => void reload()}>Retry</Button></Card>
       : items.length === 0 ? <Card className="activity-state-card"><h2>{Object.keys(filters).length ? "No activity matches these filters" : "No development activity yet"}</h2><p>{Object.keys(filters).length ? "Clear filters or choose a broader combination." : "Activity appears after a tracked repository sends development events."}</p>{Object.keys(filters).length > 0 && <Button className="trace-button-secondary" onClick={clear}>Clear filters</Button>}</Card>
-      : <div className="activity-timeline" aria-label="Development activity timeline">{items.map((item) => <Card className="activity-event-card" key={item.id}>
-        <span className="activity-event-icon">{icon(item.type)}</span><div className="activity-event-body"><div className="activity-event-heading"><Badge>{labels[item.type] ?? "Activity"}</Badge><span>{item.source.toUpperCase()}</span></div><h2>{item.facts.message ?? labels[item.type] ?? "Development activity"}</h2><p>{contributorName(item)} <span aria-hidden="true">·</span> {item.repository.fullName}</p><div className="activity-facts">{item.facts.branch !== null && <span>Branch {item.facts.branch}</span>}{item.facts.filesChanged !== null && <span>{item.facts.filesChanged} files</span>}{item.facts.additions !== null && <span className="activity-additions">+{item.facts.additions}</span>}{item.facts.deletions !== null && <span className="activity-deletions">−{item.facts.deletions}</span>}</div></div><time dateTime={item.occurredAt}>{new Date(item.occurredAt).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit", timeZone: "UTC" })}</time>
-      </Card>)}</div>}
+      : <section className="activity-timeline" aria-label="Development activity timeline">{Object.entries(groupByDay(items, timezone)).map(([date, group]) => <section className="activity-day-group" key={date}><h2>{new Date(`${date}T12:00:00.000Z`).toLocaleDateString("en-US", { dateStyle: "long", timeZone: "UTC" })}</h2><ul>{group?.map((item) => <li key={item.id}><ActivitySummaryCard headingLevel={3} item={item} timezone={timezone} /></li>)}</ul></section>)}</section>}
     {nextCursor !== null && <div className="activity-pagination"><Button className="trace-button-secondary" disabled={loadingMore} onClick={() => void loadMore()}>{loadingMore ? "Loading…" : "Load more activity"}</Button></div>}
     {pageError !== undefined && <div className="activity-notice-error" role="alert">{pageError} <Button className="trace-button-secondary" onClick={() => void loadMore()}>Retry</Button></div>}
   </div>;
