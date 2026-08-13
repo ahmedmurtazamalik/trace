@@ -4,6 +4,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { dashboardQuerySchema, dashboardResponseSchema, type DashboardQuery, type DashboardResponse } from "@trace/shared";
 import { DashboardExperience, type DashboardFilters } from "./dashboard-experience";
 import { dashboardFixtures } from "@/mocks/fixtures/dashboard";
+import { getDashboard } from "@/api/dashboard";
 
 function localDate(value: string, timezone: string) {
   const parts = new Intl.DateTimeFormat("en-US", { timeZone: timezone, year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(new Date(value));
@@ -11,7 +12,7 @@ function localDate(value: string, timezone: string) {
   return `${part("year")}-${part("month")}-${part("day")}`;
 }
 
-async function loadFixtureDashboard(query: DashboardQuery): Promise<DashboardResponse> {
+export async function loadFixtureDashboard(query: DashboardQuery): Promise<DashboardResponse> {
   const validatedQuery = dashboardQuerySchema.parse(query);
   const response = dashboardFixtures.ready;
   if (!response.recentActivity.some((item) => localDate(item.occurredAt, validatedQuery.timezone) === validatedQuery.date)) {
@@ -42,5 +43,5 @@ export function DashboardRoute() {
     else next.delete("repositoryId");
     router.replace(`${pathname}?${next.toString()}`, { scroll: false });
   }
-  return <DashboardExperience loadDashboard={loadFixtureDashboard} initialDate={date} initialRepositoryId={repositoryId} timezone={timezone} onFiltersChange={update} />;
+  return <DashboardExperience loadDashboard={getDashboard} initialDate={date} initialRepositoryId={repositoryId} timezone={timezone} onFiltersChange={update} />;
 }

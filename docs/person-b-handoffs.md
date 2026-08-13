@@ -327,3 +327,48 @@ No Person A-owned backend, worker, shared-contract, root workspace, or infrastru
 - Validated every Dashboard URL query and fixture response through the frozen shared schemas, with safe defaults for hostile dates and timezones.
 - Restored Dashboard controls and data when URL-derived props change through browser Back/Forward navigation.
 - Added stale-request, zero-value, large-number, hostile-query, and desktop/mobile history regressions.
+
+## Day 7 — Real Activity and Dashboard API adapters (Person B)
+
+### Done
+- Added production cookie-authenticated `GET /api/v1/activity`, `GET /api/v1/repositories/:id/activity`, and `GET /api/v1/dashboard` adapters without changing the frozen shared contracts.
+- Validated every outgoing query and every successful response through `@trace/shared` schemas.
+- Added safe error normalization for session expiry, authorization, validation, service, network, malformed-response, and unexpected failures; raw backend details are never rendered.
+- Added request cancellation for filter changes, browser-history restoration, pagination replacement, and unmount while preserving stale-response generation protection and cursor deduplication.
+- Switched production Activity and Dashboard routes from local fixture loaders to the real adapters. Component tests retain dependency-injected fixture loaders and browser tests intercept the exact production API paths with contract-shaped responses.
+- Added direct sign-in actions when the API reports an expired session and corrected stale global preview copy that falsely claimed no API could be connected.
+
+### Person B-owned files changed
+- `apps/web/src/api/activity.ts` and `activity.test.ts`
+- `apps/web/src/api/dashboard.ts` and `dashboard.test.ts`
+- `apps/web/src/features/activity/**`
+- `apps/web/src/features/dashboard/**`
+- `apps/web/src/components/shell/app-shell.tsx`
+- `apps/web/e2e/activity.spec.ts`
+- `apps/web/e2e/dashboard.spec.ts`
+- `docs/person-b-handoffs.md`
+
+No Person A-owned API, worker, database, shared-contract, root workspace, infrastructure, or backend-documentation file was changed.
+
+### Contract and real-versus-mock status
+- Base: merged Day 6 `origin/main` at `71e3f4085413defd7d0977bc060723d3dbac7da8`.
+- Frozen contracts: `packages/shared/src/activity.ts` and `packages/shared/src/dashboard.ts` from the prior-day contract gate.
+- Production frontend default: real authorized API fetches through `NEXT_PUBLIC_API_ORIGIN` (default `http://localhost:3001`) with cookies and validated responses.
+- Tests: deterministic contract fixtures injected at the loader seam or returned by Playwright network interception. These prove frontend behavior and request compatibility, not a live Person A backend.
+- Current-main dependency: no Activity or Dashboard controller exists on the base tree. The Person A Day 7 branch must publish all three endpoints before the required joint real-data smoke can pass.
+
+### TDD and verification
+- Expected RED: Activity and Dashboard adapter tests each failed because their production modules did not exist.
+- Activity adapter/experience focused suite: PASS, 14/14.
+- Dashboard adapter/experience focused suite: PASS, 15/15.
+- Focused Activity browser suite: PASS, 8/8 across desktop/mobile.
+- Focused Dashboard browser suite: PASS, 4/4 across desktop/mobile.
+- Final UI suite and typecheck: PASS, 2/2.
+- Final web suite: PASS, 93/93; lint and typecheck PASS with no warnings or errors.
+- Final full Playwright suite: PASS, 54/54 across desktop/mobile.
+- Production build: PASS with 14/14 static pages generated.
+- `git diff --check`, Person B ownership audit, moving-base check, and conflict simulation: PASS; `origin/main` remained `71e3f4085413defd7d0977bc060723d3dbac7da8`.
+
+### Joint gate
+- After Person A's Day 7 branch merges, run the exact three routes against an authenticated local API/database and verify a stored Day 6 GitHub event appears on Activity and contributes once to Dashboard metrics.
+- Do not call the integration live until that real joint smoke passes; fixture-backed and intercepted tests remain labeled mocked evidence.

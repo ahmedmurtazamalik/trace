@@ -8,7 +8,7 @@ import type { DashboardQuery, DashboardResponse, DashboardState } from "@trace/s
 import { ActivitySummaryCard } from "@/features/activity/activity-summary-card";
 
 export type DashboardFilters = Pick<DashboardQuery, "date" | "repositoryId">;
-export type LoadDashboard = (query: DashboardQuery) => Promise<DashboardResponse>;
+export type LoadDashboard = (query: DashboardQuery, options?: { signal?: AbortSignal }) => Promise<DashboardResponse>;
 interface Props { loadDashboard: LoadDashboard; initialDate: string; initialRepositoryId?: string; timezone?: string; onFiltersChange?: (filters: DashboardFilters) => void }
 
 const metrics = [
@@ -33,17 +33,21 @@ export function DashboardExperience({ loadDashboard, initialDate, initialReposit
   const [error, setError] = useState<string>();
   const [loading, setLoading] = useState(true);
   const generation = useRef(0);
+  const activeRequest = useRef<AbortController>();
   const initialFilterKey = JSON.stringify({ date: initialDate, ...(initialRepositoryId ? { repositoryId: initialRepositoryId } : {}) });
   const query = useMemo<DashboardQuery>(() => ({ date: filters.date, timezone, ...(filters.repositoryId ? { repositoryId: filters.repositoryId } : {}) }), [filters, timezone]);
 
   const reload = useCallback(() => {
+    activeRequest.current?.abort();
+    const controller = new AbortController();
+    activeRequest.current = controller;
     const request = ++generation.current;
     setLoading(true); setError(undefined); setData(undefined);
-    return loadDashboard(query).then((response) => { if (request === generation.current) setData(response); })
-      .catch(() => { if (request === generation.current) setError("Trace could not load the dashboard. Try again."); })
+    return loadDashboard(query, { signal: controller.signal }).then((response) => { if (request === generation.current) setData(response); })
+      .catch((cause: unknown) => { if (!(cause instanceof DOMException && cause.name === "AbortError") && request === generation.current) setError(typeof cause === "object" && cause !== null && "code" in cause && cause.code === "UNAUTHENTICATED" ? "Your session has expired. Please sign in again." : "Trace could not load the dashboard. Try again."); })
       .finally(() => { if (request === generation.current) setLoading(false); });
   }, [loadDashboard, query]);
-  useEffect(() => { void reload(); return () => { generation.current += 1; }; }, [reload]);
+  useEffect(() => { void reload(); return () => { activeRequest.current?.abort(); generation.current += 1; }; }, [reload]);
   useEffect(() => {
     const next = JSON.parse(initialFilterKey) as DashboardFilters;
     setFilters((current) => JSON.stringify(current) === initialFilterKey ? current : next);
@@ -52,13 +56,13 @@ export function DashboardExperience({ loadDashboard, initialDate, initialReposit
   function change(next: DashboardFilters) { generation.current += 1; setFilters(next); onFiltersChange?.(next); }
 
   if (loading && data === undefined) return <Card className="dashboard-state" role="status">Loading dashboard…</Card>;
-  if (error !== undefined && data === undefined) return <Card className="dashboard-state dashboard-state-error" role="alert"><p>{error}</p><Button className="trace-button-secondary" onClick={() => void reload()}>Retry</Button></Card>;
+  if (error !== undefined && data === undefined) return <Card className="dashboard-state dashboard-state-error" role="alert"><p>{error}</p>{error.startsWith("Your session has expired") ? <Link className="trace-button trace-button-primary" href="/login">Sign in again</Link> : <Button className="trace-button-secondary" onClick={() => void reload()}>Retry</Button>}</Card>;
   if (data === undefined) return null;
   const action = stateActions[data.state];
   const selectedDate = new Date(`${data.date}T12:00:00.000Z`).toLocaleDateString("en-US", { dateStyle: "long", timeZone: "UTC" });
 
   return <div className="dashboard-experience">
-    <Card className="dashboard-disclosure" role="note"><strong>Illustrative dashboard</strong><span>Deterministic contract fixtures are shown; no live Activity API is connected yet.</span></Card>
+    <Card className="dashboard-disclosure" role="note"><strong>Live dashboard connection</strong><span>Trace requests authorized metrics from the production API. Test environments use contract fixtures.</span></Card>
     <Card className="dashboard-toolbar">
       <label>Date<input type="date" value={filters.date} onChange={(event) => { if (event.target.value) change({ ...filters, date: event.target.value }); }} /></label>
       <label>Repository<select value={filters.repositoryId ?? ""} onChange={(event) => change({ date: filters.date, repositoryId: event.target.value || undefined })}><option value="">All repositories</option><option value="repo_1">trace-fixture-org/trace</option></select></label>
