@@ -308,3 +308,35 @@ Final recorded results:
 
 - Structured AI generation, provider validation/retries, safe failure persistence, and initial report revision creation remain Day 9.
 - Controlled LaTeX rendering, artifact storage, revision edits, regeneration, and authorized downloads remain Day 10.
+
+---
+
+## Day 9 — Person A
+
+### Done
+
+- Added a strict versioned parser for immutable Day 8 report snapshots and a configurable structured-output provider boundary.
+- Added a deterministic fake provider for local development and tests. Production rejects the fake provider.
+- Added a bounded HTTPS configured provider using JSON-only responses, fixed temperature, request timeout, response-size limits, and closed provider errors.
+- Validated generated content with the frozen shared report schema and exact repository/contributor membership from the immutable snapshot; unknown, duplicate, missing, and cross-repository identifiers fail validation.
+- Added the `report-generation` BullMQ consumer for only `generate-report` jobs carrying a bounded `{ reportId }` reference.
+- Added bounded provider/schema retries and a closed `Report generation failed.` terminal error that does not persist provider details.
+- Created exactly one initial editable `ai` revision and mirrored it to `aiOutput`; idempotent reprocessing does not create another revision.
+- Kept generated reports in `processing` with `completedAt = null`; only Day 10 may transition to `completed` after storing a downloadable artifact.
+- Started the report and GitHub activity consumers from the worker entrypoint and closed them in reverse order.
+
+### Configuration
+
+- `REPORT_LLM_PROVIDER=fake|configured` (`fake` is forbidden in production).
+- `REPORT_LLM_ENDPOINT` must be an HTTPS JSON chat-completions-compatible endpoint when configured.
+- `REPORT_LLM_MODEL` and `LLM_API_KEY` are required for the configured provider.
+- `REPORT_PROVIDER_ATTEMPTS` is bounded to 1–5 (default 3).
+- `REPORT_WORKER_CONCURRENCY` is bounded to 1–16 (default 2).
+- Queue name is frozen as `report-generation` on both API producer and worker consumer.
+- A short database claim stores a renewable processing token and expiry; provider network I/O occurs outside transactions, and a fenced transaction persists only the owning token's result.
+- Schema/transient provider retries are bounded inside the processor. BullMQ uses three backed-off attempts only for sanitized infrastructure/job failures; permanent malformed jobs are unrecoverable, retained failed jobs are retried, and retained completed jobs are replaced when reconciliation still finds no revision.
+- Configured provider endpoints are restricted to the built-in OpenAI API host, HTTPS default port, no redirects, and bounded request/response bodies.
+
+### Deferred by plan
+
+- No arbitrary LaTeX, compilation, storage, artifact, download, revision-edit endpoint, regeneration, or `completed` transition is included; those remain Day 10.

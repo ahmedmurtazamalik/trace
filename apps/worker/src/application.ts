@@ -3,6 +3,7 @@ import { GithubCommitApiEnricher } from './processors/github/github-commit-api.e
 import type { GithubCommitEnricher } from './processors/github/github-commit.enricher';
 import { GithubPushProcessor } from './processors/github/github-push.processor';
 import { runGithubWebhookWorker } from './runtime';
+import { startReportWorker } from './reports/report-application';
 
 interface ActivityProcessor {
   process(deliveryId: string): Promise<void>;
@@ -16,6 +17,42 @@ interface ApplicationOptions {
   processor?: ActivityProcessor;
   runWorker?: typeof runGithubWebhookWorker;
   resourceCleanupTimeoutMs?: number;
+  onRuntimeFailure?: () => void;
+}
+
+interface TraceWorkersOptions {
+  environment: NodeJS.ProcessEnv;
+  startActivity?: typeof startGithubActivityWorker;
+  startReports?: typeof startReportWorker;
+  onRuntimeFailure?: () => void;
+}
+
+export async function startTraceWorkers(options: TraceWorkersOptions): Promise<() => Promise<void>> {
+  const activityStarter = options.startActivity ?? startGithubActivityWorker;
+  const reportStarter = options.startReports ?? startReportWorker;
+  let stopActivity: (() => Promise<void>) | undefined;
+  let stopReports: (() => Promise<void>) | undefined;
+  try {
+    const childFailure = (): void => options.onRuntimeFailure?.();
+    stopActivity = await activityStarter({ environment: options.environment, onRuntimeFailure: childFailure });
+    stopReports = await reportStarter({ environment: options.environment, onRuntimeFailure: childFailure });
+  } catch {
+    let failed = false;
+    try { await stopReports?.(); } catch { failed = true; }
+    try { await stopActivity?.(); } catch { failed = true; }
+    if (failed) throw new Error('Trace workers cleanup failed.');
+    throw new Error('Trace workers startup failed.');
+  }
+  let stopping: Promise<void> | undefined;
+  return async (): Promise<void> => {
+    stopping ??= (async () => {
+      let failed = false;
+      try { await stopReports?.(); } catch { failed = true; }
+      try { await stopActivity?.(); } catch { failed = true; }
+      if (failed) throw new Error('Trace workers cleanup failed.');
+    })();
+    return stopping;
+  };
 }
 
 export async function startGithubActivityWorker(options: ApplicationOptions): Promise<() => Promise<void>> {
@@ -33,6 +70,7 @@ export async function startGithubActivityWorker(options: ApplicationOptions): Pr
     return await runWorker({
       environment: options.environment,
       signals: options.signals,
+      onRuntimeFailure: options.onRuntimeFailure,
       processDelivery: async (deliveryId) => processor.process(deliveryId),
       recordTerminalFailure: async (deliveryId, code) => {
         await prisma.githubWebhookDelivery.updateMany({

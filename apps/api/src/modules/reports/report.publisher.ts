@@ -49,7 +49,7 @@ export class ReportPublisher implements OnApplicationBootstrap, OnModuleDestroy 
 
   private async reconcile(): Promise<void> {
     const reports = await this.prisma.report.findMany({
-      where: { status: 'pending' },
+      where: { status: { in: ['pending', 'processing'] }, revisions: { none: {} } },
       orderBy: [{ publishedAt: { sort: 'asc', nulls: 'first' } }, { createdAt: 'asc' }],
       take: PUBLISH_BATCH_SIZE,
       select: { id: true },
@@ -61,13 +61,13 @@ export class ReportPublisher implements OnApplicationBootstrap, OnModuleDestroy 
 
   private async publishOne(reportId: string): Promise<void> {
     const report = await this.prisma.report.findFirst({
-      where: { id: reportId, status: 'pending' },
+      where: { id: reportId, status: { in: ['pending', 'processing'] }, revisions: { none: {} } },
       select: { id: true },
     });
     if (report === null) return;
     await this.queue.enqueue(report.id);
     await this.prisma.report.updateMany({
-      where: { id: report.id, status: 'pending' },
+      where: { id: report.id, status: { in: ['pending', 'processing'] }, revisions: { none: {} } },
       data: { publishedAt: new Date() },
     });
   }

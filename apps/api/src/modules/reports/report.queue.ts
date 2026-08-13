@@ -18,7 +18,7 @@ export class ReportQueue implements OnModuleDestroy {
         retryStrategy: (attempts): number | null => attempts > 2 ? null : 100,
       },
       defaultJobOptions: {
-        attempts: 5,
+        attempts: 3,
         backoff: { type: 'exponential', delay: 1_000 },
         removeOnComplete: false,
         removeOnFail: false,
@@ -27,7 +27,18 @@ export class ReportQueue implements OnModuleDestroy {
   }
 
   async enqueue(reportId: string): Promise<void> {
-    await this.queue.add(GENERATE_REPORT_JOB, { reportId }, { jobId: `report-${reportId}` });
+    const jobId = `report-${reportId}`;
+    const existing = await this.queue.getJob(jobId);
+    if (existing !== undefined) {
+      const state = await existing.getState();
+      if (state === 'failed') await existing.retry('failed', { resetAttemptsMade: true, resetAttemptsStarted: true });
+      else if (state === 'completed') {
+        await existing.remove();
+        await this.queue.add(GENERATE_REPORT_JOB, { reportId }, { jobId });
+      }
+      return;
+    }
+    await this.queue.add(GENERATE_REPORT_JOB, { reportId }, { jobId });
   }
 
   async onModuleDestroy(): Promise<void> {

@@ -13,6 +13,7 @@ export interface WorkerRuntimeOptions {
   closeResources?: () => Promise<void>;
   resourceCleanupTimeoutMs?: number;
   signals?: NodeJS.Process;
+  onRuntimeFailure?: () => void;
   workerFactory?: (options: ConstructorParameters<typeof GithubWebhookWorker>[0]) => WorkerLifecycle;
 }
 
@@ -35,7 +36,7 @@ export async function runGithubWebhookWorker(options: WorkerRuntimeOptions): Pro
   });
   await worker.start();
 
-  const signals = options.signals ?? process;
+  const signals = options.signals;
   let stopping: Promise<void> | undefined;
   const stop = async (): Promise<void> => {
     if (stopping !== undefined) return stopping;
@@ -53,14 +54,15 @@ export async function runGithubWebhookWorker(options: WorkerRuntimeOptions): Pro
       }
     })();
     await stopping;
-    signals.off('SIGINT', onSignal);
-    signals.off('SIGTERM', onSignal);
+    signals?.off('SIGINT', onSignal);
+    signals?.off('SIGTERM', onSignal);
   };
-  const onSignal = (): void => { void stop().catch(() => { signals.exitCode = 1; }); };
-  signals.once('SIGINT', onSignal);
-  signals.once('SIGTERM', onSignal);
+  const onSignal = (): void => { void stop().catch(() => { if (signals !== undefined) signals.exitCode = 1; }); };
+  signals?.once('SIGINT', onSignal);
+  signals?.once('SIGTERM', onSignal);
   void worker.completion.catch(() => {
-    signals.exitCode = 1;
+    options.onRuntimeFailure?.();
+    if (signals !== undefined) signals.exitCode = 1;
     return stop().catch(() => undefined);
   });
   return stop;
