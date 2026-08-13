@@ -2,8 +2,8 @@ import { HttpException, HttpStatus, Inject, Injectable } from '@nestjs/common';
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import type { TraceConfig } from '@trace/config';
 import { Prisma, PrismaService } from '@trace/database';
-import type { ActivityListQuery, ActivityListResponse, ActivitySummary } from '@trace/shared';
-import { activityListQuerySchema } from '@trace/shared';
+import type { ActivityListQuery, ActivityListResponse, ActivitySummary, DashboardQuery, DashboardResponse } from '@trace/shared';
+import { activityListQuerySchema, dashboardQuerySchema } from '@trace/shared';
 import { TRACE_CONFIG } from '../../common/config/config.token';
 
 type ActivityRow = {
@@ -19,6 +19,16 @@ type ActivityRow = {
   contributorUsername: string | null;
   contributorDisplayName: string | null;
   contributorAvatarUrl: string | null;
+};
+
+type DashboardAggregateRow = {
+  activityCount: bigint;
+  repositoryCount: bigint;
+  contributorCount: bigint;
+  commitCount: bigint;
+  filesChanged: bigint;
+  additions: bigint;
+  deletions: bigint;
 };
 
 @Injectable()
@@ -103,6 +113,115 @@ export class ActivityService {
           : null,
       },
     };
+  }
+
+  async dashboard(userId: string, input: unknown): Promise<DashboardResponse> {
+    const parsed = dashboardQuerySchema.safeParse(input);
+    if (!parsed.success) throw this.validationError();
+    const query: DashboardQuery = parsed.data;
+    const account = await this.prisma.githubAccount.findUnique({ where: { userId }, select: { unlinkedAt: true } });
+    if (account === null || account.unlinkedAt !== null) return this.emptyDashboard(query, 'GITHUB_NOT_CONNECTED');
+    const trackedRepositories = await this.prisma.userRepository.count({
+      where: {
+        userId,
+        trackingEnabled: true,
+        accessRemovedAt: null,
+        repository: {
+          accessRemovedAt: null,
+          installation: { suspendedAt: null, githubAccount: { userId, unlinkedAt: null } },
+        },
+      },
+    });
+    if (trackedRepositories === 0) return this.emptyDashboard(query, 'NO_TRACKED_REPOSITORIES');
+    const day = this.dayBounds(query.date, query.timezone);
+    const repositoryId = query.repositoryId ?? null;
+    const aggregate = (await this.prisma.$queryRaw<DashboardAggregateRow[]>(Prisma.sql`
+      SELECT COUNT(*)::bigint AS "activityCount",
+        COUNT(DISTINCT ae.repository_id)::bigint AS "repositoryCount",
+        COUNT(DISTINCT ae.contributor_id)::bigint AS "contributorCount",
+        COUNT(*) FILTER (WHERE ae.type::text = 'commit')::bigint AS "commitCount",
+        COALESCE(SUM(CASE WHEN ae.type::text = 'commit' AND ae.metadata->>'changedFiles' ~ '^[0-9]{1,9}$' THEN (ae.metadata->>'changedFiles')::bigint ELSE 0 END), 0)::bigint AS "filesChanged",
+        COALESCE(SUM(CASE WHEN ae.type::text = 'commit' AND ae.metadata->>'additions' ~ '^[0-9]{1,9}$' THEN (ae.metadata->>'additions')::bigint ELSE 0 END), 0)::bigint AS additions,
+        COALESCE(SUM(CASE WHEN ae.type::text = 'commit' AND ae.metadata->>'deletions' ~ '^[0-9]{1,9}$' THEN (ae.metadata->>'deletions')::bigint ELSE 0 END), 0)::bigint AS deletions
+      FROM activity_events ae
+      INNER JOIN repositories r ON r.id = ae.repository_id
+      INNER JOIN github_installations gi ON gi.id = r.github_installation_id AND gi.suspended_at IS NULL
+      INNER JOIN github_accounts ga ON ga.id = gi.github_account_id AND ga.user_id = ${userId} AND ga.unlinked_at IS NULL
+      INNER JOIN user_repositories ur ON ur.repository_id = ae.repository_id AND ur.user_id = ${userId}
+        AND ur.tracking_enabled = true AND ur.access_removed_at IS NULL AND ae.occurred_at >= ur.created_at
+      WHERE r.access_removed_at IS NULL
+        AND (${repositoryId}::text IS NULL OR ae.repository_id = ${repositoryId})
+        AND ae.source::text = 'github' AND ae.type::text IN ('commit', 'push', 'pull_request')
+        AND ae.occurred_at >= ${day.start} AND ae.occurred_at < ${day.end}
+    `))[0];
+    const activityCount = this.safeCount(aggregate?.activityCount ?? 0n);
+    if (activityCount === 0) return this.emptyDashboard(query, 'NO_ACTIVITY');
+    const recent = await this.dashboardRecent(userId, query, day);
+    const incompleteDeliveries = await this.prisma.githubWebhookDelivery.count({
+      where: {
+        repository: {
+          users: {
+            some: {
+              userId,
+              trackingEnabled: true,
+              accessRemovedAt: null,
+              ...(repositoryId === null ? {} : { repositoryId }),
+            },
+          },
+        },
+        status: { in: ['pending', 'processing'] },
+        receivedAt: { gte: day.start, lt: day.end },
+      },
+    });
+    return {
+      date: query.date,
+      timezone: query.timezone,
+      state: incompleteDeliveries > 0 ? 'PARTIAL' : 'READY',
+      metrics: {
+        activityCount,
+        repositoryCount: this.safeCount(aggregate?.repositoryCount ?? 0n),
+        contributorCount: this.safeCount(aggregate?.contributorCount ?? 0n),
+        commitCount: this.safeCount(aggregate?.commitCount ?? 0n),
+        filesChanged: this.safeCount(aggregate?.filesChanged ?? 0n),
+        additions: this.safeCount(aggregate?.additions ?? 0n),
+        deletions: this.safeCount(aggregate?.deletions ?? 0n),
+      },
+      recentActivity: recent.map((row) => this.summary(row)),
+    };
+  }
+
+  private async dashboardRecent(userId: string, query: DashboardQuery, day: { start: Date; end: Date }): Promise<ActivityRow[]> {
+    return this.prisma.$queryRaw<ActivityRow[]>(Prisma.sql`
+      SELECT ae.id, ae.source::text AS source, ae.type::text AS type, ae.occurred_at AS "occurredAt", ae.metadata,
+        r.id AS "repositoryId", r.full_name AS "repositoryFullName", r.html_url AS "repositoryUrl",
+        c.id AS "contributorId", c.username AS "contributorUsername", c.display_name AS "contributorDisplayName", c.avatar_url AS "contributorAvatarUrl"
+      FROM activity_events ae
+      INNER JOIN repositories r ON r.id = ae.repository_id AND r.access_removed_at IS NULL
+      INNER JOIN github_installations gi ON gi.id = r.github_installation_id AND gi.suspended_at IS NULL
+      INNER JOIN github_accounts ga ON ga.id = gi.github_account_id AND ga.user_id = ${userId} AND ga.unlinked_at IS NULL
+      INNER JOIN user_repositories ur ON ur.repository_id = ae.repository_id AND ur.user_id = ${userId}
+        AND ur.tracking_enabled = true AND ur.access_removed_at IS NULL AND ae.occurred_at >= ur.created_at
+      LEFT JOIN contributors c ON c.id = ae.contributor_id
+      WHERE (${query.repositoryId ?? null}::text IS NULL OR ae.repository_id = ${query.repositoryId ?? null})
+        AND char_length(r.full_name) BETWEEN 1 AND 512
+        AND ae.source::text = 'github' AND ae.type::text IN ('commit', 'push', 'pull_request')
+        AND ae.occurred_at >= ${day.start} AND ae.occurred_at < ${day.end}
+      ORDER BY ae.occurred_at DESC, ae.id DESC LIMIT 20
+    `);
+  }
+
+  private emptyDashboard(query: DashboardQuery, state: DashboardResponse['state']): DashboardResponse {
+    return {
+      date: query.date, timezone: query.timezone, state,
+      metrics: { activityCount: 0, repositoryCount: 0, contributorCount: 0, commitCount: 0, filesChanged: 0, additions: 0, deletions: 0 },
+      recentActivity: [],
+    };
+  }
+
+  private safeCount(value: bigint): number {
+    const count = Number(value);
+    if (!Number.isSafeInteger(count) || count < 0) throw new Error('Dashboard aggregate exceeds the safe response range.');
+    return count;
   }
 
   private fingerprint(userId: string, query: ActivityListQuery, repositoryId: string | null): string {

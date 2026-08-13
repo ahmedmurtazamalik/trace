@@ -4,12 +4,13 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Activity, FileDiff, Files, GitCommitHorizontal, GitFork, Plus, Minus, Users } from "lucide-react";
 import { Badge, Button, Card } from "@trace/ui";
-import type { DashboardQuery, DashboardResponse, DashboardState } from "@trace/shared";
+import type { DashboardQuery, DashboardResponse, DashboardState, RepositoryListResponse } from "@trace/shared";
 import { ActivitySummaryCard } from "@/features/activity/activity-summary-card";
 
 export type DashboardFilters = Pick<DashboardQuery, "date" | "repositoryId">;
 export type LoadDashboard = (query: DashboardQuery, options?: { signal?: AbortSignal }) => Promise<DashboardResponse>;
-interface Props { loadDashboard: LoadDashboard; initialDate: string; initialRepositoryId?: string; timezone?: string; onFiltersChange?: (filters: DashboardFilters) => void }
+export type LoadDashboardRepositories = (query?: { limit?: number }, options?: { signal?: AbortSignal }) => Promise<RepositoryListResponse>;
+interface Props { loadDashboard: LoadDashboard; loadRepositories?: LoadDashboardRepositories; initialDate: string; initialRepositoryId?: string; timezone?: string; onFiltersChange?: (filters: DashboardFilters) => void }
 
 const metrics = [
   { key: "activityCount", label: "Activity", note: "Observed events", icon: Activity, accent: "signal" },
@@ -27,8 +28,9 @@ const stateActions: Partial<Record<DashboardState, { title: string; body: string
   NO_ACTIVITY: { title: "No development activity for this view", body: "Try another date or review the complete Activity timeline.", action: "Review Activity", href: "/activity" },
 };
 
-export function DashboardExperience({ loadDashboard, initialDate, initialRepositoryId, timezone = "UTC", onFiltersChange }: Props) {
+export function DashboardExperience({ loadDashboard, loadRepositories, initialDate, initialRepositoryId, timezone = "UTC", onFiltersChange }: Props) {
   const [filters, setFilters] = useState<DashboardFilters>({ date: initialDate, repositoryId: initialRepositoryId });
+  const [repositories, setRepositories] = useState<RepositoryListResponse["items"]>([]);
   const [data, setData] = useState<DashboardResponse>();
   const [error, setError] = useState<string>();
   const [loading, setLoading] = useState(true);
@@ -49,6 +51,14 @@ export function DashboardExperience({ loadDashboard, initialDate, initialReposit
   }, [loadDashboard, query]);
   useEffect(() => { void reload(); return () => { activeRequest.current?.abort(); generation.current += 1; }; }, [reload]);
   useEffect(() => {
+    if (loadRepositories === undefined) return;
+    const controller = new AbortController();
+    void loadRepositories({ limit: 100 }, { signal: controller.signal })
+      .then((response) => setRepositories(response.items.filter((repository) => repository.accessible)))
+      .catch(() => undefined);
+    return () => controller.abort();
+  }, [loadRepositories]);
+  useEffect(() => {
     const next = JSON.parse(initialFilterKey) as DashboardFilters;
     setFilters((current) => JSON.stringify(current) === initialFilterKey ? current : next);
   }, [initialFilterKey]);
@@ -65,7 +75,7 @@ export function DashboardExperience({ loadDashboard, initialDate, initialReposit
     <Card className="dashboard-disclosure" role="note"><strong>Live dashboard connection</strong><span>Trace requests authorized metrics from the production API. Test environments use contract fixtures.</span></Card>
     <Card className="dashboard-toolbar">
       <label>Date<input type="date" value={filters.date} onChange={(event) => { if (event.target.value) change({ ...filters, date: event.target.value }); }} /></label>
-      <label>Repository<select value={filters.repositoryId ?? ""} onChange={(event) => change({ date: filters.date, repositoryId: event.target.value || undefined })}><option value="">All repositories</option><option value="repo_1">trace-fixture-org/trace</option></select></label>
+      <label>Repository<select value={filters.repositoryId ?? ""} onChange={(event) => change({ date: filters.date, repositoryId: event.target.value || undefined })}><option value="">All repositories</option>{filters.repositoryId && !repositories.some((repository) => repository.id === filters.repositoryId) && <option value={filters.repositoryId}>Selected repository</option>}{repositories.map((repository) => <option key={repository.id} value={repository.id}>{repository.fullName}</option>)}</select></label>
       <span>{data.timezone}</span>
     </Card>
     {data.state === "PARTIAL" && <Card className="dashboard-warning" role="status"><strong>Some activity is still being processed.</strong><span>Available facts remain visible and may increase after processing finishes.</span></Card>}

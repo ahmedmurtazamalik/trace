@@ -5,6 +5,7 @@ import { dashboardQuerySchema, dashboardResponseSchema, type DashboardQuery, typ
 import { DashboardExperience, type DashboardFilters } from "./dashboard-experience";
 import { dashboardFixtures } from "@/mocks/fixtures/dashboard";
 import { getDashboard } from "@/api/dashboard";
+import { listRepositories } from "@/api/repositories";
 
 function localDate(value: string, timezone: string) {
   const parts = new Intl.DateTimeFormat("en-US", { timeZone: timezone, year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(new Date(value));
@@ -24,18 +25,28 @@ export async function loadFixtureDashboard(query: DashboardQuery): Promise<Dashb
   return dashboardResponseSchema.parse({ ...response, date: validatedQuery.date, timezone: validatedQuery.timezone });
 }
 
+export function dateInTimezone(now: Date, timezone: string) {
+  try {
+    return localDate(now.toISOString(), timezone);
+  } catch {
+    return localDate(now.toISOString(), "UTC");
+  }
+}
+
 export function DashboardRoute() {
   const pathname = usePathname();
   const router = useRouter();
   const searchParams = useSearchParams();
+  const requestedTimezone = searchParams.get("timezone") || "UTC";
+  const fallbackDate = dateInTimezone(new Date(), requestedTimezone);
   const candidate = dashboardQuerySchema.safeParse({
-    date: searchParams.get("date") || "2026-08-12",
-    timezone: searchParams.get("timezone") || "UTC",
+    date: searchParams.get("date") || fallbackDate,
+    timezone: requestedTimezone,
     ...(searchParams.get("repositoryId") ? { repositoryId: searchParams.get("repositoryId") } : {}),
   });
   const { date, timezone, repositoryId } = candidate.success
     ? candidate.data
-    : dashboardQuerySchema.parse({ date: "2026-08-12", timezone: "UTC" });
+    : dashboardQuerySchema.parse({ date: dateInTimezone(new Date(), "UTC"), timezone: "UTC" });
   function update(filters: DashboardFilters) {
     const next = new URLSearchParams(searchParams.toString());
     next.set("date", filters.date);
@@ -43,5 +54,5 @@ export function DashboardRoute() {
     else next.delete("repositoryId");
     router.replace(`${pathname}?${next.toString()}`, { scroll: false });
   }
-  return <DashboardExperience loadDashboard={getDashboard} initialDate={date} initialRepositoryId={repositoryId} timezone={timezone} onFiltersChange={update} />;
+  return <DashboardExperience loadDashboard={getDashboard} loadRepositories={listRepositories} initialDate={date} initialRepositoryId={repositoryId} timezone={timezone} onFiltersChange={update} />;
 }

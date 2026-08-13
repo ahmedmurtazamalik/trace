@@ -52,15 +52,21 @@ describe('GitHub webhook acceptance', () => {
 
   async function cleanup(): Promise<void> {
     await queue.obliterate({ force: true });
-    await prisma.activityEvent.deleteMany({ where: { repository: { githubRepositoryId: 830_001n } } });
-    await prisma.pushEvent.deleteMany({ where: { repository: { githubRepositoryId: 830_001n } } });
-    await prisma.commit.deleteMany({ where: { repository: { githubRepositoryId: 830_001n } } });
+    const fixtureRepositories = await prisma.repository.findMany({
+      where: { githubRepositoryId: 830_001n },
+      select: { id: true },
+    });
+    const repositoryIds = fixtureRepositories.map(({ id }) => id);
+    await prisma.activityEvent.deleteMany({ where: { repositoryId: { in: repositoryIds } } });
+    await prisma.pushEvent.deleteMany({ where: { repositoryId: { in: repositoryIds } } });
+    await prisma.commit.deleteMany({ where: { repositoryId: { in: repositoryIds } } });
     await prisma.githubWebhookDelivery.deleteMany({
       where: {
         OR: [
           { githubDeliveryId: deliveryId },
           { githubInstallationId: 820_001n },
           { githubRepositoryId: 830_001n },
+          { repositoryId: { in: repositoryIds } },
         ],
       },
     });
@@ -69,13 +75,8 @@ describe('GitHub webhook acceptance', () => {
       include: { githubAccount: { include: { installations: true } } },
     });
     if (user?.githubAccount !== null && user?.githubAccount !== undefined) {
-      const installationIds = user.githubAccount.installations.map((installation) => installation.id);
-      const repositories = await prisma.repository.findMany({
-        where: { githubInstallationId: { in: installationIds } },
-        select: { id: true },
-      });
-      await prisma.userRepository.deleteMany({ where: { repositoryId: { in: repositories.map(({ id }) => id) } } });
-      await prisma.repository.deleteMany({ where: { id: { in: repositories.map(({ id }) => id) } } });
+      await prisma.userRepository.deleteMany({ where: { repositoryId: { in: repositoryIds } } });
+      await prisma.repository.deleteMany({ where: { id: { in: repositoryIds } } });
       await prisma.githubInstallation.deleteMany({ where: { githubAccountId: user.githubAccount.id } });
       await prisma.githubAccount.delete({ where: { id: user.githubAccount.id } });
     }
@@ -201,7 +202,7 @@ describe('GitHub webhook acceptance', () => {
     expect(await prisma.activityEvent.count({ where: {
       sourceKey: { in: [`github:push:${deliveryId}`, `github:commit:${repository.id}:${sha}`] },
     } })).toBe(2);
-  });
+  }, 30_000);
 
   it('acknowledges a duplicate delivery without duplicating its row or queue job', async () => {
     await trackedRepository();

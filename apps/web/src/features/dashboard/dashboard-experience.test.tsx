@@ -27,12 +27,18 @@ describe("Day 6 dashboard experience", () => {
   });
 
   it("loads through the frozen date, timezone, and repository query", async () => {
-    const { loadDashboard, onFiltersChange } = renderDashboard();
+    const loadDashboard = vi.fn().mockResolvedValue(dashboardFixtures.ready);
+    const onFiltersChange = vi.fn();
+    const loadRepositories = vi.fn().mockResolvedValue({
+      items: [{ id: "live-repo", owner: "live", name: "repository", fullName: "live/repository", private: false, defaultBranch: "main", url: null, accessible: true, trackingEnabled: true, lastActivityAt: null, contributorCount: 0 }],
+      pageInfo: { hasNextPage: false, nextCursor: null },
+    });
+    render(<DashboardExperience loadDashboard={loadDashboard} loadRepositories={loadRepositories} initialDate="2026-08-12" timezone="UTC" onFiltersChange={onFiltersChange} />);
     await screen.findByLabelText("Development activity metrics");
     expect(loadDashboard).toHaveBeenCalledWith({ date: "2026-08-12", timezone: "UTC" }, expect.objectContaining({ signal: expect.any(AbortSignal) }));
-    await userEvent.selectOptions(screen.getByLabelText("Repository"), "repo_1");
-    await waitFor(() => expect(loadDashboard).toHaveBeenLastCalledWith({ date: "2026-08-12", timezone: "UTC", repositoryId: "repo_1" }, expect.objectContaining({ signal: expect.any(AbortSignal) })));
-    expect(onFiltersChange).toHaveBeenLastCalledWith({ date: "2026-08-12", repositoryId: "repo_1" });
+    await userEvent.selectOptions(screen.getByLabelText("Repository"), "live-repo");
+    await waitFor(() => expect(loadDashboard).toHaveBeenLastCalledWith({ date: "2026-08-12", timezone: "UTC", repositoryId: "live-repo" }, expect.objectContaining({ signal: expect.any(AbortSignal) })));
+    expect(onFiltersChange).toHaveBeenLastCalledWith({ date: "2026-08-12", repositoryId: "live-repo" });
   });
 
   it("does not submit an empty date outside the frozen query contract", async () => {

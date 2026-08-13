@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import type { ActivityListResponse, ActivitySummary } from "@trace/shared";
@@ -26,18 +26,48 @@ describe("Day 5 activity experience", () => {
   });
 
   it("filters through the frozen query contract and reports stable URL state", async () => {
-    const props = renderExperience();
+    const props = renderExperience({
+      loadRepositories: vi.fn().mockResolvedValue({
+        items: [{ id: "live-repo", owner: "live", name: "repository", fullName: "live/repository", private: false, defaultBranch: "main", url: null, accessible: true, trackingEnabled: true, lastActivityAt: null, contributorCount: 0 }],
+        pageInfo: { hasNextPage: false, nextCursor: null },
+      }),
+    });
     await screen.findByRole("heading", { name: "Refine activity timeline" });
-    await userEvent.selectOptions(screen.getByLabelText("Repository"), "repo-02");
+    await userEvent.selectOptions(screen.getByLabelText("Repository"), "live-repo");
     await userEvent.selectOptions(screen.getByLabelText("Source"), "github");
     await userEvent.selectOptions(screen.getByLabelText("Activity type"), "push");
-    await waitFor(() => expect(props.loadActivity).toHaveBeenLastCalledWith(expect.objectContaining({ repositoryId: "repo-02", source: "github", type: "push", limit: 25, timezone: "UTC" }), expect.objectContaining({ signal: expect.any(AbortSignal) })));
-    expect(props.onFiltersChange).toHaveBeenLastCalledWith(expect.objectContaining({ repositoryId: "repo-02", source: "github", type: "push" }));
+    await waitFor(() => expect(props.loadActivity).toHaveBeenLastCalledWith(expect.objectContaining({ repositoryId: "live-repo", source: "github", type: "push", limit: 25, timezone: "UTC" }), expect.objectContaining({ signal: expect.any(AbortSignal) })));
+    expect(props.onFiltersChange).toHaveBeenLastCalledWith(expect.objectContaining({ repositoryId: "live-repo", source: "github", type: "push" }));
     await userEvent.selectOptions(screen.getByLabelText("Source"), "cli");
     expect(screen.getByLabelText("Activity type")).toHaveValue("");
-    expect(props.onFiltersChange).toHaveBeenLastCalledWith({ repositoryId: "repo-02", source: "cli" });
+    expect(props.onFiltersChange).toHaveBeenLastCalledWith({ repositoryId: "live-repo", source: "cli" });
     await userEvent.click(screen.getByRole("button", { name: "Clear filters" }));
     expect(props.onFiltersChange).toHaveBeenLastCalledWith({});
+  });
+
+  it("preserves every filter across same-render rapid changes", async () => {
+    const onFiltersChange = vi.fn();
+    renderExperience({
+      onFiltersChange,
+      loadRepositories: vi.fn().mockResolvedValue({
+        items: [{ id: "rapid-repo", owner: "live", name: "rapid", fullName: "live/rapid", private: false, defaultBranch: "main", url: null, accessible: true, trackingEnabled: true, lastActivityAt: null, contributorCount: 0 }],
+        pageInfo: { nextCursor: null, hasNextPage: false },
+      }),
+    });
+    await waitFor(() => expect(screen.getByLabelText("Repository")).not.toBeDisabled());
+    fireEvent.change(screen.getByLabelText("Repository"), { target: { value: "rapid-repo" } });
+    fireEvent.change(screen.getByLabelText("Source"), { target: { value: "github" } });
+    fireEvent.change(screen.getByLabelText("Activity type"), { target: { value: "push" } });
+    expect(onFiltersChange).toHaveBeenLastCalledWith({ repositoryId: "rapid-repo", source: "github", type: "push" });
+  });
+
+  it("does not render fixture-only repository or contributor choices", async () => {
+    renderExperience({
+      loadRepositories: vi.fn().mockResolvedValue({ items: [], pageInfo: { hasNextPage: false, nextCursor: null } }),
+    });
+    await screen.findByRole("heading", { name: "Refine activity timeline" });
+    expect(screen.queryByRole("option", { name: "trace-fixture-org/api" })).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Contributor")).not.toBeInTheDocument();
   });
 
   it("appends cursor pages without duplicate activities", async () => {
@@ -57,12 +87,18 @@ describe("Day 5 activity experience", () => {
       .mockResolvedValueOnce(activityFixturePages.first)
       .mockReturnValueOnce(secondPage)
       .mockResolvedValue(activityFixturePages.first);
-    renderExperience({ loadActivity });
+    renderExperience({
+      loadActivity,
+      loadRepositories: vi.fn().mockResolvedValue({
+        items: [{ id: "live-repo", owner: "live", name: "repository", fullName: "live/repository", private: false, defaultBranch: "main", url: null, accessible: true, trackingEnabled: true, lastActivityAt: null, contributorCount: 0 }],
+        pageInfo: { hasNextPage: false, nextCursor: null },
+      }),
+    });
     await screen.findByRole("heading", { name: "Refine activity timeline" });
     await userEvent.click(screen.getByRole("button", { name: "Load more activity" }));
-    await userEvent.selectOptions(screen.getByLabelText("Repository"), "repo-02");
+    await userEvent.selectOptions(screen.getByLabelText("Repository"), "live-repo");
     resolveSecondPage(activityFixturePages.second);
-    await waitFor(() => expect(loadActivity).toHaveBeenLastCalledWith(expect.objectContaining({ repositoryId: "repo-02" }), expect.objectContaining({ signal: expect.any(AbortSignal) })));
+    await waitFor(() => expect(loadActivity).toHaveBeenLastCalledWith(expect.objectContaining({ repositoryId: "live-repo" }), expect.objectContaining({ signal: expect.any(AbortSignal) })));
     expect(screen.queryByRole("heading", { name: "Draft activity filters" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Load more activity" })).toBeEnabled();
   });

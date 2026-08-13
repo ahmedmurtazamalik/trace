@@ -1,5 +1,5 @@
 import { Controller, Get, Param, Query, UseGuards } from '@nestjs/common';
-import type { ActivityListResponse } from '@trace/shared';
+import type { ActivityListResponse, DashboardResponse } from '@trace/shared';
 import { CurrentSession } from '../auth/current-session.decorator';
 import type { AuthenticatedSession } from '../auth/auth.types';
 import { SessionAuthGuard } from '../auth/session-auth.guard';
@@ -13,6 +13,11 @@ export class ActivityController {
   @Get('activity')
   list(@CurrentSession() session: AuthenticatedSession, @Query() query: unknown): Promise<ActivityListResponse> {
     return this.activity.list(session.user.id, query);
+  }
+
+  @Get('dashboard')
+  dashboard(@CurrentSession() session: AuthenticatedSession, @Query() query: unknown): Promise<DashboardResponse> {
+    return this.activity.dashboard(session.user.id, query);
   }
 
   @Get('repositories/:id/activity')

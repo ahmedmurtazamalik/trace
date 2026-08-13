@@ -3,17 +3,16 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button, Card } from "@trace/ui";
-import type { ActivityListQuery, ActivityListResponse, ActivitySummary, ActivitySource, ActivityType } from "@trace/shared";
+import type { ActivityListQuery, ActivityListResponse, ActivitySummary, ActivitySource, ActivityType, RepositoryListResponse } from "@trace/shared";
 import { ActivitySummaryCard } from "./activity-summary-card";
 
 export type ActivityFilters = Pick<ActivityListQuery, "date" | "repositoryId" | "contributorId" | "source" | "type">;
 export type LoadActivity = (query: Partial<ActivityListQuery>, options?: { signal?: AbortSignal }) => Promise<ActivityListResponse>;
-interface ActivityExperienceProps { loadActivity: LoadActivity; initialFilters?: ActivityFilters; timezone?: string; onFiltersChange?: (filters: ActivityFilters) => void }
+export type LoadActivityRepositories = (query?: { limit?: number }, options?: { signal?: AbortSignal }) => Promise<RepositoryListResponse>;
+interface ActivityExperienceProps { loadActivity: LoadActivity; loadRepositories?: LoadActivityRepositories; initialFilters?: ActivityFilters; timezone?: string; onFiltersChange?: (filters: ActivityFilters) => void }
 
 const labels: Record<string, string> = { commit: "Commit", push: "Push", pull_request: "Pull request", working_tree_snapshot: "Working tree snapshot", staged_change: "Staged change", untracked_file: "Untracked file", local_commit: "Local commit" };
 const typeOptions: Array<{ value: ActivityType; label: string }> = Object.entries(labels).map(([value, label]) => ({ value: value as ActivityType, label }));
-const repositoryOptions = [{ id: "repo-01", label: "trace-fixture-org/trace" }, { id: "repo-02", label: "trace-fixture-org/api" }];
-const contributorOptions = [{ id: "contributor-01", label: "Maya Chen" }, { id: "external-01", label: "external-contributor" }];
 const validTypesBySource: Record<ActivitySource, Set<ActivityType>> = {
   github: new Set(["commit", "push", "pull_request"]),
   cli: new Set(["working_tree_snapshot", "staged_change", "untracked_file", "local_commit"]),
@@ -39,9 +38,12 @@ function safeError(cause: unknown, pagination = false) {
   return pagination ? "Trace could not load more activity. Try again." : "Trace could not load activity. Try again.";
 }
 
-export function ActivityExperience({ loadActivity, initialFilters = {}, timezone = "UTC", onFiltersChange }: ActivityExperienceProps) {
+export function ActivityExperience({ loadActivity, loadRepositories, initialFilters = {}, timezone = "UTC", onFiltersChange }: ActivityExperienceProps) {
   const [filters, setFilters] = useState<ActivityFilters>(filtered(initialFilters));
+  const filtersRef = useRef(filters);
   const [items, setItems] = useState<ActivitySummary[]>([]);
+  const [repositories, setRepositories] = useState<RepositoryListResponse["items"]>([]);
+  const [repositoryError, setRepositoryError] = useState(false);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -74,20 +76,35 @@ export function ActivityExperience({ loadActivity, initialFilters = {}, timezone
   }, [loadActivity, query]);
   useEffect(() => { void reload(); return () => { activeRequest.current?.abort(); activePageRequest.current?.abort(); requestGeneration.current += 1; }; }, [reload]);
   useEffect(() => {
+    if (loadRepositories === undefined) return;
+    const controller = new AbortController();
+    setRepositoryError(false);
+    void loadRepositories({ limit: 100 }, { signal: controller.signal })
+      .then((response) => setRepositories(response.items.filter((repository) => repository.accessible)))
+      .catch((cause: unknown) => {
+        if (!(cause instanceof DOMException && cause.name === "AbortError")) setRepositoryError(true);
+      });
+    return () => controller.abort();
+  }, [loadRepositories]);
+  useEffect(() => {
     const next = JSON.parse(initialFilterKey) as ActivityFilters;
-    setFilters((current) => filterKey(current) === initialFilterKey ? current : next);
+    if (filterKey(filtersRef.current) !== initialFilterKey) {
+      filtersRef.current = next;
+      setFilters(next);
+    }
   }, [initialFilterKey]);
 
   function change<K extends keyof ActivityFilters>(key: K, value: ActivityFilters[K] | "") {
     requestGeneration.current += 1;
     setLoadingMore(false);
-    let next = filtered({ ...filters, [key]: value || undefined });
+    let next = filtered({ ...filtersRef.current, [key]: value || undefined });
     if (next.source && next.type && !validTypesBySource[next.source].has(next.type)) {
       next = filtered({ ...next, type: undefined });
     }
+    filtersRef.current = next;
     setFilters(next); onFiltersChange?.(next);
   }
-  function clear() { requestGeneration.current += 1; setLoadingMore(false); setFilters({}); onFiltersChange?.({}); }
+  function clear() { requestGeneration.current += 1; setLoadingMore(false); filtersRef.current = {}; setFilters({}); onFiltersChange?.({}); }
   async function loadMore() {
     if (nextCursor === null) return;
     activePageRequest.current?.abort();
@@ -109,11 +126,11 @@ export function ActivityExperience({ loadActivity, initialFilters = {}, timezone
     <Card className="activity-filter-card">
       <div className="activity-filter-grid">
         <label>Date<input type="date" value={filters.date ?? ""} onChange={(event) => change("date", event.target.value)} /></label>
-        <label>Repository<select value={filters.repositoryId ?? ""} onChange={(event) => change("repositoryId", event.target.value)}><option value="">All repositories</option>{repositoryOptions.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}</select></label>
-        <label>Contributor<select value={filters.contributorId ?? ""} onChange={(event) => change("contributorId", event.target.value)}><option value="">All contributors</option>{contributorOptions.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}</select></label>
+        <label>Repository<select value={filters.repositoryId ?? ""} onChange={(event) => change("repositoryId", event.target.value)}><option value="">All repositories</option>{filters.repositoryId && !repositories.some((repository) => repository.id === filters.repositoryId) && <option value={filters.repositoryId}>Selected repository</option>}{repositories.map((repository) => <option key={repository.id} value={repository.id}>{repository.fullName}</option>)}</select></label>
         <label>Source<select value={filters.source ?? ""} onChange={(event) => change("source", event.target.value as ActivitySource | "")}><option value="">All sources</option><option value="github">GitHub</option><option value="cli">CLI</option></select></label>
         <label>Activity type<select value={filters.type ?? ""} onChange={(event) => change("type", event.target.value as ActivityType | "")}><option value="">All types</option>{availableTypes.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
       </div>
+      {repositoryError && <p className="activity-notice-error" role="status">Repository choices are temporarily unavailable. Existing activity filters still work.</p>}
       <Button className="trace-button-secondary" onClick={clear} disabled={Object.keys(filters).length === 0}>Clear filters</Button>
     </Card>
 

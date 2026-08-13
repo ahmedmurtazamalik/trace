@@ -338,6 +338,13 @@ No Person A-owned backend, worker, shared-contract, root workspace, or infrastru
 - Switched production Activity and Dashboard routes from local fixture loaders to the real adapters. Component tests retain dependency-injected fixture loaders and browser tests intercept the exact production API paths with contract-shaped responses.
 - Added direct sign-in actions when the API reports an expired session and corrected stale global preview copy that falsely claimed no API could be connected.
 
+### Joint review remediation
+- The first immutable combined-tree review correctly rejected publication because the production Dashboard adapter targeted a missing backend route, Activity/Dashboard repository controls exposed fixture-only IDs, and the Dashboard default date was frozen to a fixture day.
+- The integrated tree now implements authenticated `GET /api/v1/dashboard` over authorization-filtered canonical PostgreSQL activity, including truthful zero/partial/ready states and canonical commit-only line/file totals.
+- Activity and Dashboard repository choices now come from the validated live repository API; fixture-only choices were removed. The contributor picker was removed until a real contributor-options contract exists, while valid contributor IDs in URLs remain supported by the Activity API.
+- Dashboard now defaults to the current calendar date in the requested timezone and retains schema-validated hostile-query fallback behavior.
+- The joint gate is covered by real API/database integration tests for authentication, state derivation, inaccessible-repository non-disclosure, local-day bounds, metrics, and recent activity. Browser interception remains frontend-only evidence and is not represented as a live webhook acceptance test.
+
 ### Person B-owned files changed
 - `apps/web/src/api/activity.ts` and `activity.test.ts`
 - `apps/web/src/api/dashboard.ts` and `dashboard.test.ts`
@@ -354,8 +361,8 @@ No Person A-owned API, worker, database, shared-contract, root workspace, infras
 - Base: merged Day 6 `origin/main` at `71e3f4085413defd7d0977bc060723d3dbac7da8`.
 - Frozen contracts: `packages/shared/src/activity.ts` and `packages/shared/src/dashboard.ts` from the prior-day contract gate.
 - Production frontend default: real authorized API fetches through `NEXT_PUBLIC_API_ORIGIN` (default `http://localhost:3001`) with cookies and validated responses.
-- Tests: deterministic contract fixtures injected at the loader seam or returned by Playwright network interception. These prove frontend behavior and request compatibility, not a live Person A backend.
-- Current-main dependency: no Activity or Dashboard controller exists on the base tree. The Person A Day 7 branch must publish all three endpoints before the required joint real-data smoke can pass.
+- Tests: deterministic contract fixtures injected at the loader seam or returned by Playwright network interception. These prove frontend behavior and request compatibility; real Dashboard authorization and aggregation are covered separately by API/database integration tests.
+- Current integrated dependency: Activity and Dashboard production adapters target implemented authenticated API routes in the combined Day 7 tree.
 
 ### TDD and verification
 - Expected RED: Activity and Dashboard adapter tests each failed because their production modules did not exist.
@@ -370,5 +377,5 @@ No Person A-owned API, worker, database, shared-contract, root workspace, infras
 - `git diff --check`, Person B ownership audit, moving-base check, and conflict simulation: PASS; `origin/main` remained `71e3f4085413defd7d0977bc060723d3dbac7da8`.
 
 ### Joint gate
-- After Person A's Day 7 branch merges, run the exact three routes against an authenticated local API/database and verify a stored Day 6 GitHub event appears on Activity and contributes once to Dashboard metrics.
-- Do not call the integration live until that real joint smoke passes; fixture-backed and intercepted tests remain labeled mocked evidence.
+- Real API/database integration verifies authenticated Activity and Dashboard routes, canonical stored events, authorization bounds, state derivation, and exact metric contribution.
+- Fixture-backed and intercepted browser tests remain labeled frontend evidence; a real GitHub webhook delivery remains a separate operational acceptance gate.

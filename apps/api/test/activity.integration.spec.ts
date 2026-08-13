@@ -1,7 +1,7 @@
 import type { Server } from 'node:http';
 import type { INestApplication } from '@nestjs/common';
 import { PrismaService } from '@trace/database';
-import { activityListResponseSchema } from '@trace/shared';
+import { activityListResponseSchema, dashboardResponseSchema } from '@trace/shared';
 import request from 'supertest';
 import { RedisService } from '../src/common/redis/redis.service';
 import { createApplication } from '../src/bootstrap';
@@ -62,6 +62,7 @@ describe('Activity API', () => {
         select: { id: true },
       });
       const repositoryIds = repositories.map((repository) => repository.id);
+      await prisma.githubWebhookDelivery.deleteMany({ where: { repositoryId: { in: repositoryIds } } });
       await prisma.activityEvent.deleteMany({ where: { repositoryId: { in: repositoryIds } } });
       await prisma.userRepository.deleteMany({ where: { repositoryId: { in: repositoryIds } } });
       await prisma.repository.deleteMany({ where: { id: { in: repositoryIds } } });
@@ -156,6 +157,123 @@ describe('Activity API', () => {
     const cli = await request(server).get('/api/v1/activity')
       .query({ source: 'cli' }).set('Cookie', fixture.sessionCookie).expect(200);
     expect(activityListResponseSchema.parse(cli.body as unknown).items).toEqual([]);
+  });
+
+  it('returns an authorization-filtered dashboard from canonical activity', async () => {
+    const fixture = await historicalActivity();
+    await prisma.userRepository.updateMany({
+      where: { repositoryId: fixture.repositoryId },
+      data: { accessRemovedAt: null },
+    });
+    await prisma.activityEvent.deleteMany({
+      where: { repositoryId: fixture.repositoryId, occurredAt: { gt: new Date('2026-08-12T12:00:00.000Z') } },
+    });
+    const contributor = await prisma.contributor.create({
+      data: { githubUserId: 77_002n, username: 'day7-activity-dashboard', displayName: 'Dashboard Contributor' },
+    });
+    await prisma.activityEvent.create({
+      data: {
+        sourceKey: `day7:dashboard:commit:${fixture.repositoryId}`,
+        repositoryId: fixture.repositoryId,
+        contributorId: contributor.id,
+        source: 'github',
+        type: 'commit',
+        occurredAt: new Date('2026-08-12T11:00:00.000Z'),
+        metadata: { sha: 'd'.repeat(40), message: 'Dashboard facts', branch: 'main', changedFiles: 3, additions: 8, deletions: 2 },
+      },
+    });
+
+    const response = await request(server).get('/api/v1/dashboard')
+      .query({ date: '2026-08-12', timezone: 'UTC' })
+      .set('Cookie', fixture.sessionCookie).expect(200);
+    const body = dashboardResponseSchema.parse(response.body as unknown);
+
+    expect(body).toMatchObject({
+      date: '2026-08-12',
+      timezone: 'UTC',
+      state: 'READY',
+      metrics: {
+        activityCount: 2,
+        repositoryCount: 1,
+        contributorCount: 1,
+        commitCount: 1,
+        filesChanged: 3,
+        additions: 8,
+        deletions: 2,
+      },
+    });
+    expect(body.recentActivity).toHaveLength(2);
+    await request(server).get('/api/v1/dashboard')
+      .query({ date: '2026-08-12', timezone: 'UTC' }).expect(401);
+  });
+
+  it('derives dashboard states without disclosing inaccessible repositories', async () => {
+    const registered = await request(server).post('/api/v1/auth/register').send({ username, email, password }).expect(201);
+    const sessionCookie = cookie(registered);
+    const disconnectedResponse = await request(server).get('/api/v1/dashboard')
+      .query({ date: '2026-08-12', timezone: 'UTC' }).set('Cookie', sessionCookie).expect(200);
+    expect(dashboardResponseSchema.parse(disconnectedResponse.body as unknown).state).toBe('GITHUB_NOT_CONNECTED');
+
+    const user = await prisma.user.findUniqueOrThrow({ where: { username } });
+    const account = await prisma.githubAccount.create({
+      data: { userId: user.id, githubUserId: 783_232n, githubUsername: 'day7-activity-states' },
+    });
+    const installation = await prisma.githubInstallation.create({
+      data: { githubInstallationId: 792n, githubAccountId: account.id, accountType: 'USER', accountLogin: 'day7-dashboard-states' },
+    });
+    const repository = await prisma.repository.create({
+      data: { githubRepositoryId: 77_002n, githubInstallationId: installation.id, owner: 'day7-dashboard-states', name: 'states', fullName: 'day7-dashboard-states/states', private: true, defaultBranch: 'main' },
+    });
+    await prisma.userRepository.create({ data: { userId: user.id, repositoryId: repository.id, trackingEnabled: false, createdAt: new Date('2026-08-12T00:00:00.000Z') } });
+
+    const noTrackedResponse = await request(server).get('/api/v1/dashboard')
+      .query({ date: '2026-08-12', timezone: 'UTC' }).set('Cookie', sessionCookie).expect(200);
+    expect(dashboardResponseSchema.parse(noTrackedResponse.body as unknown).state).toBe('NO_TRACKED_REPOSITORIES');
+    await prisma.userRepository.update({ where: { userId_repositoryId: { userId: user.id, repositoryId: repository.id } }, data: { trackingEnabled: true } });
+
+    const noActivityResponse = await request(server).get('/api/v1/dashboard')
+      .query({ date: '2026-08-12', timezone: 'UTC' }).set('Cookie', sessionCookie).expect(200);
+    expect(dashboardResponseSchema.parse(noActivityResponse.body as unknown).state).toBe('NO_ACTIVITY');
+    const hiddenResponse = await request(server).get('/api/v1/dashboard')
+      .query({ date: '2026-08-12', timezone: 'UTC', repositoryId: 'inaccessible-repository' }).set('Cookie', sessionCookie).expect(200);
+    expect(dashboardResponseSchema.parse(hiddenResponse.body as unknown)).toMatchObject({ state: 'NO_ACTIVITY', metrics: { activityCount: 0 }, recentActivity: [] });
+    await request(server).get('/api/v1/dashboard')
+      .query({ date: 'not-a-date', timezone: 'UTC' }).set('Cookie', sessionCookie).expect(400);
+
+    await prisma.activityEvent.create({
+      data: {
+        sourceKey: `day7:dashboard:state:${repository.id}`,
+        repositoryId: repository.id,
+        source: 'github',
+        type: 'push',
+        occurredAt: new Date('2026-08-12T12:00:00.000Z'),
+        metadata: { ref: 'refs/heads/main' },
+      },
+    });
+    const delivery = await prisma.githubWebhookDelivery.create({
+      data: {
+        githubDeliveryId: 'day7-dashboard-pending',
+        eventName: 'push',
+        githubInstallationId: 792n,
+        githubRepositoryId: 77_002n,
+        installationId: installation.id,
+        repositoryId: repository.id,
+        payloadHash: 'a'.repeat(64),
+        payload: {},
+        status: 'pending',
+        receivedAt: new Date('2026-08-12T12:01:00.000Z'),
+      },
+    });
+    const partialResponse = await request(server).get('/api/v1/dashboard')
+      .query({ date: '2026-08-12', timezone: 'UTC' }).set('Cookie', sessionCookie).expect(200);
+    expect(dashboardResponseSchema.parse(partialResponse.body as unknown).state).toBe('PARTIAL');
+    await prisma.githubWebhookDelivery.update({
+      where: { id: delivery.id },
+      data: { status: 'completed', processedAt: new Date('2026-08-12T12:02:00.000Z') },
+    });
+    const readyResponse = await request(server).get('/api/v1/dashboard')
+      .query({ date: '2026-08-12', timezone: 'UTC' }).set('Cookie', sessionCookie).expect(200);
+    expect(dashboardResponseSchema.parse(readyResponse.body as unknown).state).toBe('READY');
   });
 
   it('applies local-day filters and stable filter-bound cursor pagination', async () => {

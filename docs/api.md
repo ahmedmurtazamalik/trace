@@ -182,15 +182,17 @@ Repositories omitted from a successful current synchronization are retained for 
 
 List results are ordered by `fullName` then opaque repository ID. Cursors are opaque server values bound to that ordering and the active search filter. Search is trimmed and case-insensitive across owner, name, and full name. `lastActivityAt` is the newest stored activity timestamp; `contributorCount` is the distinct count of non-null stored contributors. Reads and mutations require an existing user/repository association and do not expose another user's repository membership.
 
-## Day 7 Activity API and frozen dashboard contract
+## Day 7 Activity and Dashboard API
 
-The frontend-consumable activity and dashboard boundary is frozen in `packages/shared/src/activity.ts` and `packages/shared/src/dashboard.ts`; validated fixtures live under `packages/shared/test/fixtures/activity/` and `packages/shared/test/fixtures/dashboard/`. Day 7 implements the two activity routes against canonical PostgreSQL events. Dashboard implementation remains outside Person A's reviewed Day 7 task and is not claimed here.
+The frontend-consumable activity and dashboard boundary is frozen in `packages/shared/src/activity.ts` and `packages/shared/src/dashboard.ts`; validated fixtures live under `packages/shared/test/fixtures/activity/` and `packages/shared/test/fixtures/dashboard/`. Day 7 implements both activity routes and the dashboard route against canonical PostgreSQL events.
 
-Activity routes are:
+Routes are:
 
 - `GET /api/v1/activity` using `ActivityListQuery` and `ActivityListResponse`.
 - `GET /api/v1/repositories/:id/activity` using the same filter and response schemas, with repository ownership enforced by the server.
-- `GET /api/v1/dashboard` remains a frozen future boundary using `DashboardQuery` and `DashboardResponse`.
+- `GET /api/v1/dashboard` using `DashboardQuery` and `DashboardResponse`.
+
+Dashboard queries require an ISO date, accept an IANA timezone (default `UTC`), and optionally filter by opaque repository ID. Metrics and the latest 20 summaries include only canonical GitHub `commit`, `push`, and `pull_request` events from the caller's currently tracked, currently accessible repositories, bounded to the requested half-open local calendar day. File, addition, and deletion totals come only from validated canonical commit metadata to avoid double counting push summaries. An unknown or inaccessible repository ID returns `NO_ACTIVITY` with zero facts rather than disclosing repository existence. Server-derived states are `GITHUB_NOT_CONNECTED`, `NO_TRACKED_REPOSITORIES`, `NO_ACTIVITY`, `PARTIAL` while an authorized delivery for the selected day is pending or processing, and `READY` otherwise.
 
 Activity filters include optional ISO date, IANA timezone (default `UTC`), repository, contributor, source, type, cursor, and bounded limit. A supplied date denotes the half-open calendar interval `[00:00, next 00:00)` in the supplied IANA timezone; the API converts that interval to UTC before querying. Invalid dates, timezones, filters, limits, and cursors fail with `400 VALIDATION_ERROR`. Results use a stable opaque cursor ordered by `occurredAt` descending then opaque activity ID descending.
 

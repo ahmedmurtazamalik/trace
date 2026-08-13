@@ -5,6 +5,7 @@ import { activityListQuerySchema, activityListResponseSchema, activitySourceSche
 import { ActivityExperience, type ActivityFilters } from "./activity-experience";
 import { activityFixtureItems } from "@/mocks/fixtures/activity";
 import { listActivity } from "@/api/activity";
+import { listRepositories } from "@/api/repositories";
 
 function localDate(value: string, timezone: string) {
   const parts = new Intl.DateTimeFormat("en-US", { timeZone: timezone, year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(new Date(value));
@@ -72,5 +73,5 @@ export function ActivityRoute() {
     router.replace(next.size === 0 ? pathname : `${pathname}?${next.toString()}`, { scroll: false });
   }
   const timezone = validTimezone(searchParams.get("timezone"));
-  return <ActivityExperience loadActivity={listActivity} initialFilters={initialFilters} timezone={timezone} onFiltersChange={update} />;
+  return <ActivityExperience loadActivity={listActivity} loadRepositories={listRepositories} initialFilters={initialFilters} timezone={timezone} onFiltersChange={update} />;
 }
