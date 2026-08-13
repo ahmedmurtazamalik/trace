@@ -61,11 +61,10 @@ export function ReportDetailView({ reportId, loadReport, pollIntervalMs = 5000 }
   if (loading && report === undefined) return <Card className="report-state-card" role="status">Loading report…</Card>;
   if (error && report === undefined) return <Card className="report-state-card report-state-error" role="alert"><p>{error}</p><Button className="trace-button-secondary" onClick={startPolling}>Retry</Button></Card>;
   if (report === undefined) return null;
-  const currentPdf = report.artifacts.find((artifact) => artifact.kind === "pdf" && artifact.revision === report.revision);
   return <div className="report-detail-stack">
     <Card className="report-detail-hero">
       <div><span className={`report-status report-status-${report.status}`}>{labels[report.status]}</span><h2>Development activity report</h2><p>{new Date(`${report.reportDate}T12:00:00.000Z`).toLocaleDateString("en-US", { dateStyle: "long", timeZone: "UTC" })} · {report.timezone}</p></div>
-      <Button disabled={!report.downloadAvailable || currentPdf === undefined}>Download PDF</Button>
+      <Button disabled aria-label="Download PDF — download delivery is not available yet" title="PDF download delivery is not available yet.">Download PDF</Button>
     </Card>
     {report.status === "pending" || report.status === "processing" ? <Card className="report-progress-card" role="status"><strong>{report.status === "pending" ? "Waiting to begin" : "Building your report"}</strong><span>This page refreshes automatically while generation is active.</span></Card> : null}
     {report.status === "failed" && <Card className="report-state-card report-state-error" role="alert"><h3>Report generation failed</h3><p>{report.errorMessage}</p></Card>}

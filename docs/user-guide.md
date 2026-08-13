@@ -68,9 +68,9 @@ Repository rows on the GitHub page are labelled illustrative. Real repository ac
 2. Choose the development-activity date. Trace displays the detected IANA timezone used for that request.
 3. Select **Create report**.
 4. Use report history to review **Pending**, **Processing**, **Completed**, or **Failed** status and open a detail view.
-5. PDF download remains disabled until the report is completed and a current PDF artifact exists.
+5. PDF download remains disabled until a later frontend delivery route is implemented, even if report metadata already references a current PDF artifact.
 
-Day 8 is a contract preview backed by validated fixtures. The page says so directly: report API handlers, factual aggregation, queue processing, AI generation, storage, and real PDF downloads are not connected yet. Duplicate dates, unavailable generation, expired sessions, empty history, load retries, and safe failures are represented without exposing internal errors.
+Reports now use Trace's authenticated live API. Creating a report sends the selected date and detected timezone with the in-memory CSRF token; Trace stores the authorized factual snapshot, queues generation, and returns persisted list/detail status after refresh. Duplicate dates, unavailable generation, expired sessions, empty history, load retries, and safe failures are handled without exposing internal errors. PDF controls remain disabled because frontend download delivery is not implemented yet; artifact metadata alone does not enable an inert control. Automated browser tests deterministically intercept the same validated HTTP contracts; the API integration suite separately proves PostgreSQL persistence, ownership, CSRF, and Redis publication.
 
 ## Accessibility
 

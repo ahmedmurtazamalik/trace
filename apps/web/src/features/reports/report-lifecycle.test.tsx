@@ -26,10 +26,13 @@ describe("Day 8 report lifecycle", () => {
     const { createReport } = setup();
 
     expect(await screen.findByRole("heading", { name: "Report history" })).toBeInTheDocument();
-    for (const status of ["Completed", "Processing", "Pending", "Failed"]) expect(screen.getByText(status)).toBeInTheDocument();
+    expect(screen.getByText(/PDF downloads remain unavailable until frontend download delivery is implemented\./)).toBeInTheDocument();
+    expect(await screen.findByText("Completed")).toBeInTheDocument();
+    for (const status of ["Processing", "Pending", "Failed"]) expect(screen.getByText(status)).toBeInTheDocument();
     expect(screen.getByText("Generation could not be completed.")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Open report for August 12, 2026" })).toHaveAttribute("href", "/reports/completed");
-    expect(screen.getByRole("button", { name: "Download report for August 11, 2026" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Download report for August 12, 2026 — download delivery is not available yet" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Download report for August 11, 2026 — download delivery is not available yet" })).toBeDisabled();
 
     await userEvent.clear(screen.getByLabelText("Report date"));
     await userEvent.type(screen.getByLabelText("Report date"), "2026-08-13");
@@ -37,6 +40,20 @@ describe("Day 8 report lifecycle", () => {
 
     await waitFor(() => expect(createReport).toHaveBeenCalledWith({ reportDate: "2026-08-13", timezone: "UTC" }, expect.any(AbortSignal)));
     expect(screen.getByRole("status")).toHaveTextContent("Report requested for August 13, 2026");
+  });
+
+  it("encodes opaque report IDs in detail links", async () => {
+    setup({
+      loadReports: vi.fn().mockResolvedValue({
+        items: [{ ...reports.items[0], id: "report/with reserved?characters" }],
+        pageInfo: { nextCursor: null, hasNextPage: false },
+      }),
+    });
+
+    expect(await screen.findByRole("link", { name: "Open report for August 12, 2026" })).toHaveAttribute(
+      "href",
+      "/reports/report%2Fwith%20reserved%3Fcharacters",
+    );
   });
 
   it("prevents an empty date before submission", async () => {

@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { ReportLifecycle } from "./report-lifecycle";
-import { createFixtureReport, listFixtureReports } from "@/mocks/fixtures/reports";
+import { createReport, listReports } from "@/api/reports";
+import { useAuthSession } from "@/auth/session-provider";
 
 export function dateInTimezone(now: Date, timezone: string) {
   try {
@@ -13,6 +14,7 @@ export function dateInTimezone(now: Date, timezone: string) {
 }
 
 export function ReportsRoute() {
+  const { csrfToken } = useAuthSession();
   const [timezone, setTimezone] = useState("UTC");
   const [date, setDate] = useState(() => dateInTimezone(new Date(), "UTC"));
   useEffect(() => {
@@ -20,5 +22,9 @@ export function ReportsRoute() {
     setTimezone(detected);
     setDate(dateInTimezone(new Date(), detected));
   }, []);
-  return <ReportLifecycle key={`${date}:${timezone}`} loadReports={listFixtureReports} createReport={createFixtureReport} initialDate={date} timezone={timezone} />;
+  const createLiveReport = (request: Parameters<typeof createReport>[0], signal?: AbortSignal) => {
+    if (!csrfToken) throw new Error("Authenticated session is missing CSRF protection.");
+    return createReport(request, csrfToken, signal);
+  };
+  return <ReportLifecycle key={`${date}:${timezone}`} loadReports={listReports} createReport={createLiveReport} initialDate={date} timezone={timezone} />;
 }
