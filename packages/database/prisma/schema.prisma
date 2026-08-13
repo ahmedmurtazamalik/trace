@@ -323,6 +323,8 @@ model Report {
   status        ReportStatus  @default(pending)
   inputSnapshot Json          @map("input_snapshot")
   publishedAt  DateTime?      @map("published_at")
+  processingToken String?     @map("processing_token")
+  processingExpiresAt DateTime? @map("processing_expires_at")
   aiOutput      Json?         @map("ai_output")
   latexPath     String?       @map("latex_path")
   pdfPath       String?       @map("pdf_path")
@@ -335,6 +337,7 @@ model Report {
 
   @@unique([userId, reportDate])
   @@index([status, publishedAt, createdAt])
+  @@index([status, processingExpiresAt])
   @@index([userId, reportDate, createdAt])
   @@map("reports")
 }

@@ -1,5 +1,5 @@
 import { EventEmitter } from 'node:events';
-import { startGithubActivityWorker } from '../src/application';
+import { startGithubActivityWorker, startTraceWorkers } from '../src/application';
 import type { runGithubWebhookWorker } from '../src/runtime';
 
 class SignalProcess extends EventEmitter {
@@ -7,6 +7,41 @@ class SignalProcess extends EventEmitter {
 }
 
 describe('GitHub activity worker application', () => {
+  it('starts both activity and report consumers and closes them in reverse order', async () => {
+    const events: string[] = [];
+    const stopActivity = jest.fn(() => { events.push('activity-stop'); return Promise.resolve(); });
+    const stopReports = jest.fn(() => { events.push('reports-stop'); return Promise.resolve(); });
+    const startActivity = jest.fn(() => { events.push('activity-start'); return Promise.resolve(stopActivity); });
+    const startReports = jest.fn(() => { events.push('reports-start'); return Promise.resolve(stopReports); });
+
+    const stop = await startTraceWorkers({
+      environment: {},
+      startActivity: startActivity as never,
+      startReports: startReports as never,
+    });
+    await stop();
+
+    expect(events.slice(0, 2).sort()).toEqual(['activity-start', 'reports-start']);
+    expect(events.slice(2)).toEqual(['reports-stop', 'activity-stop']);
+  });
+
+  it('propagates child runtime failure and cleanup failure to the coordinator', async () => {
+    const runtimeFailure = jest.fn();
+    let childFailure: (() => void) | undefined;
+    const startActivity = jest.fn((options: { onRuntimeFailure?: () => void }) => {
+      childFailure = options.onRuntimeFailure;
+      return Promise.resolve(jest.fn().mockResolvedValue(undefined));
+    });
+    const startReports = jest.fn(() => Promise.resolve(jest.fn().mockRejectedValue(new Error('cleanup failed'))));
+    const stop = await startTraceWorkers({
+      environment: {}, startActivity: startActivity as never, startReports: startReports as never,
+      onRuntimeFailure: runtimeFailure,
+    });
+    childFailure?.();
+    expect(runtimeFailure).toHaveBeenCalledTimes(1);
+    await expect(stop()).rejects.toThrow('Trace workers cleanup failed.');
+  });
+
   it('validates database and GitHub App configuration before creating resources', async () => {
     await expect(startGithubActivityWorker({
       environment: { REDIS_URL: 'redis://localhost:6379/0' },

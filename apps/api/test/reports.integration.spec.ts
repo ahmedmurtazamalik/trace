@@ -400,6 +400,7 @@ describe('Reports API', () => {
       const job = await queue.getJob(`report-${reportId}`);
       expect(job?.opts.removeOnComplete).toBe(false);
       expect(job?.opts.removeOnFail).toBe(false);
+      expect(job?.opts.attempts).toBe(3);
     } finally {
       await queue.close();
     }
