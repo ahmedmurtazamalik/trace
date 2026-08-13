@@ -227,10 +227,16 @@ export class RepositoriesService {
             lastSyncSequence: sequence,
           },
         });
+        const existingMembership = await transaction.userRepository.findUnique({
+          where: { userId_repositoryId: { userId, repositoryId: persisted.id } },
+          select: { accessRemovedAt: true },
+        });
         await transaction.userRepository.upsert({
           where: { userId_repositoryId: { userId, repositoryId: persisted.id } },
           create: { userId, repositoryId: persisted.id, trackingEnabled: false, accessRemovedAt: null },
-          update: { accessRemovedAt: null },
+          update: existingMembership?.accessRemovedAt === null
+            ? { accessRemovedAt: null }
+            : { accessRemovedAt: null, createdAt: new Date() },
         });
         acceptedRepositoryCount += 1;
       }
@@ -298,7 +304,10 @@ export class RepositoriesService {
       FROM user_repositories ur
       LEFT JOIN activity_events ae
         ON ae.repository_id = ur.repository_id
+       AND ae.occurred_at >= ur.created_at
        AND (ur.access_removed_at IS NULL OR ae.occurred_at <= ur.access_removed_at)
+       AND ae.source::text = 'github'
+       AND ae.type::text IN ('commit', 'push', 'pull_request')
       WHERE ur.user_id = ${userId}
         AND ur.repository_id IN (${Prisma.join(repositoryIds)})
       GROUP BY ur.repository_id

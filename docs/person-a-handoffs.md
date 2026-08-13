@@ -264,7 +264,8 @@ Final recorded results:
 ### Done
 
 - Added authenticated `GET /api/v1/activity` and `GET /api/v1/repositories/:id/activity` routes backed by canonical PostgreSQL `ActivityEvent` rows.
-- Enforced caller authorization exclusively through Trace session identity and `UserRepository` membership. Unassociated repository routes fail with `404`; historical events remain visible only through the caller's inclusive `accessRemovedAt` boundary.
+- Enforced caller authorization exclusively through Trace session identity and `UserRepository` membership. Unassociated repository routes fail with `404`; events are visible only inside the current inclusive membership interval from `createdAt` through optional `accessRemovedAt`, and restored access resets the lower boundary.
+- Served only GitHub activity until opt-in CLI ingestion can persist explicit Trace-user/device ownership; repository membership alone cannot authorize another user's local work.
 - Implemented bounded repository, contributor, source, type, local-date, timezone, cursor, and limit filters. Local dates use true half-open IANA calendar days, including daylight-saving transitions.
 - Added deterministic descending `(occurredAt, id)` pagination with versioned HMAC-signed opaque cursors bound to the authenticated user, complete normalized query, and route repository.
 - Projected only the frozen strict activity summary. Required source/type and repository facts fail closed when malformed; optional stored metadata is revalidated and bounded, and unsafe links normalize to `null` rather than exposing arbitrary metadata or invalidating the response.

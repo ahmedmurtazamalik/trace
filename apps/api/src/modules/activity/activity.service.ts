@@ -71,14 +71,13 @@ export class ActivityService {
       INNER JOIN user_repositories ur
         ON ur.repository_id = ae.repository_id
        AND ur.user_id = ${userId}
+       AND ae.occurred_at >= ur.created_at
        AND (ur.access_removed_at IS NULL OR ae.occurred_at <= ur.access_removed_at)
       LEFT JOIN contributors c ON c.id = ae.contributor_id
       WHERE (${repositoryId ?? null}::text IS NULL OR ae.repository_id = ${repositoryId ?? null})
         AND char_length(r.full_name) BETWEEN 1 AND 512
-        AND (
-          (ae.source::text = 'github' AND ae.type::text IN ('commit', 'push', 'pull_request'))
-          OR (ae.source::text = 'cli' AND ae.type::text IN ('working_tree_snapshot', 'staged_change', 'untracked_file', 'local_commit'))
-        )
+        AND ae.source::text = 'github'
+        AND ae.type::text IN ('commit', 'push', 'pull_request')
         AND (${query.contributorId ?? null}::text IS NULL OR ae.contributor_id = ${query.contributorId ?? null})
         AND (${query.source ?? null}::text IS NULL OR ae.source::text = ${query.source ?? null})
         AND (${query.type ?? null}::text IS NULL OR ae.type::text = ${query.type ?? null})

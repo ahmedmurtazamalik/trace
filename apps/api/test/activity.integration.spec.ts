@@ -94,8 +94,9 @@ describe('Activity API', () => {
       },
     });
     const cutoff = new Date('2026-08-12T12:00:00.000Z');
+    const accessGrantedAt = new Date('2026-08-12T08:00:00.000Z');
     await prisma.userRepository.create({
-      data: { userId: user.id, repositoryId: repository.id, trackingEnabled: true, accessRemovedAt: cutoff },
+      data: { userId: user.id, repositoryId: repository.id, trackingEnabled: true, accessRemovedAt: cutoff, createdAt: accessGrantedAt },
     });
     await prisma.activityEvent.createMany({
       data: [
@@ -106,6 +107,22 @@ describe('Activity API', () => {
           type: 'push',
           occurredAt: cutoff,
           metadata: { ref: 'refs/heads/main' },
+        },
+        {
+          sourceKey: `day7:pre-access:${repository.id}`,
+          repositoryId: repository.id,
+          source: 'github',
+          type: 'push',
+          occurredAt: new Date(accessGrantedAt.getTime() - 1),
+          metadata: { ref: 'refs/heads/pre-access' },
+        },
+        {
+          sourceKey: `day7:foreign-cli:${repository.id}`,
+          repositoryId: repository.id,
+          source: 'cli',
+          type: 'local_commit',
+          occurredAt: new Date('2026-08-12T10:00:00.000Z'),
+          metadata: { branch: 'private-local-work' },
         },
         {
           sourceKey: `day7:hidden:${repository.id}`,
@@ -135,6 +152,10 @@ describe('Activity API', () => {
       facts: { branch: 'main' },
     });
     expect(body.pageInfo).toEqual({ hasNextPage: false, nextCursor: null });
+
+    const cli = await request(server).get('/api/v1/activity')
+      .query({ source: 'cli' }).set('Cookie', fixture.sessionCookie).expect(200);
+    expect(activityListResponseSchema.parse(cli.body as unknown).items).toEqual([]);
   });
 
   it('applies local-day filters and stable filter-bound cursor pagination', async () => {
@@ -214,7 +235,7 @@ describe('Activity API', () => {
       .query({ ...filters, cursor: `${forgedPayload}.${signature}` })
       .set('Cookie', fixture.sessionCookie).expect(400);
     await request(server).get(`/api/v1/repositories/${fixture.repositoryId}/activity`)
-      .query({ ...filters, cursor: `${payload}.${signature.slice(0, -1)}${signature.endsWith('A') ? 'B' : 'A'}` })
+      .query({ ...filters, cursor: `${payload}.${signature.startsWith('A') ? 'B' : 'A'}${signature.slice(1)}` })
       .set('Cookie', fixture.sessionCookie).expect(400);
     await request(server).get(`/api/v1/repositories/${fixture.repositoryId}/activity`)
       .query({ ...filters, cursor: `${payload}==.${signature}` })
@@ -259,7 +280,10 @@ describe('Activity API', () => {
 
   it('uses true half-open local days across daylight-saving transitions', async () => {
     const fixture = await historicalActivity();
-    await prisma.userRepository.updateMany({ where: { repositoryId: fixture.repositoryId }, data: { accessRemovedAt: null } });
+    await prisma.userRepository.updateMany({
+      where: { repositoryId: fixture.repositoryId },
+      data: { accessRemovedAt: null, createdAt: new Date('2026-01-01T00:00:00.000Z') },
+    });
     await prisma.activityEvent.deleteMany({ where: { repositoryId: fixture.repositoryId } });
     await prisma.activityEvent.createMany({
       data: [

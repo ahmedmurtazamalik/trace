@@ -53,7 +53,7 @@ export const reportArtifactSchema = z.object({
   id: z.string().min(1).max(256),
   revision: z.number().int().positive(),
   kind: reportArtifactKindSchema,
-  fileName: z.string().min(1).max(200).regex(/^[^/\\\0]+$/),
+  fileName: z.string().min(1).max(200).regex(/^(?!\.{1,2}$)[A-Za-z0-9][A-Za-z0-9._ -]*$/),
   contentType: z.enum(['application/pdf', 'application/x-tex']),
   sizeBytes: z.number().int().positive().max(100_000_000),
   checksum: z.string().regex(/^[a-f0-9]{64}$/),

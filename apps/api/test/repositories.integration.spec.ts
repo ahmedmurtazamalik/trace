@@ -140,12 +140,28 @@ describe('Repository API', () => {
       data: { trackingEnabled: true },
     });
 
+    const activeMembership = await prisma.userRepository.findUniqueOrThrow({
+      where: { userId_repositoryId: { userId: identity.userId, repositoryId: repository.id } },
+    });
     await request(server).post('/api/v1/repositories/sync').set('Cookie', identity.cookie).set('X-CSRF-Token', identity.csrfToken).expect(200);
 
     await expect(prisma.repository.count({ where: { githubInstallationId: identity.installationId } })).resolves.toBe(2);
-    await expect(prisma.userRepository.findUniqueOrThrow({
+    const unchangedMembership = await prisma.userRepository.findUniqueOrThrow({
       where: { userId_repositoryId: { userId: identity.userId, repositoryId: repository.id } },
-    })).resolves.toMatchObject({ trackingEnabled: true });
+    });
+    expect(unchangedMembership).toMatchObject({ trackingEnabled: true, createdAt: activeMembership.createdAt });
+
+    const priorGrant = new Date('2020-01-01T00:00:00.000Z');
+    await prisma.userRepository.update({
+      where: { userId_repositoryId: { userId: identity.userId, repositoryId: repository.id } },
+      data: { createdAt: priorGrant, accessRemovedAt: new Date('2020-01-02T00:00:00.000Z') },
+    });
+    await request(server).post('/api/v1/repositories/sync').set('Cookie', identity.cookie).set('X-CSRF-Token', identity.csrfToken).expect(200);
+    const restoredMembership = await prisma.userRepository.findUniqueOrThrow({
+      where: { userId_repositoryId: { userId: identity.userId, repositoryId: repository.id } },
+    });
+    expect(restoredMembership.accessRemovedAt).toBeNull();
+    expect(restoredMembership.createdAt.getTime()).toBeGreaterThan(priorGrant.getTime());
   });
 
   it('does not let an older cross-installation snapshot reclaim a repository from a newer owner', async () => {
@@ -289,6 +305,10 @@ describe('Repository API', () => {
     const identity = await installedIdentity();
     await request(server).post('/api/v1/repositories/sync').set('Cookie', identity.cookie).set('X-CSRF-Token', identity.csrfToken).expect(200);
     const repository = await prisma.repository.findUniqueOrThrow({ where: { githubRepositoryId: 7_001n } });
+    await prisma.userRepository.update({
+      where: { userId_repositoryId: { userId: identity.userId, repositoryId: repository.id } },
+      data: { createdAt: new Date('2026-08-12T07:00:00.000Z') },
+    });
     const contributor = await prisma.contributor.create({ data: { githubUserId: 44_001n, username: 'day4-contributor' } });
     await prisma.activityEvent.create({
       data: { sourceKey: `test:repository-detail:${repository.id}`, repositoryId: repository.id, contributorId: contributor.id, source: 'github', type: 'push', occurredAt: new Date('2026-08-12T08:00:00.000Z'), metadata: {} },
