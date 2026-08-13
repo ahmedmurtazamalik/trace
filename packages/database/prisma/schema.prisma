@@ -322,6 +322,7 @@ model Report {
   timezone      String        @default("UTC")
   status        ReportStatus  @default(pending)
   inputSnapshot Json          @map("input_snapshot")
+  publishedAt  DateTime?      @map("published_at")
   aiOutput      Json?         @map("ai_output")
   latexPath     String?       @map("latex_path")
   pdfPath       String?       @map("pdf_path")
@@ -333,6 +334,7 @@ model Report {
   artifacts     ReportArtifact[]
 
   @@unique([userId, reportDate])
+  @@index([status, publishedAt, createdAt])
   @@index([userId, reportDate, createdAt])
   @@map("reports")
 }

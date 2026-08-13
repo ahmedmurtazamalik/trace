@@ -282,3 +282,29 @@ Final recorded results:
 
 - Dashboard endpoint implementation is not part of Person A's reviewed Day 7 task and remains unimplemented despite its previously frozen shared DTO.
 - Report persistence, owner-authorized endpoints, factual aggregation, queue/worker orchestration, AI validation/retry, revision history, regeneration behavior, deterministic rendering, sandboxed compilation, storage, and byte-stream download remain Days 8–10.
+
+---
+
+## Day 8 — Person A
+
+### Done
+
+- Added authenticated `POST /api/v1/reports`, `GET /api/v1/reports`, and `GET /api/v1/reports/:id` handlers using the frozen Day 7 shared contracts; report creation enforces the session CSRF token.
+- Aggregated only canonical GitHub commit activity authorized through the caller's active GitHub account, installation, repository access, and enabled tracking relationship inside the requested half-open IANA local day.
+- Persisted a versioned immutable snapshot with deterministic global, repository, contributor, and evidence facts. Invalid stored commit metadata is excluded rather than guessed, and aggregation fails safely above 10,000 accepted activity rows or 500,000 UTF-8 bytes of evidence messages.
+- Enforced one report per user/date with `409 REPORT_ALREADY_EXISTS`; queue availability does not roll back the durable pending report.
+- Published retained deterministic BullMQ jobs to `report-generation` as `generate-report`, with job ID `report-<reportId>` and payload `{ reportId }`; retention preserves lifetime deduplication while the report remains pending.
+- Added a durable `publishedAt` observation plus startup/interval reconciliation for every pending report, including previously published rows, so lost Redis jobs are recreated. Repeated and multi-instance reconciliation remains queue-idempotent through the deterministic job ID.
+- Added owner-only report history/detail reads. Foreign IDs fail indistinguishably with `404 REPORT_NOT_FOUND`; list pagination uses signed opaque cursors bound to user, status, and limit with descending `(createdAt, id)` ordering.
+- Kept report lifecycle output truthful: pending reports expose no generated prose, revision, completion timestamp, artifacts, or download availability.
+
+### Verification boundary
+
+- PostgreSQL/Redis integration coverage proves timezone-aware authorized aggregation, immutable snapshot persistence, deterministic queue identity, duplicate conflict handling, CSRF enforcement, explicit queue-failure recovery, multi-publisher reconciliation, owner isolation, and filter-bound pagination.
+- API lint and strict TypeScript checks pass for the Day 8 implementation.
+- No `apps/web/**`, `packages/ui/**`, LLM call, report processor, revision generation, LaTeX compilation, storage, download, push, PR, or merge work is included.
+
+### Deferred by plan
+
+- Structured AI generation, provider validation/retries, safe failure persistence, and initial report revision creation remain Day 9.
+- Controlled LaTeX rendering, artifact storage, revision edits, regeneration, and authorized downloads remain Day 10.
