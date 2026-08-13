@@ -399,4 +399,44 @@ No Person A-owned API, worker, database, shared-contract, root workspace, infras
 - Browser visual QA at `http://localhost:3002/activity`: PASS; contributor identity and exact timestamp are readable with no clipping or overlap. The demo record has no branch/file facts, so those remain truthfully omitted there; the focused contract regression verifies both when supplied.
 
 ### Publication status
-- Local-only on `day7_ali_patchwork`; not committed, pushed, or opened as a PR.
+- Day 7 was published through PR #16 and merged into `main` after both CI checks passed.
+
+## Day 8 — Report lifecycle UI (Person B)
+
+### Done
+- Replaced the Reports placeholder with a date- and browser-timezone-aware report request form.
+- Added responsive report history for the frozen `pending`, `processing`, `completed`, and `failed` statuses only.
+- Added duplicate-date, generation-unavailable/queue-failure, expired-session, empty-history, retryable-load, and safe fallback messages without exposing raw backend details.
+- Added report detail routing at `/reports/[id]`, deterministic fact cards, pending/processing progress, failed state, and completed structured-content preview.
+- Added bounded polling that runs only while a report is pending or processing and stops after completion/failure.
+- Kept PDF download disabled unless the frozen contract reports completion and a current PDF artifact.
+- Added a cookie-authenticated future report API adapter validated through `@trace/shared`; MSW verifies processing-to-completed transitions and malformed-response rejection.
+- Used source-neutral **Development activity** language throughout.
+
+### TDD and verification boundary
+- Expected RED 1: lifecycle test failed because `report-lifecycle` did not exist; GREEN added creation/history with all four states.
+- Expected RED 2: detail test failed because `report-detail` did not exist; GREEN added detail and bounded polling.
+- Expected RED 3: duplicate handling exposed only generic copy; GREEN mapped the closed duplicate/generation/session codes safely.
+- Expected RED 4: report history failure had no retry action; GREEN added separate load failure state and accessible retry.
+- Expected RED 5: independent review found same-status polling stopped after one refresh, stale in-flight responses could overwrite newer routes/write after unmount, unknown fixture IDs displayed the completed fallback report, and the future create adapter omitted CSRF. GREEN added repeated-active-status polling, retry-resume polling, abort/generation guards, safe unknown-ID failure, zero-activity browser coverage, and mandatory frozen CSRF headers.
+- Focused report component and MSW adapter tests: PASS, 13/13.
+- Focused report browser tests: PASS, 4/4 across desktop/mobile, including detail URL routing, unknown-ID safety, zero activity, and 375px overflow.
+- Complete web suite: PASS, 114/114; UI: PASS, 2/2; shared contract: PASS, 24/24.
+- Full Playwright desktop/mobile suite: PASS, 58/58.
+- Web, UI, and shared typecheck: PASS; web lint: PASS with no warnings or errors.
+- Production build: PASS with 14/14 pages, including dynamic `/reports/[id]`.
+- Desktop visual QA: PASS; hierarchy, lifecycle differentiation, disabled downloads, and fixture disclosure are clear with no clipping.
+- Real 375px mobile visual QA: PASS; zero horizontal overflow, stacked controls/cards, readable failure state, and no console/page errors.
+- Final independent corrected-tree review: **APPROVED**; it verified timer/request cleanup, Strict Mode and retry overlap safety, stale/post-unmount guards, repeated active-state polling, terminal stops, safe unknown IDs, and mandatory CSRF.
+
+### Real versus fixture status
+- Contract is real/frozen: `packages/shared/src/reports.ts` from Person A Day 7; Person B did not modify it.
+- UI runtime is fixture-backed and visibly labelled **Contract preview**. This proves frontend behavior without an LLM, database, queue, or PDF, as required by the Day 8 gate.
+- `apps/web/src/api/reports.ts` is a validated adapter seam only. It is not the active route loader because Person A's report handlers, aggregation, queue, generation, storage, and download routes are not implemented yet.
+- MSW proves request/response and status-transition compatibility; it is not evidence of live report generation.
+- Day 9 structured editing is intentionally excluded.
+
+### Person B ownership
+- Changed only `apps/web/**`, `docs/user-guide.md`, and `docs/person-b-handoffs.md`.
+- No Person A-owned API, worker, database, shared contract, infrastructure, or root workspace file was changed.
+- `.hermes/` remains local-only and uncommitted.
