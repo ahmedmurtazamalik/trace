@@ -82,7 +82,7 @@ export function ReportLifecycle({ loadReports, createReport, timezone, initialDa
   }
 
   return <div className="report-lifecycle">
-    <Card className="report-disclosure" role="note"><strong>Contract preview</strong><span>Report lifecycle behavior uses validated fixtures. Generation, AI, storage, and PDF downloads are not connected yet.</span></Card>
+    <Card className="report-disclosure" role="note"><strong>Live factual reports</strong><span>Requests use your authorized development activity and are stored by Trace. PDF downloads remain unavailable until frontend download delivery is implemented.</span></Card>
     <Card className="report-create-card">
       <form onSubmit={submit} noValidate>
         <label>Report date<input type="date" value={date} onChange={(event) => setDate(event.target.value)} /></label>
@@ -100,8 +100,8 @@ export function ReportLifecycle({ loadReports, createReport, timezone, initialDa
         : <ul className="report-history-list">{reports.map((report) => <li key={report.id}><Card className={`report-history-card report-status-${report.status}`}>
           <div><Badge>{statusLabels[report.status]}</Badge><h3>{dateLabel(report.reportDate)}</h3><p>{report.timezone} · Requested {new Date(report.createdAt).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short", timeZone: report.timezone })}</p>{report.errorMessage && <p className="report-failure-message">{report.errorMessage}</p>}</div>
           <div className="report-history-actions">
-            <Link className="trace-button trace-button-secondary" href={`/reports/${report.id}`} aria-label={`Open report for ${dateLabel(report.reportDate)}`}>Open report</Link>
-            <Button className="trace-button-secondary" disabled={!report.downloadAvailable} aria-label={`Download report for ${dateLabel(report.reportDate)}`}>Download PDF</Button>
+            <Link className="trace-button trace-button-secondary" href={`/reports/${encodeURIComponent(report.id)}`} aria-label={`Open report for ${dateLabel(report.reportDate)}`}>Open report</Link>
+            <Button className="trace-button-secondary" disabled aria-label={`Download report for ${dateLabel(report.reportDate)} — download delivery is not available yet`} title="PDF download delivery is not available yet.">Download PDF</Button>
           </div>
         </Card></li>)}</ul>}
     </section>

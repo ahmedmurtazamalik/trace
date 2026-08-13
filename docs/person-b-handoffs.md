@@ -409,7 +409,7 @@ No Person A-owned API, worker, database, shared-contract, root workspace, infras
 - Added duplicate-date, generation-unavailable/queue-failure, expired-session, empty-history, retryable-load, and safe fallback messages without exposing raw backend details.
 - Added report detail routing at `/reports/[id]`, deterministic fact cards, pending/processing progress, failed state, and completed structured-content preview.
 - Added bounded polling that runs only while a report is pending or processing and stops after completion/failure.
-- Kept PDF download disabled unless the frozen contract reports completion and a current PDF artifact.
+- Kept PDF download disabled because frontend download delivery is not implemented; artifact metadata alone never enables an inert control.
 - Added a cookie-authenticated future report API adapter validated through `@trace/shared`; MSW verifies processing-to-completed transitions and malformed-response rejection.
 - Used source-neutral **Development activity** language throughout.
 
@@ -419,22 +419,23 @@ No Person A-owned API, worker, database, shared-contract, root workspace, infras
 - Expected RED 3: duplicate handling exposed only generic copy; GREEN mapped the closed duplicate/generation/session codes safely.
 - Expected RED 4: report history failure had no retry action; GREEN added separate load failure state and accessible retry.
 - Expected RED 5: independent review found same-status polling stopped after one refresh, stale in-flight responses could overwrite newer routes/write after unmount, unknown fixture IDs displayed the completed fallback report, and the future create adapter omitted CSRF. GREEN added repeated-active-status polling, retry-resume polling, abort/generation guards, safe unknown-ID failure, zero-activity browser coverage, and mandatory frozen CSRF headers.
-- Focused report component and MSW adapter tests: PASS, 13/13.
-- Focused report browser tests: PASS, 4/4 across desktop/mobile, including detail URL routing, unknown-ID safety, zero activity, and 375px overflow.
-- Complete web suite: PASS, 114/114; UI: PASS, 2/2; shared contract: PASS, 24/24.
+- Focused report component and adapter tests: PASS, 15/15, including detail polling, terminal stops, stale-response protection, unknown-ID safety, opaque-ID encoding, schema rejection, and mandatory CSRF.
+- Focused report browser tests: PASS, 4/4 across desktop/mobile, covering live list/create HTTP requests, the CSRF-protected create request, rendered lifecycle states, detail-link generation, and 375px overflow. These tests do not claim browser navigation to detail, encoded-ID behavior, or unknown-ID rendering.
+- Complete web suite: PASS, 116/116; UI: PASS, 2/2; shared contract: PASS, 24/24.
 - Full Playwright desktop/mobile suite: PASS, 58/58.
 - Web, UI, and shared typecheck: PASS; web lint: PASS with no warnings or errors.
 - Production build: PASS with 14/14 pages, including dynamic `/reports/[id]`.
-- Desktop visual QA: PASS; hierarchy, lifecycle differentiation, disabled downloads, and fixture disclosure are clear with no clipping.
+- Desktop visual QA: PASS; hierarchy, lifecycle differentiation, disabled downloads, and live factual-report disclosure are clear with no clipping.
 - Real 375px mobile visual QA: PASS; zero horizontal overflow, stacked controls/cards, readable failure state, and no console/page errors.
 - Final independent corrected-tree review: **APPROVED**; it verified timer/request cleanup, Strict Mode and retry overlap safety, stale/post-unmount guards, repeated active-state polling, terminal stops, safe unknown IDs, and mandatory CSRF.
 
-### Real versus fixture status
-- Contract is real/frozen: `packages/shared/src/reports.ts` from Person A Day 7; Person B did not modify it.
-- UI runtime is fixture-backed and visibly labelled **Contract preview**. This proves frontend behavior without an LLM, database, queue, or PDF, as required by the Day 8 gate.
-- `apps/web/src/api/reports.ts` is a validated adapter seam only. It is not the active route loader because Person A's report handlers, aggregation, queue, generation, storage, and download routes are not implemented yet.
-- MSW proves request/response and status-transition compatibility; it is not evidence of live report generation.
-- Day 9 structured editing is intentionally excluded.
+### Day 8 patchwork: live Reports integration
+- Production list/create/detail routes now use `apps/web/src/api/reports.ts`; fixture loaders are no longer imported by production report pages.
+- Report creation forwards the authenticated session's in-memory CSRF token. The adapter keeps cookie credentials, frozen-schema validation, safe errors, abort signals, and encoded detail IDs.
+- The UI now truthfully labels **Live factual reports**. PDF controls remain disabled with an accessible explanation because frontend download delivery is not implemented; artifact metadata alone never enables an inert control.
+- The production-composition regression proved RED while fixture wiring remained (`listReports` had zero calls), then GREEN after live wiring. Deterministic Playwright coverage intercepts the real HTTP endpoints and asserts list requests, CSRF-protected creation, response rendering, route links, and mobile overflow.
+- Person A's Reports API integration suite is the evidence for real PostgreSQL persistence, ownership isolation, duplicate handling, CSRF enforcement, and exactly-once Redis job publication; intercepted browser tests are not presented as database/queue proof.
+- Day 9 generation may advance reports beyond pending when its worker and provider are configured; download remains unavailable until its frontend delivery route is implemented.
 
 ### Person B ownership
 - Changed only `apps/web/**`, `docs/user-guide.md`, and `docs/person-b-handoffs.md`.
