@@ -29,9 +29,9 @@ describe("Day 6 dashboard experience", () => {
   it("loads through the frozen date, timezone, and repository query", async () => {
     const { loadDashboard, onFiltersChange } = renderDashboard();
     await screen.findByLabelText("Development activity metrics");
-    expect(loadDashboard).toHaveBeenCalledWith({ date: "2026-08-12", timezone: "UTC" });
+    expect(loadDashboard).toHaveBeenCalledWith({ date: "2026-08-12", timezone: "UTC" }, expect.objectContaining({ signal: expect.any(AbortSignal) }));
     await userEvent.selectOptions(screen.getByLabelText("Repository"), "repo_1");
-    await waitFor(() => expect(loadDashboard).toHaveBeenLastCalledWith({ date: "2026-08-12", timezone: "UTC", repositoryId: "repo_1" }));
+    await waitFor(() => expect(loadDashboard).toHaveBeenLastCalledWith({ date: "2026-08-12", timezone: "UTC", repositoryId: "repo_1" }, expect.objectContaining({ signal: expect.any(AbortSignal) })));
     expect(onFiltersChange).toHaveBeenLastCalledWith({ date: "2026-08-12", repositoryId: "repo_1" });
   });
 
@@ -51,7 +51,7 @@ describe("Day 6 dashboard experience", () => {
     rerender(<DashboardExperience loadDashboard={loadDashboard} initialDate="2026-08-11" initialRepositoryId="repo_1" timezone="UTC" />);
     await waitFor(() => expect(screen.getByLabelText("Date")).toHaveValue("2026-08-11"));
     expect(screen.getByLabelText("Repository")).toHaveValue("repo_1");
-    expect(loadDashboard).toHaveBeenLastCalledWith({ date: "2026-08-11", timezone: "UTC", repositoryId: "repo_1" });
+    expect(loadDashboard).toHaveBeenLastCalledWith({ date: "2026-08-11", timezone: "UTC", repositoryId: "repo_1" }, expect.objectContaining({ signal: expect.any(AbortSignal) }));
   });
 
   it("ignores stale dashboard responses after filters change", async () => {
@@ -98,6 +98,12 @@ describe("Day 6 dashboard experience", () => {
     expect(screen.getByRole("alert")).not.toHaveTextContent("super-secret");
     await userEvent.click(screen.getByRole("button", { name: "Retry" }));
     expect(loadDashboard).toHaveBeenCalledTimes(2);
+  });
+
+  it("offers sign-in when the Dashboard API reports an expired session", async () => {
+    const loadDashboard = vi.fn().mockRejectedValue({ code: "UNAUTHENTICATED", status: 401 });
+    render(<DashboardExperience loadDashboard={loadDashboard} initialDate="2026-08-12" />);
+    expect(await screen.findByRole("link", { name: "Sign in again" })).toHaveAttribute("href", "/login");
   });
 
   it("clears old facts and surfaces a safe error when a changed filter fails", async () => {

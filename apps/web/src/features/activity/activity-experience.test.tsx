@@ -31,7 +31,7 @@ describe("Day 5 activity experience", () => {
     await userEvent.selectOptions(screen.getByLabelText("Repository"), "repo-02");
     await userEvent.selectOptions(screen.getByLabelText("Source"), "github");
     await userEvent.selectOptions(screen.getByLabelText("Activity type"), "push");
-    await waitFor(() => expect(props.loadActivity).toHaveBeenLastCalledWith(expect.objectContaining({ repositoryId: "repo-02", source: "github", type: "push", limit: 25, timezone: "UTC" })));
+    await waitFor(() => expect(props.loadActivity).toHaveBeenLastCalledWith(expect.objectContaining({ repositoryId: "repo-02", source: "github", type: "push", limit: 25, timezone: "UTC" }), expect.objectContaining({ signal: expect.any(AbortSignal) })));
     expect(props.onFiltersChange).toHaveBeenLastCalledWith(expect.objectContaining({ repositoryId: "repo-02", source: "github", type: "push" }));
     await userEvent.selectOptions(screen.getByLabelText("Source"), "cli");
     expect(screen.getByLabelText("Activity type")).toHaveValue("");
@@ -45,7 +45,7 @@ describe("Day 5 activity experience", () => {
     renderExperience({ loadActivity });
     await screen.findByRole("heading", { name: "Refine activity timeline" });
     await userEvent.click(screen.getByRole("button", { name: "Load more activity" }));
-    expect(loadActivity).toHaveBeenLastCalledWith(expect.objectContaining({ cursor: "activity-page-2" }));
+    expect(loadActivity).toHaveBeenLastCalledWith(expect.objectContaining({ cursor: "activity-page-2" }), expect.objectContaining({ signal: expect.any(AbortSignal) }));
     expect(await screen.findByRole("heading", { name: "Draft activity filters" })).toBeInTheDocument();
     expect(screen.getAllByRole("heading", { name: "Publish webhook acceptance" })).toHaveLength(1);
   });
@@ -62,7 +62,7 @@ describe("Day 5 activity experience", () => {
     await userEvent.click(screen.getByRole("button", { name: "Load more activity" }));
     await userEvent.selectOptions(screen.getByLabelText("Repository"), "repo-02");
     resolveSecondPage(activityFixturePages.second);
-    await waitFor(() => expect(loadActivity).toHaveBeenLastCalledWith(expect.objectContaining({ repositoryId: "repo-02" })));
+    await waitFor(() => expect(loadActivity).toHaveBeenLastCalledWith(expect.objectContaining({ repositoryId: "repo-02" }), expect.objectContaining({ signal: expect.any(AbortSignal) })));
     expect(screen.queryByRole("heading", { name: "Draft activity filters" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Load more activity" })).toBeEnabled();
   });
@@ -74,7 +74,7 @@ describe("Day 5 activity experience", () => {
     rerender(<ActivityExperience loadActivity={loadActivity} initialFilters={{ source: "cli", type: "local_commit" }} />);
     await waitFor(() => expect(screen.getByLabelText("Source")).toHaveValue("cli"));
     expect(screen.getByLabelText("Activity type")).toHaveValue("local_commit");
-    expect(loadActivity).toHaveBeenLastCalledWith(expect.objectContaining({ source: "cli", type: "local_commit" }));
+    expect(loadActivity).toHaveBeenLastCalledWith(expect.objectContaining({ source: "cli", type: "local_commit" }), expect.objectContaining({ signal: expect.any(AbortSignal) }));
   });
 
   it("groups timeline events by day with semantic list hierarchy", async () => {
@@ -102,6 +102,11 @@ describe("Day 5 activity experience", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent("Trace could not load activity");
     expect(screen.getByRole("alert")).not.toHaveTextContent("super-secret");
     expect(screen.getByRole("button", { name: "Retry" })).toBeEnabled();
+  });
+
+  it("offers sign-in when the Activity API reports an expired session", async () => {
+    renderExperience({ loadActivity: vi.fn().mockRejectedValue({ code: "UNAUTHENTICATED", status: 401 }) });
+    expect(await screen.findByRole("link", { name: "Sign in again" })).toHaveAttribute("href", "/login");
   });
 
   it("uses a safe fallback for future activity values", async () => {

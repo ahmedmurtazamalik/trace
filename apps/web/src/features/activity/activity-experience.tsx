@@ -1,12 +1,13 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button, Card } from "@trace/ui";
 import type { ActivityListQuery, ActivityListResponse, ActivitySummary, ActivitySource, ActivityType } from "@trace/shared";
 import { ActivitySummaryCard } from "./activity-summary-card";
 
 export type ActivityFilters = Pick<ActivityListQuery, "date" | "repositoryId" | "contributorId" | "source" | "type">;
-export type LoadActivity = (query: Partial<ActivityListQuery>) => Promise<ActivityListResponse>;
+export type LoadActivity = (query: Partial<ActivityListQuery>, options?: { signal?: AbortSignal }) => Promise<ActivityListResponse>;
 interface ActivityExperienceProps { loadActivity: LoadActivity; initialFilters?: ActivityFilters; timezone?: string; onFiltersChange?: (filters: ActivityFilters) => void }
 
 const labels: Record<string, string> = { commit: "Commit", push: "Push", pull_request: "Pull request", working_tree_snapshot: "Working tree snapshot", staged_change: "Staged change", untracked_file: "Untracked file", local_commit: "Local commit" };
@@ -33,6 +34,7 @@ function groupByDay(items: ActivitySummary[], timezone: string) {
   }, {});
 }
 function safeError(cause: unknown, pagination = false) {
+  if (typeof cause === "object" && cause !== null && "code" in cause && cause.code === "UNAUTHENTICATED") return "Your session has expired. Please sign in again.";
   if (typeof cause === "object" && cause !== null && "status" in cause && cause.status === 403) return "You do not have permission to view this activity.";
   return pagination ? "Trace could not load more activity. Try again." : "Trace could not load activity. Try again.";
 }
@@ -46,24 +48,31 @@ export function ActivityExperience({ loadActivity, initialFilters = {}, timezone
   const [error, setError] = useState<string>();
   const [pageError, setPageError] = useState<string>();
   const requestGeneration = useRef(0);
+  const activeRequest = useRef<AbortController>();
+  const activePageRequest = useRef<AbortController>();
   const initialFilterKey = filterKey(initialFilters);
   const query = useMemo(() => ({ ...filters, limit: 25, timezone }), [filters, timezone]);
   const availableTypes = useMemo(() => filters.source === undefined ? typeOptions : typeOptions.filter((option) => validTypesBySource[filters.source!].has(option.value)), [filters.source]);
 
   const reload = useCallback(() => {
+    activeRequest.current?.abort();
+    activePageRequest.current?.abort();
+    const controller = new AbortController();
+    activeRequest.current = controller;
     const generation = ++requestGeneration.current;
     setLoading(true); setError(undefined); setPageError(undefined); setItems([]); setNextCursor(null);
-    return loadActivity(query).then((response) => {
+    return loadActivity(query, { signal: controller.signal }).then((response) => {
       if (generation !== requestGeneration.current) return;
       setItems(response.items); setNextCursor(response.pageInfo.nextCursor);
     }).catch((cause: unknown) => {
+      if (cause instanceof DOMException && cause.name === "AbortError") return;
       if (generation !== requestGeneration.current) return;
       setError(safeError(cause));
     }).finally(() => {
       if (generation === requestGeneration.current) setLoading(false);
     });
   }, [loadActivity, query]);
-  useEffect(() => { void reload(); return () => { requestGeneration.current += 1; }; }, [reload]);
+  useEffect(() => { void reload(); return () => { activeRequest.current?.abort(); activePageRequest.current?.abort(); requestGeneration.current += 1; }; }, [reload]);
   useEffect(() => {
     const next = JSON.parse(initialFilterKey) as ActivityFilters;
     setFilters((current) => filterKey(current) === initialFilterKey ? current : next);
@@ -81,19 +90,22 @@ export function ActivityExperience({ loadActivity, initialFilters = {}, timezone
   function clear() { requestGeneration.current += 1; setLoadingMore(false); setFilters({}); onFiltersChange?.({}); }
   async function loadMore() {
     if (nextCursor === null) return;
+    activePageRequest.current?.abort();
+    const controller = new AbortController();
+    activePageRequest.current = controller;
     const generation = requestGeneration.current;
     setLoadingMore(true); setPageError(undefined);
     try {
-      const response = await loadActivity({ ...query, cursor: nextCursor });
+      const response = await loadActivity({ ...query, cursor: nextCursor }, { signal: controller.signal });
       if (generation !== requestGeneration.current) return;
       setItems((current) => { const byId = new Map(current.map((item) => [item.id, item])); response.items.forEach((item) => byId.set(item.id, item)); return [...byId.values()]; });
       setNextCursor(response.pageInfo.nextCursor);
-    } catch (cause) { if (generation === requestGeneration.current) setPageError(safeError(cause, true)); }
+    } catch (cause) { if (!(cause instanceof DOMException && cause.name === "AbortError") && generation === requestGeneration.current) setPageError(safeError(cause, true)); }
     finally { if (generation === requestGeneration.current) setLoadingMore(false); }
   }
 
   return <div className="activity-experience">
-    <Card className="activity-disclosure" role="note"><strong>Illustrative activity</strong><span>Deterministic examples exercise the frozen activity contract; no live webhook data is shown yet.</span></Card>
+    <Card className="activity-disclosure" role="note"><strong>Live activity connection</strong><span>Trace requests authorized development activity from the production API. Test environments use contract fixtures.</span></Card>
     <Card className="activity-filter-card">
       <div className="activity-filter-grid">
         <label>Date<input type="date" value={filters.date ?? ""} onChange={(event) => change("date", event.target.value)} /></label>
@@ -106,7 +118,7 @@ export function ActivityExperience({ loadActivity, initialFilters = {}, timezone
     </Card>
 
     {loading && items.length === 0 ? <Card className="activity-state-card" role="status">Loading development activity…</Card>
-      : error !== undefined && items.length === 0 ? <Card className="activity-state-card activity-state-error" role="alert"><p>{error}</p><Button className="trace-button-secondary" onClick={() => void reload()}>Retry</Button></Card>
+      : error !== undefined && items.length === 0 ? <Card className="activity-state-card activity-state-error" role="alert"><p>{error}</p>{error.startsWith("Your session has expired") ? <Link className="trace-button trace-button-primary" href="/login">Sign in again</Link> : <Button className="trace-button-secondary" onClick={() => void reload()}>Retry</Button>}</Card>
       : items.length === 0 ? <Card className="activity-state-card"><h2>{Object.keys(filters).length ? "No activity matches these filters" : "No development activity yet"}</h2><p>{Object.keys(filters).length ? "Clear filters or choose a broader combination." : "Activity appears after a tracked repository sends development events."}</p>{Object.keys(filters).length > 0 && <Button className="trace-button-secondary" onClick={clear}>Clear filters</Button>}</Card>
       : <section className="activity-timeline" aria-label="Development activity timeline">{Object.entries(groupByDay(items, timezone)).map(([date, group]) => <section className="activity-day-group" key={date}><h2>{new Date(`${date}T12:00:00.000Z`).toLocaleDateString("en-US", { dateStyle: "long", timeZone: "UTC" })}</h2><ul>{group?.map((item) => <li key={item.id}><ActivitySummaryCard headingLevel={3} item={item} timezone={timezone} /></li>)}</ul></section>)}</section>}
     {nextCursor !== null && <div className="activity-pagination"><Button className="trace-button-secondary" disabled={loadingMore} onClick={() => void loadMore()}>{loadingMore ? "Loading…" : "Load more activity"}</Button></div>}

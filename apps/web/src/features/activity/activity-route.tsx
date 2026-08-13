@@ -4,6 +4,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { activityListQuerySchema, activityListResponseSchema, activitySourceSchema, activityTypeSchema, type ActivityListQuery, type ActivityListResponse } from "@trace/shared";
 import { ActivityExperience, type ActivityFilters } from "./activity-experience";
 import { activityFixtureItems } from "@/mocks/fixtures/activity";
+import { listActivity } from "@/api/activity";
 
 function localDate(value: string, timezone: string) {
   const parts = new Intl.DateTimeFormat("en-US", { timeZone: timezone, year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(new Date(value));
@@ -11,7 +12,7 @@ function localDate(value: string, timezone: string) {
   return `${part("year")}-${part("month")}-${part("day")}`;
 }
 
-async function loadFixtureActivity(query: Partial<ActivityListQuery>): Promise<ActivityListResponse> {
+export async function loadFixtureActivity(query: Partial<ActivityListQuery>): Promise<ActivityListResponse> {
   const parsedQuery = activityListQuerySchema.parse(query);
   const filtered = activityFixtureItems.filter((item) =>
     (parsedQuery.date === undefined || localDate(item.occurredAt, parsedQuery.timezone) === parsedQuery.date) &&
@@ -71,5 +72,5 @@ export function ActivityRoute() {
     router.replace(next.size === 0 ? pathname : `${pathname}?${next.toString()}`, { scroll: false });
   }
   const timezone = validTimezone(searchParams.get("timezone"));
-  return <ActivityExperience loadActivity={loadFixtureActivity} initialFilters={initialFilters} timezone={timezone} onFiltersChange={update} />;
+  return <ActivityExperience loadActivity={listActivity} initialFilters={initialFilters} timezone={timezone} onFiltersChange={update} />;
 }
