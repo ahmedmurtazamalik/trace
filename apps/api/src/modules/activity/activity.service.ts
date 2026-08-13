@@ -155,11 +155,14 @@ export class ActivityService {
         AND ae.occurred_at >= ${day.start} AND ae.occurred_at < ${day.end}
     `))[0];
     const activityCount = this.safeCount(aggregate?.activityCount ?? 0n);
-    if (activityCount === 0) return this.emptyDashboard(query, 'NO_ACTIVITY');
-    const recent = await this.dashboardRecent(userId, query, day);
     const incompleteDeliveries = await this.prisma.githubWebhookDelivery.count({
       where: {
         repository: {
+          accessRemovedAt: null,
+          installation: {
+            suspendedAt: null,
+            githubAccount: { userId, unlinkedAt: null },
+          },
           users: {
             some: {
               userId,
@@ -173,6 +176,8 @@ export class ActivityService {
         receivedAt: { gte: day.start, lt: day.end },
       },
     });
+    if (incompleteDeliveries === 0 && activityCount === 0) return this.emptyDashboard(query, 'NO_ACTIVITY');
+    const recent = activityCount === 0 ? [] : await this.dashboardRecent(userId, query, day);
     return {
       date: query.date,
       timezone: query.timezone,

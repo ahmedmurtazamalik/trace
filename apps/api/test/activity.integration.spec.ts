@@ -51,26 +51,28 @@ describe('Activity API', () => {
   });
 
   async function cleanup(): Promise<void> {
-    const user = await prisma.user.findUnique({
-      where: { username },
+    const users = await prisma.user.findMany({
+      where: { username: { in: [username, 'day7.activity.foreign'] } },
       include: { githubAccount: { include: { installations: true } } },
     });
-    if (user?.githubAccount !== null && user?.githubAccount !== undefined) {
-      const installationIds = user.githubAccount.installations.map((installation) => installation.id);
-      const repositories = await prisma.repository.findMany({
-        where: { githubInstallationId: { in: installationIds } },
-        select: { id: true },
-      });
-      const repositoryIds = repositories.map((repository) => repository.id);
-      await prisma.githubWebhookDelivery.deleteMany({ where: { repositoryId: { in: repositoryIds } } });
-      await prisma.activityEvent.deleteMany({ where: { repositoryId: { in: repositoryIds } } });
-      await prisma.userRepository.deleteMany({ where: { repositoryId: { in: repositoryIds } } });
-      await prisma.repository.deleteMany({ where: { id: { in: repositoryIds } } });
-      await prisma.githubInstallation.deleteMany({ where: { githubAccountId: user.githubAccount.id } });
-      await prisma.githubAccount.delete({ where: { id: user.githubAccount.id } });
+    for (const user of users) {
+      if (user.githubAccount !== null) {
+        const installationIds = user.githubAccount.installations.map((installation) => installation.id);
+        const repositories = await prisma.repository.findMany({
+          where: { githubInstallationId: { in: installationIds } },
+          select: { id: true },
+        });
+        const repositoryIds = repositories.map((repository) => repository.id);
+        await prisma.githubWebhookDelivery.deleteMany({ where: { repositoryId: { in: repositoryIds } } });
+        await prisma.activityEvent.deleteMany({ where: { repositoryId: { in: repositoryIds } } });
+        await prisma.userRepository.deleteMany({ where: { repositoryId: { in: repositoryIds } } });
+        await prisma.repository.deleteMany({ where: { id: { in: repositoryIds } } });
+        await prisma.githubInstallation.deleteMany({ where: { githubAccountId: user.githubAccount.id } });
+        await prisma.githubAccount.delete({ where: { id: user.githubAccount.id } });
+      }
     }
     await prisma.contributor.deleteMany({ where: { username: { startsWith: 'day7-activity-' } } });
-    await prisma.user.deleteMany({ where: { username } });
+    await prisma.user.deleteMany({ where: { username: { in: [username, 'day7.activity.foreign'] } } });
   }
 
   async function historicalActivity(): Promise<{ sessionCookie: string; repositoryId: string }> {
@@ -239,6 +241,71 @@ describe('Activity API', () => {
     expect(dashboardResponseSchema.parse(hiddenResponse.body as unknown)).toMatchObject({ state: 'NO_ACTIVITY', metrics: { activityCount: 0 }, recentActivity: [] });
     await request(server).get('/api/v1/dashboard')
       .query({ date: 'not-a-date', timezone: 'UTC' }).set('Cookie', sessionCookie).expect(400);
+
+    const pendingWithNoActivity = await prisma.githubWebhookDelivery.create({
+      data: {
+        githubDeliveryId: 'day7-dashboard-pending-empty',
+        eventName: 'push',
+        githubInstallationId: 792n,
+        githubRepositoryId: 77_002n,
+        installationId: installation.id,
+        repositoryId: repository.id,
+        payloadHash: 'b'.repeat(64),
+        payload: {},
+        status: 'pending',
+        receivedAt: new Date('2026-08-12T11:59:00.000Z'),
+      },
+    });
+    const partialWithNoActivityResponse = await request(server).get('/api/v1/dashboard')
+      .query({ date: '2026-08-12', timezone: 'UTC' }).set('Cookie', sessionCookie).expect(200);
+    expect(dashboardResponseSchema.parse(partialWithNoActivityResponse.body as unknown).state).toBe('PARTIAL');
+    await prisma.githubWebhookDelivery.update({
+      where: { id: pendingWithNoActivity.id },
+      data: { status: 'processing' },
+    });
+    const processingWithNoActivityResponse = await request(server).get('/api/v1/dashboard')
+      .query({ date: '2026-08-12', timezone: 'UTC', repositoryId: repository.id }).set('Cookie', sessionCookie).expect(200);
+    expect(dashboardResponseSchema.parse(processingWithNoActivityResponse.body as unknown).state).toBe('PARTIAL');
+    const mismatchedRepositoryResponse = await request(server).get('/api/v1/dashboard')
+      .query({ date: '2026-08-12', timezone: 'UTC', repositoryId: 'inaccessible-repository' }).set('Cookie', sessionCookie).expect(200);
+    expect(dashboardResponseSchema.parse(mismatchedRepositoryResponse.body as unknown).state).toBe('NO_ACTIVITY');
+    await prisma.githubWebhookDelivery.update({
+      where: { id: pendingWithNoActivity.id },
+      data: { status: 'completed', processedAt: new Date('2026-08-12T12:00:00.000Z') },
+    });
+
+    const foreignUser = await prisma.user.create({
+      data: { username: 'day7.activity.foreign', email: 'day7.activity.foreign@example.test', passwordHash: 'not-used-by-this-test' },
+    });
+    const foreignAccount = await prisma.githubAccount.create({
+      data: { userId: foreignUser.id, githubUserId: 783_233n, githubUsername: 'day7-activity-foreign' },
+    });
+    const foreignInstallation = await prisma.githubInstallation.create({
+      data: { githubInstallationId: 793n, githubAccountId: foreignAccount.id, accountType: 'USER', accountLogin: 'day7-activity-foreign' },
+    });
+    const foreignRepository = await prisma.repository.create({
+      data: { githubRepositoryId: 77_003n, githubInstallationId: foreignInstallation.id, owner: 'day7-activity-foreign', name: 'private', fullName: 'day7-activity-foreign/private', private: true, defaultBranch: 'main' },
+    });
+    await prisma.userRepository.create({
+      data: { userId: foreignUser.id, repositoryId: foreignRepository.id, trackingEnabled: true, createdAt: new Date('2026-08-12T00:00:00.000Z') },
+    });
+    await prisma.githubWebhookDelivery.create({
+      data: {
+        githubDeliveryId: 'day7-dashboard-foreign-pending',
+        eventName: 'push',
+        githubInstallationId: 793n,
+        githubRepositoryId: 77_003n,
+        installationId: foreignInstallation.id,
+        repositoryId: foreignRepository.id,
+        payloadHash: 'c'.repeat(64),
+        payload: {},
+        status: 'pending',
+        receivedAt: new Date('2026-08-12T12:00:00.000Z'),
+      },
+    });
+    const foreignPendingResponse = await request(server).get('/api/v1/dashboard')
+      .query({ date: '2026-08-12', timezone: 'UTC' }).set('Cookie', sessionCookie).expect(200);
+    expect(dashboardResponseSchema.parse(foreignPendingResponse.body as unknown).state).toBe('NO_ACTIVITY');
 
     await prisma.activityEvent.create({
       data: {
