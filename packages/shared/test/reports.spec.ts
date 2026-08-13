@@ -106,7 +106,7 @@ describe('Frozen Day 8-10 report contract', () => {
     expect(reportDetailResponseSchema.safeParse({
       report: { ...detailFixture.report, artifacts: [firstArtifact, firstArtifact] },
     }).success).toBe(false);
-    for (const fileName of ['.', '..', 'report\r\nContent-Disposition: attachment', 'report\u0001.pdf']) {
+    for (const fileName of ['.', '..', '.hidden.pdf', ' report.pdf', 'report.pdf ', 'report.', 'report\r\nContent-Disposition: attachment', 'report\u0001.pdf']) {
       expect(reportDetailResponseSchema.safeParse({
         report: { ...detailFixture.report, artifacts: [{ ...firstArtifact, fileName }] },
       }).success).toBe(false);
