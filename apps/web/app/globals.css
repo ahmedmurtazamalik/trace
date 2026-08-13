@@ -365,8 +365,13 @@ main#main-content { max-width: 1540px; margin: 0 auto; padding: clamp(1.65rem, 4
 .activity-event-icon { display: grid; place-items: center; width: 2.5rem; height: 2.5rem; border: 1px solid #bfdbfe; border-radius: .75rem; color: #1d4ed8; background: #eff6ff; }
 .activity-event-heading { display: flex; align-items: center; gap: .55rem; }
 .activity-event-heading > span:last-child { color: #66778d; font-size: .62rem; font-weight: 850; letter-spacing: .08em; }
-.activity-event-body h2 { margin: .55rem 0 .25rem; color: #172033; font-size: .96rem; }
-.activity-event-body p { margin: 0; color: #5a6b81; font-size: .76rem; }
+.activity-event-body h2 { margin: .55rem 0 .35rem; color: #172033; font-size: .96rem; }
+.activity-contributor { display: flex; align-items: center; flex-wrap: wrap; gap: .4rem; color: #5a6b81; font-size: .76rem; }
+.activity-contributor-avatar { flex: 0 0 auto; width: 2rem; height: 2rem; border: 1px solid #d7e1ed; border-radius: 50%; object-fit: cover; background: #eef4fb; }
+.activity-contributor-fallback { display: grid; place-items: center; color: #1e40af; font-size: .65rem; font-weight: 850; }
+.activity-contributor-identity { display: grid; line-height: 1.15; }
+.activity-contributor-identity strong { color: #34445a; font-size: .76rem; }
+.activity-contributor-identity small { color: #718096; font-size: .65rem; }
 .activity-event-card time { color: #66778d; font-size: .69rem; white-space: nowrap; }
 .activity-facts { display: flex; flex-wrap: wrap; gap: .45rem; margin-top: .7rem; }
 .activity-facts span { padding: .28rem .48rem; border-radius: .5rem; color: #53647a; background: #f1f5f9; font-size: .66rem; font-weight: 750; }

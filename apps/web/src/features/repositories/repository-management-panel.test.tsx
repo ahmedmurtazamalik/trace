@@ -42,6 +42,15 @@ describe("repository management", () => {
     expect(screen.getByRole("button", { name: "Stop tracking archive-fixture-org/legacy-api" })).toBeEnabled();
   });
 
+  it("explains that GitHub must be reconnected before historical tracking can resume", async () => {
+    renderPanel();
+    await screen.findByRole("link", { name: "archive-fixture-org/legacy-api" });
+    await userEvent.click(screen.getByRole("button", { name: "Stop tracking archive-fixture-org/legacy-api" }));
+
+    expect(screen.getByRole("button", { name: "Reconnect GitHub to track archive-fixture-org/legacy-api" })).toBeDisabled();
+    expect(screen.getByRole("link", { name: "Reconnect GitHub" })).toHaveAttribute("href", "/github");
+  });
+
   it("debounces server search, resets the list, and reports URL query changes", async () => {
     const props = renderPanel();
     const search = await screen.findByRole("searchbox", { name: "Search repositories" });
@@ -59,6 +68,20 @@ describe("repository management", () => {
     await userEvent.click(button);
     expect(updateTracking).toHaveBeenCalledWith("repo_01", true, "csrf-live");
     expect(await screen.findByRole("alert")).toHaveTextContent("temporarily unavailable");
+    expect(screen.getByRole("button", { name: "Track trace-fixture-org/trace" })).toBeEnabled();
+  });
+
+  it("confirms saved tracking settings and allows another change while access remains active", async () => {
+    renderPanel();
+    const enable = await screen.findByRole("button", { name: "Track trace-fixture-org/trace" });
+    await userEvent.click(enable);
+
+    expect(await screen.findByRole("status")).toHaveTextContent("Tracking enabled for trace-fixture-org/trace");
+    const disable = screen.getByRole("button", { name: "Stop tracking trace-fixture-org/trace" });
+    expect(disable).toBeEnabled();
+    await userEvent.click(disable);
+
+    expect(await screen.findByRole("status")).toHaveTextContent("Tracking stopped for trace-fixture-org/trace");
     expect(screen.getByRole("button", { name: "Track trace-fixture-org/trace" })).toBeEnabled();
   });
 

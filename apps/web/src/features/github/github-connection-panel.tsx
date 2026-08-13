@@ -164,7 +164,7 @@ export function GithubConnectionPanel({
             : <>Linked as <strong>@{account?.username}</strong>. Trace sign-in remains separate.</>}</p>
         <div className="github-actions">
           {(disconnected || reconnectRequired) && <Button onClick={begin} disabled={Boolean(pending)}>{pending === "connect" ? "Opening GitHub…" : reconnectRequired ? "Reconnect GitHub" : "Connect GitHub"}</Button>}
-          {!disconnected && <Button className="trace-button-secondary" onClick={() => setConfirmDisconnect(true)} disabled={Boolean(pending)}>Disconnect GitHub</Button>}
+          {!disconnected && !reconnectRequired && <Button className="trace-button-secondary" onClick={() => setConfirmDisconnect(true)} disabled={Boolean(pending)}>Disconnect GitHub</Button>}
         </div>
       </div>
     </Card>

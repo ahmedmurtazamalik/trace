@@ -21,7 +21,7 @@ describe("Day 5 activity experience", () => {
     expect(within(timeline).getByText(/8 files/)).toBeInTheDocument();
     expect(within(timeline).getByText(/\+248/)).toBeInTheDocument();
     expect(within(timeline).getByText(/−31/)).toBeInTheDocument();
-    expect(within(timeline).getByText(/external-contributor/)).toBeInTheDocument();
+    expect(within(timeline).getByText("@external-contributor")).toBeInTheDocument();
     expect(within(timeline).getByText("Push")).toBeInTheDocument();
   });
 
