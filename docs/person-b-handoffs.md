@@ -379,3 +379,24 @@ No Person A-owned API, worker, database, shared-contract, root workspace, infras
 ### Joint gate
 - Real API/database integration verifies authenticated Activity and Dashboard routes, canonical stored events, authorization bounds, state derivation, and exact metric contribution.
 - Fixture-backed and intercepted browser tests remain labeled frontend evidence; a real GitHub webhook delivery remains a separate operational acceptance gate.
+
+## Day 7 — Activity detail enrichment (Ali patchwork)
+
+### Done
+- Expanded each Activity card to show the contributor avatar, display name, and distinct `@username` from the existing frozen Activity response.
+- Added an accessible avatar label and an initials fallback when GitHub does not provide an avatar URL.
+- Replaced the abbreviated timestamp with exact date, time to the second, and timezone while retaining the canonical ISO timestamp in the `<time>` element.
+- Kept normalized branch display and changed-file count visible, with correct singular/plural wording (`1 file changed`, `2 files changed`).
+- Added responsive card styles without changing Person A-owned API, worker, database, or shared-contract files.
+
+### TDD and verification
+- Expected RED: the focused card regression failed because no avatar/username existed, the timestamp was abbreviated, and the file count rendered as `1 files`.
+- Focused Activity card regression: PASS, 1/1.
+- Complete web suite: PASS, 97/97.
+- Web lint and typecheck: PASS with no warnings or errors.
+- Production build: PASS with 14/14 static pages generated under `NODE_ENV=production`.
+- `git diff --check`: PASS.
+- Browser visual QA at `http://localhost:3002/activity`: PASS; contributor identity and exact timestamp are readable with no clipping or overlap. The demo record has no branch/file facts, so those remain truthfully omitted there; the focused contract regression verifies both when supplied.
+
+### Publication status
+- Local-only on `day7_ali_patchwork`; not committed, pushed, or opened as a PR.

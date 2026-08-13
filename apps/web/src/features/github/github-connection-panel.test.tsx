@@ -123,4 +123,10 @@ describe("GitHub connection UX", () => {
     expect(screen.getByRole("alert")).toHaveTextContent("GitHub could not complete the connection");
     expect(screen.queryByText(/state|oauth|provider/i)).not.toBeInTheDocument();
   });
+
+  it("does not offer disconnect when GitHub is already disconnected and needs reconnection", async () => {
+    renderPanel({ loadStatus: vi.fn().mockResolvedValue(reconnect) });
+    expect(await screen.findByRole("button", { name: "Reconnect GitHub" })).toBeEnabled();
+    expect(screen.queryByRole("button", { name: "Disconnect GitHub" })).not.toBeInTheDocument();
+  });
 });

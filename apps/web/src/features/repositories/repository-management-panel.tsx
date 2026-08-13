@@ -120,10 +120,12 @@ export function RepositoryManagementPanel({
     if (csrfToken === undefined) return;
     const nextTracking = !repository.trackingEnabled;
     setPendingRepositoryId(repository.id);
+    setNotice(undefined);
     setUpdateError(undefined);
     try {
       const result = await updateTracking(repository.id, nextTracking, csrfToken);
       setRepositories((current) => current.map((item) => item.id === result.repositoryId ? { ...item, trackingEnabled: result.trackingEnabled } : item));
+      setNotice(`Tracking ${result.trackingEnabled ? "enabled" : "stopped"} for ${repository.fullName}.`);
     } catch (error) {
       setUpdateError(message(error, `Trace could not update tracking for ${repository.fullName}. Please try again.`));
     } finally {
@@ -171,7 +173,8 @@ export function RepositoryManagementPanel({
           <dl className="repository-metadata"><div><dt>Default branch</dt><dd>{repository.defaultBranch}</dd></div><div><dt>Contributors</dt><dd>{repository.contributorCount}</dd></div><div><dt>Last activity</dt><dd>{repository.lastActivityAt === null ? "None retained" : new Date(repository.lastActivityAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</dd></div></dl>
           <div className="repository-actions">
             {repository.url !== null && <a className="repository-link" href={repository.url} target="_blank" rel="noreferrer">Open on GitHub <ExternalLink aria-hidden="true" size={15} /></a>}
-            <Button className={repository.trackingEnabled ? "trace-button-secondary" : undefined} disabled={pending || cannotEnable || csrfToken === undefined} onClick={() => void toggleTracking(repository)} aria-label={`${repository.trackingEnabled ? "Stop tracking" : "Track"} ${repository.fullName}`}>{pending ? "Updating…" : repository.trackingEnabled ? "Stop tracking" : "Track repository"}</Button>
+            <Button className={repository.trackingEnabled ? "trace-button-secondary" : undefined} disabled={pending || cannotEnable || csrfToken === undefined} onClick={() => void toggleTracking(repository)} aria-label={cannotEnable ? `Reconnect GitHub to track ${repository.fullName}` : `${repository.trackingEnabled ? "Stop tracking" : "Track"} ${repository.fullName}`}>{pending ? "Updating…" : cannotEnable ? "Reconnect GitHub to track" : repository.trackingEnabled ? "Stop tracking" : "Track repository"}</Button>
+            {cannotEnable && <Link className="repository-link" href="/github">Reconnect GitHub</Link>}
           </div>
         </Card>;
       })}
