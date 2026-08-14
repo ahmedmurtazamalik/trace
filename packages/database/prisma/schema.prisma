@@ -325,6 +325,10 @@ model Report {
   publishedAt  DateTime?      @map("published_at")
   processingToken String?     @map("processing_token")
   processingExpiresAt DateTime? @map("processing_expires_at")
+  renderRevision Int?         @map("render_revision")
+  renderGeneration Int        @default(0) @map("render_generation")
+  renderPublishedAt DateTime? @map("render_published_at")
+  currentRevisionId String?   @map("current_revision_id")
   aiOutput      Json?         @map("ai_output")
   latexPath     String?       @map("latex_path")
   pdfPath       String?       @map("pdf_path")
@@ -332,7 +336,8 @@ model Report {
   completedAt   DateTime?     @map("completed_at")
   error         String?
   user          User          @relation(fields: [userId], references: [id], onDelete: Restrict)
-  revisions     ReportRevision[]
+  revisions     ReportRevision[] @relation("ReportRevisions")
+  currentRevision ReportRevision? @relation("CurrentReportRevision", fields: [currentRevisionId], references: [id], onDelete: SetNull)
   artifacts     ReportArtifact[]
 
   @@unique([userId, reportDate])
@@ -348,8 +353,10 @@ model ReportRevision {
   revision  Int
   source    ReportRevisionSource
   content   Json
+  latexSource String?             @db.Text @map("latex_source")
   createdAt DateTime             @default(now()) @map("created_at")
-  report    Report               @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  report    Report               @relation("ReportRevisions", fields: [reportId], references: [id], onDelete: Cascade)
+  currentForReports Report[]      @relation("CurrentReportRevision")
   artifacts ReportArtifact[]
 
   @@unique([reportId, revision])
@@ -360,15 +367,16 @@ model ReportRevision {
 model ReportArtifact {
   id         String             @id @default(cuid())
   reportId   String             @map("report_id")
-  revisionId String?            @map("revision_id")
+  revisionId String             @map("revision_id")
   kind       ReportArtifactKind
   storageKey String             @unique @map("storage_key")
   sizeBytes  Int                @map("size_bytes")
   checksum   String
   createdAt  DateTime           @default(now()) @map("created_at")
   report     Report             @relation(fields: [reportId], references: [id], onDelete: Cascade)
-  revision   ReportRevision?    @relation(fields: [revisionId, reportId], references: [id, reportId], onDelete: Restrict)
+  revision   ReportRevision     @relation(fields: [revisionId, reportId], references: [id, reportId], onDelete: Restrict)
 
+  @@unique([reportId, revisionId, kind])
   @@index([reportId, createdAt])
   @@map("report_artifacts")
 }

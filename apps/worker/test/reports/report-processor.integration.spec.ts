@@ -103,6 +103,30 @@ describe('structured report processor', () => {
     expect(duplicateGenerate).not.toHaveBeenCalled();
   });
 
+  it('cannot release a terminal report back to pending after stale initial-generation work', async () => {
+    const valid = await new DeterministicReportProvider().generate(snapshot);
+    let releaseOwner: (() => void) | undefined;
+    const ownerWait = new Promise<void>((resolve) => { releaseOwner = resolve; });
+    const generate = jest.fn(async () => { await ownerWait; return valid; });
+    const processor = new ReportProcessor(prisma, { generate }, { maximumAttempts: 1 });
+
+    const processing = processor.process(reportId);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    await prisma.report.update({
+      where: { id: reportId },
+      data: { status: 'failed', error: 'Report generation failed.' },
+    });
+    releaseOwner?.();
+    await expect(processing).rejects.toThrow('REPORT_PROCESSING_RETRY');
+
+    const redeliveryGenerate = jest.fn(() => Promise.resolve(valid));
+    await new ReportProcessor(prisma, { generate: redeliveryGenerate }).process(reportId);
+    const report = await prisma.report.findUniqueOrThrow({ where: { id: reportId }, include: { revisions: true } });
+    expect(report).toMatchObject({ status: 'failed', error: 'Report generation failed.' });
+    expect(report.revisions).toHaveLength(0);
+    expect(redeliveryGenerate).not.toHaveBeenCalled();
+  });
+
   it('prevents an expired owner from persisting after a successor claim', async () => {
     const valid = await new DeterministicReportProvider().generate(snapshot);
     let releaseOwner: (() => void) | undefined;
@@ -115,7 +139,7 @@ describe('structured report processor', () => {
     await prisma.report.update({ where: { id: reportId }, data: { processingExpiresAt: new Date(0) } });
     await new ReportProcessor(prisma, new DeterministicReportProvider(), { maximumAttempts: 1 }).process(reportId);
     releaseOwner?.();
-    await first;
+    await expect(first).rejects.toThrow('REPORT_PROCESSING_RETRY');
     const report = await prisma.report.findUniqueOrThrow({ where: { id: reportId }, include: { revisions: true } });
     expect(report.revisions).toHaveLength(1);
     expect(report.processingToken).toBeNull();

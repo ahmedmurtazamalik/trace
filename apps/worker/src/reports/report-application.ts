@@ -1,6 +1,9 @@
 import { PrismaClient } from '@trace/database';
+import { artifactStorageFromEnvironment } from '@trace/report-storage';
+import { DockerLatexCompiler } from '../latex/latex-compiler';
 import { ReportQueueWorker, type ReportQueueWorkerOptions } from '../queues/reports/report.worker';
 import { reportProviderFromEnvironment } from './configured-report-provider';
+import { ReportArtifactProcessor } from './report-artifact.processor';
 import { ReportProcessor } from './report.processor';
 
 interface ReportProcessorLike { process(reportId: string): Promise<void> }
@@ -23,7 +26,14 @@ export async function startReportWorker(options: ReportApplicationOptions): Prom
   let connected = false;
   try {
     const provider = reportProviderFromEnvironment(options.environment);
-    const processor = options.processor ?? new ReportProcessor(prisma, provider, { maximumAttempts: configuration.providerAttempts });
+    const generation = new ReportProcessor(prisma, provider, { maximumAttempts: configuration.providerAttempts });
+    const processor = options.processor ?? new ReportArtifactProcessor(
+      prisma,
+      generation,
+      new DockerLatexCompiler({ image: configuration.latexImage, timeoutMs: configuration.compileTimeoutMs }),
+      artifactStorageFromEnvironment(options.environment),
+      configuration.compileTimeoutMs + 60_000,
+    );
     await prisma.$connect();
     connected = true;
     worker = (options.workerFactory ?? ((workerOptions) => new ReportQueueWorker(workerOptions)))({
@@ -85,14 +95,23 @@ function reportWorkerConfiguration(environment: NodeJS.ProcessEnv): {
   queueName: string;
   concurrency: number;
   providerAttempts: number;
+  latexImage: string;
+  compileTimeoutMs: number;
 } {
+  const nodeEnvironment = environment.NODE_ENV;
   const databaseUrl = environment.DATABASE_URL;
   const redisUrl = environment.REDIS_URL;
   const provider = environment.REPORT_LLM_PROVIDER ?? 'fake';
+  if (nodeEnvironment !== 'development' && nodeEnvironment !== 'test' && nodeEnvironment !== 'production') {
+    throw new Error('Invalid report worker configuration.');
+  }
+  const latexImage = environment.REPORT_LATEX_IMAGE ?? (nodeEnvironment === 'production' ? undefined : 'trace-latex:local');
   if (
     databaseUrl === undefined || !databaseUrl.startsWith('postgresql://')
     || redisUrl === undefined || !/^rediss?:\/\//.test(redisUrl)
-    || (environment.NODE_ENV === 'production' && provider === 'fake')
+    || latexImage === undefined
+    || (nodeEnvironment === 'production' && !/@sha256:[a-f0-9]{64}$/.test(latexImage))
+    || (nodeEnvironment === 'production' && provider === 'fake')
   ) throw new Error('Invalid report worker configuration.');
   return {
     databaseUrl,
@@ -100,6 +119,8 @@ function reportWorkerConfiguration(environment: NodeJS.ProcessEnv): {
     queueName: 'report-generation',
     concurrency: boundedInteger(environment.REPORT_WORKER_CONCURRENCY, 2, 1, 16),
     providerAttempts: boundedInteger(environment.REPORT_PROVIDER_ATTEMPTS, 3, 1, 5),
+    latexImage,
+    compileTimeoutMs: boundedInteger(environment.REPORT_LATEX_TIMEOUT_MS, 30_000, 5_000, 120_000),
   };
 }
 

@@ -18,7 +18,7 @@ describe('report worker application', () => {
     }));
 
     const stop = await startReportWorker({
-      environment: { DATABASE_URL: 'postgresql://trace:***@localhost/trace', REDIS_URL: 'redis://localhost:6379', REPORT_LLM_PROVIDER: 'fake' },
+      environment: { NODE_ENV: 'test', DATABASE_URL: 'postgresql://trace:***@localhost/trace', REDIS_URL: 'redis://localhost:6379', REPORT_LLM_PROVIDER: 'fake' },
       signals: new SignalProcess() as unknown as NodeJS.Process,
       prisma: { $connect: connect, $disconnect: disconnect } as never,
       processor: { process } as never,
@@ -35,6 +35,17 @@ describe('report worker application', () => {
     await expect(startReportWorker({ environment: {
       NODE_ENV: 'production', DATABASE_URL: 'postgresql://trace:***@localhost/trace', REDIS_URL: 'redis://localhost:6379', REPORT_LLM_PROVIDER: 'fake',
     } })).rejects.toThrow('Invalid report worker configuration.');
-    await expect(startReportWorker({ environment: { DATABASE_URL: 'bad', REDIS_URL: 'bad' } })).rejects.toThrow('Invalid report worker configuration.');
+    await expect(startReportWorker({ environment: {
+      NODE_ENV: 'production', DATABASE_URL: 'postgresql://trace:***@localhost/trace', REDIS_URL: 'redis://localhost:6379',
+      REPORT_LLM_PROVIDER: 'openai', REPORT_LATEX_IMAGE: 'trace-latex:latest',
+    } })).rejects.toThrow('Invalid report worker configuration.');
+    await expect(startReportWorker({ environment: {
+      NODE_ENV: 'prod', DATABASE_URL: 'postgresql://trace:***@localhost/trace', REDIS_URL: 'redis://localhost:6379',
+      REPORT_LLM_PROVIDER: 'openai', REPORT_LATEX_IMAGE: `trace-latex@sha256:${'a'.repeat(64)}`,
+    } })).rejects.toThrow('Invalid report worker configuration.');
+    await expect(startReportWorker({ environment: {
+      DATABASE_URL: 'postgresql://trace:***@localhost/trace', REDIS_URL: 'redis://localhost:6379', REPORT_LLM_PROVIDER: 'fake',
+    } })).rejects.toThrow('Invalid report worker configuration.');
+    await expect(startReportWorker({ environment: { NODE_ENV: 'test', DATABASE_URL: 'bad', REDIS_URL: 'bad' } })).rejects.toThrow('Invalid report worker configuration.');
   });
 });

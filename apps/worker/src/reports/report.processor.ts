@@ -101,6 +101,7 @@ export class ReportProcessor {
             "error" = NULL,
             "completed_at" = NULL
         WHERE "id" = ${reportId}
+          AND "status" IN ('pending', 'processing')
           AND NOT EXISTS (SELECT 1 FROM "report_revisions" WHERE "report_id" = ${reportId})
       `;
       if (claimed !== 1) return { kind: 'done' };
@@ -110,7 +111,7 @@ export class ReportProcessor {
 
   private async failClaim(reportId: string, token: string): Promise<void> {
     await this.withReportLock(reportId, async (transaction) => {
-      await transaction.$executeRaw`
+      const updated = await transaction.$executeRaw`
         UPDATE "reports"
         SET "status" = 'failed',
             "error" = ${SAFE_FAILURE},
@@ -119,10 +120,12 @@ export class ReportProcessor {
             "processing_token" = NULL,
             "processing_expires_at" = NULL
         WHERE "id" = ${reportId}
+          AND "status" = 'processing'
           AND "processing_token" = ${token}
           AND "processing_expires_at" > clock_timestamp()
           AND NOT EXISTS (SELECT 1 FROM "report_revisions" WHERE "report_id" = ${reportId})
       `;
+      if (updated !== 1) throw new Error(RETRYABLE_PROCESSING_ERROR);
     });
   }
 
@@ -138,20 +141,24 @@ export class ReportProcessor {
             AND NOT EXISTS (SELECT 1 FROM "report_revisions" WHERE "report_id" = ${reportId})
         ) AS "owned"
       `;
-      if (owner[0]?.owned !== true) return;
-      await transaction.reportRevision.create({ data: { reportId, revision: 1, source: 'ai', content } });
+      if (owner[0]?.owned !== true) throw new Error(RETRYABLE_PROCESSING_ERROR);
+      const revision = await transaction.reportRevision.create({ data: { reportId, revision: 1, source: 'ai', content } });
       const updated = await transaction.$executeRaw`
         UPDATE "reports"
         SET "status" = 'processing',
             "ai_output" = ${JSON.stringify(content)}::jsonb,
+            "current_revision_id" = ${revision.id},
+            "render_revision" = 1,
+            "render_generation" = "render_generation" + 1,
+            "render_published_at" = NULL,
             "error" = NULL,
             "completed_at" = NULL,
             "processing_token" = NULL,
             "processing_expires_at" = NULL
         WHERE "id" = ${reportId}
+          AND "status" = 'processing'
           AND "processing_token" = ${token}
           AND "processing_expires_at" > clock_timestamp()
-          AND "status" = 'processing'
       `;
       if (updated !== 1) throw new Error(RETRYABLE_PROCESSING_ERROR);
     });
@@ -159,17 +166,19 @@ export class ReportProcessor {
 
   private async releaseClaim(reportId: string, token: string): Promise<void> {
     await this.withReportLock(reportId, async (transaction) => {
-      await transaction.$executeRaw`
+      const updated = await transaction.$executeRaw`
         UPDATE "reports"
         SET "status" = 'pending',
             "processing_token" = NULL,
             "processing_expires_at" = NULL,
             "error" = NULL
         WHERE "id" = ${reportId}
+          AND "status" = 'processing'
           AND "processing_token" = ${token}
           AND "processing_expires_at" > clock_timestamp()
           AND NOT EXISTS (SELECT 1 FROM "report_revisions" WHERE "report_id" = ${reportId})
       `;
+      if (updated !== 1) throw new Error(RETRYABLE_PROCESSING_ERROR);
     });
   }
 

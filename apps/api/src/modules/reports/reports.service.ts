@@ -1,5 +1,6 @@
 import { HttpException, HttpStatus, Inject, Injectable } from '@nestjs/common';
-import { createHmac, timingSafeEqual } from 'node:crypto';
+import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
+import type { ArtifactStorage } from '@trace/report-storage';
 import type { TraceConfig } from '@trace/config';
 import { Prisma, PrismaService } from '@trace/database';
 import {
@@ -8,7 +9,11 @@ import {
   reportDetailSchema,
   reportFactsSchema,
   reportListQuerySchema,
+  reportRegenerationRequestSchema,
+  reportRevisionUpdateRequestSchema,
   reportSummarySchema,
+  reportDownloadQuerySchema,
+  type ReportContent,
   type ReportCreateRequest,
   type ReportCreateResponse,
   type ReportDetailResponse,
@@ -18,6 +23,7 @@ import {
   type ReportSummary,
 } from '@trace/shared';
 import { TRACE_CONFIG } from '../../common/config/config.token';
+import { REPORT_ARTIFACT_STORAGE } from './report-storage.token';
 import { ReportPublisher } from './report.publisher';
 
 type ReportActivityRow = {
@@ -32,6 +38,13 @@ type ReportActivityRow = {
 };
 
 type MutableFacts = ReportFacts;
+type ReportProsePatch = ReturnType<typeof reportRevisionUpdateRequestSchema.parse>['prosePatch'];
+export interface ReportArtifactDownload {
+  bytes: Buffer;
+  fileName: string;
+  contentType: 'application/pdf' | 'application/x-tex';
+  checksum: string;
+}
 const MAX_REPORT_ACTIVITY_ROWS = 10_000;
 const MAX_REPORT_EVIDENCE_TEXT_BYTES = 500_000;
 
@@ -62,6 +75,7 @@ export class ReportsService {
     private readonly prisma: PrismaService,
     private readonly publisher: ReportPublisher,
     @Inject(TRACE_CONFIG) private readonly config: TraceConfig,
+    @Inject(REPORT_ARTIFACT_STORAGE) private readonly storage: ArtifactStorage,
   ) {}
 
   async create(userId: string, input: unknown): Promise<ReportCreateResponse> {
@@ -136,7 +150,7 @@ export class ReportsService {
       orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
       take: query.limit + 1,
       include: {
-        revisions: { orderBy: { revision: 'desc' }, take: 1, select: { revision: true } },
+        currentRevision: { select: { revision: true } },
         artifacts: { select: { kind: true, revision: { select: { revision: true } } } },
       },
     });
@@ -159,31 +173,199 @@ export class ReportsService {
     const report = await this.prisma.report.findFirst({
       where: { id: reportId, userId },
       include: {
-        revisions: { orderBy: { revision: 'desc' }, take: 1 },
+        currentRevision: true,
         artifacts: { include: { revision: { select: { revision: true } } }, orderBy: { createdAt: 'asc' } },
       },
     });
     if (report === null) throw this.notFound();
-    const revision = report.revisions[0] ?? null;
+    const revision = report.currentRevision;
     const detail = {
       ...this.summary(report),
       revisionSource: revision?.source ?? null,
       content: revision === null ? null : reportContentSchema.parse(revision.content),
       facts: this.snapshotFacts(report.inputSnapshot),
-      artifacts: report.artifacts.map((artifact) => {
-        if (artifact.revision === null) throw new Error('Stored report artifact has no revision.');
-        return {
-          id: artifact.id,
-          revision: artifact.revision.revision,
-          kind: artifact.kind,
-          fileName: this.artifactFileName(artifact.storageKey, artifact.kind),
-          contentType: artifact.kind === 'pdf' ? 'application/pdf' as const : 'application/x-tex' as const,
-          sizeBytes: artifact.sizeBytes,
-          checksum: artifact.checksum,
-        };
-      }),
+      artifacts: report.status !== 'completed' || revision === null
+        ? []
+        : report.artifacts
+          .filter((artifact) => artifact.revision.revision === revision.revision)
+          .map((artifact) => ({
+            id: artifact.id,
+            revision: artifact.revision.revision,
+            kind: artifact.kind,
+            fileName: this.artifactFileName(artifact.storageKey, artifact.kind),
+            contentType: artifact.kind === 'pdf' ? 'application/pdf' as const : 'application/x-tex' as const,
+            sizeBytes: artifact.sizeBytes,
+            checksum: artifact.checksum,
+          })),
     };
     return { report: reportDetailSchema.parse(detail) };
+  }
+
+  async updateRevision(userId: string, reportId: string, input: unknown): Promise<ReportDetailResponse> {
+    const request = this.parseRevisionUpdate(input);
+    await this.prisma.$transaction(async (transaction) => {
+      await transaction.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${reportId}, 0))`;
+      const report = await transaction.report.findFirst({
+        where: { id: reportId, userId },
+        include: { currentRevision: true },
+      });
+      if (report === null) throw this.notFound();
+      const current = report.currentRevision;
+      if (current !== null && current.revision !== request.expectedRevision) throw this.revisionConflict();
+      if (current === null || !['completed', 'failed'].includes(report.status)) throw this.notEditable();
+      const currentContent = reportContentSchema.parse(current.content);
+      const nextContent = this.applyProsePatch(currentContent, request.prosePatch);
+      const nextRevision = current.revision + 1;
+      const revision = await transaction.reportRevision.create({
+        data: {
+          reportId,
+          revision: nextRevision,
+          source: 'manual',
+          content: nextContent,
+        },
+      });
+      const updated = await transaction.report.updateMany({
+        where: {
+          id: reportId,
+          userId,
+          currentRevisionId: current.id,
+          renderGeneration: report.renderGeneration,
+        },
+        data: {
+          currentRevisionId: revision.id,
+          status: 'processing',
+          completedAt: null,
+          error: null,
+          processingToken: null,
+          processingExpiresAt: null,
+          renderRevision: nextRevision,
+          renderGeneration: { increment: 1 },
+          renderPublishedAt: null,
+          latexPath: null,
+          pdfPath: null,
+        },
+      });
+      if (updated.count !== 1) throw this.revisionConflict();
+    });
+    await this.publisher.publishOneBounded(reportId);
+    return this.detail(userId, reportId);
+  }
+
+  async regenerate(userId: string, reportId: string, input: unknown): Promise<ReportDetailResponse> {
+    const request = this.parseRegeneration(input);
+    await this.prisma.$transaction(async (transaction) => {
+      await transaction.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${reportId}, 0))`;
+      const report = await transaction.report.findFirst({
+        where: { id: reportId, userId },
+        include: { currentRevision: true },
+      });
+      if (report === null) throw this.notFound();
+      const current = report.currentRevision;
+      if (current !== null && current.revision !== request.expectedRevision) throw this.revisionConflict();
+      if (current === null || !['completed', 'failed'].includes(report.status)) throw this.notEditable();
+      const updated = await transaction.report.updateMany({
+        where: {
+          id: reportId,
+          userId,
+          currentRevisionId: current.id,
+          renderGeneration: report.renderGeneration,
+        },
+        data: {
+          status: 'processing',
+          completedAt: null,
+          error: null,
+          processingToken: null,
+          processingExpiresAt: null,
+          renderRevision: current.revision,
+          renderGeneration: { increment: 1 },
+          renderPublishedAt: null,
+          latexPath: null,
+          pdfPath: null,
+        },
+      });
+      if (updated.count !== 1) throw this.revisionConflict();
+    });
+    await this.publisher.publishOneBounded(reportId);
+    return this.detail(userId, reportId);
+  }
+
+  async download(userId: string, reportId: string, input: unknown): Promise<ReportArtifactDownload> {
+    const query = this.parseDownloadQuery(input);
+    const artifact = await this.prisma.reportArtifact.findFirst({
+      where: {
+        id: query.artifactId,
+        reportId,
+        report: { userId, status: 'completed', currentRevisionId: { not: null } },
+      },
+      include: {
+        report: { select: { currentRevisionId: true } },
+      },
+    });
+    if (artifact === null || artifact.revisionId !== artifact.report.currentRevisionId) throw this.artifactNotFound();
+    let bytes: Buffer;
+    try {
+      bytes = await this.storage.get(artifact.storageKey, Math.min(artifact.sizeBytes, 100_000_000));
+    } catch {
+      throw this.artifactUnavailable();
+    }
+    const checksum = createHash('sha256').update(bytes).digest('hex');
+    if (bytes.length !== artifact.sizeBytes || checksum !== artifact.checksum) throw this.artifactUnavailable();
+    return {
+      bytes,
+      fileName: this.artifactFileName(artifact.storageKey, artifact.kind),
+      contentType: artifact.kind === 'pdf' ? 'application/pdf' : 'application/x-tex',
+      checksum,
+    };
+  }
+
+  private applyProsePatch(content: ReportContent, patch: ReportProsePatch): ReportContent {
+    const repositories = content.repositories.map((repository) => ({
+      ...repository,
+      summary: patch.repositories?.find((candidate) => candidate.repositoryId === repository.repositoryId)?.summary
+        ?? repository.summary,
+      contributors: repository.contributors.map((contributor) => {
+        const repositoryPatch = patch.repositories?.find((candidate) => candidate.repositoryId === repository.repositoryId);
+        const contributorPatch = repositoryPatch?.contributors?.find(
+          (candidate) => candidate.contributorId === contributor.contributorId,
+        );
+        return {
+          ...contributor,
+          summary: contributorPatch?.summary ?? contributor.summary,
+          accomplishments: contributorPatch?.accomplishments ?? contributor.accomplishments,
+        };
+      }),
+    }));
+    for (const repositoryPatch of patch.repositories ?? []) {
+      const repository = content.repositories.find((candidate) => candidate.repositoryId === repositoryPatch.repositoryId);
+      if (repository === undefined) throw this.validationError();
+      for (const contributorPatch of repositoryPatch.contributors ?? []) {
+        if (!repository.contributors.some((candidate) => candidate.contributorId === contributorPatch.contributorId)) {
+          throw this.validationError();
+        }
+      }
+    }
+    return reportContentSchema.parse({
+      executiveSummary: patch.executiveSummary ?? content.executiveSummary,
+      repositories,
+    });
+  }
+
+  private parseRevisionUpdate(input: unknown): ReturnType<typeof reportRevisionUpdateRequestSchema.parse> {
+    const parsed = reportRevisionUpdateRequestSchema.safeParse(input);
+    if (!parsed.success) throw this.validationError();
+    return parsed.data;
+  }
+
+  private parseRegeneration(input: unknown): ReturnType<typeof reportRegenerationRequestSchema.parse> {
+    const parsed = reportRegenerationRequestSchema.safeParse(input);
+    if (!parsed.success) throw this.validationError();
+    return parsed.data;
+  }
+
+  private parseDownloadQuery(input: unknown): ReturnType<typeof reportDownloadQuerySchema.parse> {
+    const parsed = reportDownloadQuerySchema.safeParse(input);
+    if (!parsed.success) throw this.validationError();
+    return parsed.data;
   }
 
   private async authorizedCommitRows(
@@ -376,13 +558,13 @@ export class ReportsService {
     createdAt: Date;
     completedAt: Date | null;
     error: string | null;
-    revisions: Array<{ revision: number }>;
-    artifacts: Array<{ kind: 'latex' | 'pdf'; revision: { revision: number } | null }>;
+    currentRevision: { revision: number } | null;
+    artifacts: Array<{ kind: 'latex' | 'pdf'; revision: { revision: number } }>;
   }): ReportSummary {
-    const revision = report.revisions[0]?.revision ?? null;
+    const revision = report.currentRevision?.revision ?? null;
     const downloadAvailable = report.status === 'completed'
       && revision !== null
-      && report.artifacts.some((artifact) => artifact.kind === 'pdf' && artifact.revision?.revision === revision);
+      && report.artifacts.some((artifact) => artifact.kind === 'pdf' && artifact.revision.revision === revision);
     return reportSummarySchema.parse({
       id: report.id,
       reportDate: report.reportDate.toISOString().slice(0, 10),
@@ -455,6 +637,34 @@ export class ReportsService {
 
   private notFound(): HttpException {
     return new HttpException({ code: 'REPORT_NOT_FOUND', message: 'Report not found.' }, HttpStatus.NOT_FOUND);
+  }
+
+  private artifactNotFound(): HttpException {
+    return new HttpException(
+      { code: 'REPORT_ARTIFACT_NOT_FOUND', message: 'Report artifact not found.' },
+      HttpStatus.NOT_FOUND,
+    );
+  }
+
+  private notEditable(): HttpException {
+    return new HttpException(
+      { code: 'REPORT_NOT_EDITABLE', message: 'Report is not editable in its current state.' },
+      HttpStatus.CONFLICT,
+    );
+  }
+
+  private revisionConflict(): HttpException {
+    return new HttpException(
+      { code: 'REPORT_REVISION_CONFLICT', message: 'The report revision is stale.' },
+      HttpStatus.CONFLICT,
+    );
+  }
+
+  private artifactUnavailable(): HttpException {
+    return new HttpException(
+      { code: 'REPORT_GENERATION_UNAVAILABLE', message: 'Report artifact is unavailable.' },
+      HttpStatus.SERVICE_UNAVAILABLE,
+    );
   }
 
   private validationError(): HttpException {
