@@ -1,13 +1,17 @@
 import {
-  apiErrorSchema, csrfHeaderName, reportCreateRequestSchema, reportCreateResponseSchema, reportDetailResponseSchema, reportListQuerySchema, reportListResponseSchema,
-  type ReportCreateRequest, type ReportCreateResponse, type ReportDetailResponse, type ReportListQuery, type ReportListResponse,
+  apiErrorSchema, csrfHeaderName, reportCreateRequestSchema, reportCreateResponseSchema, reportDetailResponseSchema, reportListQuerySchema, reportListResponseSchema, reportRevisionUpdateRequestSchema, reportRevisionUpdateResponseSchema,
+  type ReportCreateRequest, type ReportCreateResponse, type ReportDetailResponse, type ReportListQuery, type ReportListResponse, type ReportRevisionUpdateRequest, type ReportRevisionUpdateResponse,
 } from "@trace/shared";
 
 const API_ORIGIN = (process.env.NEXT_PUBLIC_API_ORIGIN ?? "http://localhost:3001").replace(/\/$/, "");
-export type ReportClientCode = "UNAUTHENTICATED" | "REPORT_ALREADY_EXISTS" | "REPORT_GENERATION_UNAVAILABLE" | "INVALID_RESPONSE" | "NETWORK_ERROR" | "UNEXPECTED_ERROR";
+export type ReportClientCode = "UNAUTHENTICATED" | "NOT_FOUND" | "REPORT_NOT_FOUND" | "REPORT_ALREADY_EXISTS" | "REPORT_NOT_EDITABLE" | "REPORT_REVISION_CONFLICT" | "REPORT_GENERATION_UNAVAILABLE" | "INVALID_RESPONSE" | "NETWORK_ERROR" | "UNEXPECTED_ERROR";
 const messages: Record<ReportClientCode, string> = {
   UNAUTHENTICATED: "Your session has expired. Please sign in again.",
+  NOT_FOUND: "The requested report feature is not available in the current backend.",
+  REPORT_NOT_FOUND: "This report is no longer available.",
   REPORT_ALREADY_EXISTS: "A report already exists for this date. Open it from report history.",
+  REPORT_NOT_EDITABLE: "This report cannot be edited in its current state.",
+  REPORT_REVISION_CONFLICT: "A newer revision exists. Reload it before editing again.",
   REPORT_GENERATION_UNAVAILABLE: "Report generation is temporarily unavailable. Try again later.",
   INVALID_RESPONSE: "Trace received an invalid report response. Please try again.",
   NETWORK_ERROR: "Trace could not reach the server. Check your connection and try again.",
@@ -53,4 +57,9 @@ export async function createReport(input: ReportCreateRequest, csrfToken: string
 export async function getReport(id: string, signal?: AbortSignal): Promise<ReportDetailResponse> {
   if (!id || id.length > 256) throw new ReportApiError("UNEXPECTED_ERROR", messages.UNEXPECTED_ERROR, 0);
   return request(`/api/v1/reports/${encodeURIComponent(id)}`, { method: "GET", signal }, reportDetailResponseSchema) as Promise<ReportDetailResponse>;
+}
+export async function updateReportRevision(id: string, input: ReportRevisionUpdateRequest, csrfToken: string, signal?: AbortSignal): Promise<ReportRevisionUpdateResponse> {
+  if (!id || id.length > 256) throw new ReportApiError("UNEXPECTED_ERROR", messages.UNEXPECTED_ERROR, 0);
+  const body = reportRevisionUpdateRequestSchema.parse(input);
+  return request(`/api/v1/reports/${encodeURIComponent(id)}/revision`, { method: "PUT", headers: { "content-type": "application/json", [csrfHeaderName]: csrfToken }, body: JSON.stringify(body), signal }, reportRevisionUpdateResponseSchema) as Promise<ReportRevisionUpdateResponse>;
 }

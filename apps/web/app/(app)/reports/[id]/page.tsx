@@ -3,9 +3,16 @@
 import { use } from "react";
 import { PageShell } from "@/components/page-shell";
 import { ReportDetailView } from "@/features/reports/report-detail";
-import { getReport } from "@/api/reports";
+import { getReport, updateReportRevision } from "@/api/reports";
+import { resolveReportContributorLabels } from "@/api/report-contributors";
+import { useAuthSession } from "@/auth/session-provider";
 
 export default function ReportDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
-  return <PageShell eyebrow="Report details" title="Development activity report" description="Review lifecycle status and deterministic facts while generation progresses."><ReportDetailView reportId={id} loadReport={getReport} /></PageShell>;
+  const { csrfToken } = useAuthSession();
+  const saveRevision = (reportId: string, request: Parameters<typeof updateReportRevision>[1], signal?: AbortSignal) => {
+    if (!csrfToken) throw new Error("Authenticated session is missing CSRF protection.");
+    return updateReportRevision(reportId, request, csrfToken, signal);
+  };
+  return <PageShell eyebrow="Report details" title="Development activity report" description="Review deterministic facts separately from editable structured narrative."><ReportDetailView reportId={id} loadReport={getReport} saveRevision={saveRevision} resolveContributorLabels={resolveReportContributorLabels} /></PageShell>;
 }

@@ -441,3 +441,56 @@ No Person A-owned API, worker, database, shared-contract, root workspace, infras
 - Changed only `apps/web/**`, `docs/user-guide.md`, and `docs/person-b-handoffs.md`.
 - No Person A-owned API, worker, database, shared contract, infrastructure, or root workspace file was changed.
 - `.hermes/` remains local-only and uncommitted.
+
+## Day 9 — Structured report editor and revisions
+
+### Done
+- Replaced the Day 8 read-only narrative preview with a structured editor for executive, repository, contributor, and accomplishment prose.
+- Kept deterministic report facts read-only and outside the editable payload.
+- Added dirty-state feedback, cancel/reset, browser-close protection, validation, in-flight cancellation, and safe retained drafts after failures.
+- Added the frozen `PUT /api/v1/reports/:id/revision` adapter with cookie credentials, CSRF, optimistic `expectedRevision`, runtime request/response validation, and safe conflict/session/not-editable errors.
+- Displays current revision and AI/manual provenance and adopts the canonical revision returned by the API after save.
+- Added responsive desktop/mobile browser coverage.
+
+### Person B-owned files changed
+- `apps/web/**`
+- `docs/person-b-handoffs.md`
+
+No Person A-owned backend or shared-contract source was changed.
+
+### Contract consumed
+- `packages/shared/src/reports.ts`
+- `PUT /api/v1/reports/:id/revision`
+- `ReportRevisionUpdateRequest` / `ReportRevisionUpdateResponse`
+- No direct shared-contract edits: YES.
+
+### Real versus mock status
+- Real adapter: revision saves target `NEXT_PUBLIC_API_ORIGIN`, include cookie credentials and canonical CSRF, and validate frozen schemas.
+- Browser tests: deterministic contract-shaped GET fixtures exercise the production report route and editor on desktop/mobile.
+- Unit/component tests: save success, exact nested prose-only patches, special characters, revision conflict with draft rebase, expired session, save retry, same/different-report replacement, in-flight cancellation/stale response, post-submit edit rebase, invalid API response, long-prose validation, dirty/cancel, and unload warning.
+- Joint live API/database smoke: still requires a running authenticated API environment with a completed report owned by the test user.
+
+### Tests and builds actually run
+- Expected RED: focused editor test failed because `ReportEditor` did not exist; GREEN after the structured editor implementation.
+- Focused report editor/detail/API tests — PASS.
+- Complete web suite — PASS, 131/131 across 26 files.
+- Report Playwright suite — PASS, 6/6 across desktop and mobile.
+- Web lint — PASS, no warnings or errors.
+- Web typecheck — PASS.
+- Production build — PASS, 14/14 routes including dynamic `/reports/[id]`.
+- `git diff --check` — PASS.
+- Ownership scan — PASS; only `apps/web/**` and `docs/person-b-handoffs.md` changed, excluding local `.hermes/`.
+- Security scan — PASS; no added secrets, unsafe HTML, browser credential persistence, debug logging, or dynamic evaluation.
+
+### Problems/risks
+- Independent review initially found two blockers: conflict reload could lose a retained draft, and an old in-flight save could overwrite a replacement report. Focused regressions failed only those cases; GREEN now rebases unsaved prose onto a newer same-report revision, resets on a different report ID, aborts old saves, and ignores stale completions.
+- Re-review found one further race: prose typed after Save could be replaced by the canonical response. Its focused RED reproduced the loss; GREEN now rebases post-submit edits onto the saved revision and keeps them visibly unsaved.
+- Final independent corrected-tree review: **PASS, no blockers**. It verified conflict draft rebasing, same/different-report replacement, save generation/abort guards, stale completion suppression, post-submit edit preservation, prose-only contract safety, and canonical revision adoption.
+- Home live-test repair: applied the committed additive `20260813173500_report_processing_lease` migration, rebuilt/restarted stale API and worker processes so report routes and processing run from current code, fixed report requests to `Asia/Karachi`, made adding repository access explicit through GitHub plus **Add or refresh repositories**, and stopped exposing opaque contributor database IDs in editor headings/accessibility labels. The live revision probe still returns HTTP 404 because Person A explicitly deferred the revision-edit endpoint to Day 10; the frontend now preserves the draft and reports that backend boundary truthfully instead of collapsing it into a generic failure. Focused UX/API tests, full 131-test web suite, 6/6 report browser tests, lint, typecheck, production build, database status, and live HTTP health passed.
+- Contributor identity follow-up: report contributor labels resolve authorized Activity API IDs to `displayName (@username)` without changing the frozen report contract or exposing internal IDs; strict unit and browser tests cover the real adapter path and privacy-safe fallback.
+- Playwright's synthetic cross-origin PUT fulfillment produced `net::ERR_FAILED`; duplicate browser network-save coverage was removed after the API adapter test proved method, URL, CSRF, body, response validation, and conflict behavior. Browser tests cover rendered editor behavior and responsive layout.
+- Live joint save remains the integration gate because local browser tests do not provide the real API, database, authenticated cookie, and completed report together.
+
+### Next-day joint gate
+- READY after final quality gates, subject to a live authenticated save smoke against Person A's Day 10 revision endpoint.
+- Next planned Person B slice: Day 10 report export/download UX after Person A publishes the frozen artifact endpoint contract.

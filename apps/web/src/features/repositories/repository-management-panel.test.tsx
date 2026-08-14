@@ -88,7 +88,8 @@ describe("repository management", () => {
   it("synchronizes with CSRF and reloads the authoritative list", async () => {
     const props = renderPanel();
     await screen.findByRole("link", { name: "trace-fixture-org/trace" });
-    await userEvent.click(screen.getByRole("button", { name: "Synchronize GitHub" }));
+    expect(screen.getByRole("link", { name: "Manage GitHub access" })).toHaveAttribute("href", "/github");
+    await userEvent.click(screen.getByRole("button", { name: "Add or refresh repositories" }));
     expect(props.synchronize).toHaveBeenCalledWith("csrf-live");
     expect(await screen.findByRole("status")).toHaveTextContent("2 accessible repositories synchronized");
     await waitFor(() => expect(props.loadRepositories).toHaveBeenCalledTimes(2));

@@ -1,7 +1,7 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { http, HttpResponse } from "msw";
 import { setupServer } from "msw/node";
-import { createReport, getReport } from "./reports";
+import { createReport, getReport, updateReportRevision } from "./reports";
 
 const base = {
   id: "report-poll", reportDate: "2026-08-13", timezone: "UTC", createdAt: "2026-08-13T08:00:00.000Z",
@@ -32,6 +32,28 @@ describe("report API status polling seam", () => {
     }));
     await expect(createReport({ reportDate: "2026-08-13", timezone: "UTC" }, "csrf-live")).resolves.toMatchObject({ report: { status: "pending" } });
     expect(csrf).toBe("csrf-live");
+  });
+
+  it("requires CSRF, validates the structured patch, and preserves revision conflict codes", async () => {
+    let csrf: string | null = null;
+    let body: unknown;
+    server.use(http.put("http://localhost:3001/api/v1/reports/report-poll/revision", async ({ request }) => {
+      csrf = request.headers.get("x-csrf-token");
+      body = await request.json();
+      return HttpResponse.json({ report: { ...base, status: "completed", completedAt: "2026-08-13T08:02:00.000Z", errorMessage: null, revision: 2, downloadAvailable: true, revisionSource: "manual", content: { executiveSummary: "Edited summary.", repositories: [] }, artifacts: [{ id: "pdf-2", revision: 2, kind: "pdf", fileName: "trace-report.pdf", contentType: "application/pdf", sizeBytes: 1000, checksum: "b".repeat(64) }] } });
+    }));
+    await expect(updateReportRevision("report-poll", { expectedRevision: 1, prosePatch: { executiveSummary: "Edited summary." } }, "csrf-edit")).resolves.toMatchObject({ report: { revision: 2, revisionSource: "manual" } });
+    expect(csrf).toBe("csrf-edit");
+    expect(body).toEqual({ expectedRevision: 1, prosePatch: { executiveSummary: "Edited summary." } });
+
+    server.use(http.put("http://localhost:3001/api/v1/reports/report-poll/revision", () => HttpResponse.json({ report: { ...base, status: "completed", revision: 2 } })));
+    await expect(updateReportRevision("report-poll", { expectedRevision: 1, prosePatch: { executiveSummary: "Edited summary." } }, "csrf-edit")).rejects.toMatchObject({ code: "INVALID_RESPONSE" });
+
+    server.use(http.put("http://localhost:3001/api/v1/reports/report-poll/revision", () => HttpResponse.json({ code: "REPORT_REVISION_CONFLICT", message: "stale", requestId: "req-conflict" }, { status: 409 })));
+    await expect(updateReportRevision("report-poll", { expectedRevision: 1, prosePatch: { executiveSummary: "Edited summary." } }, "csrf-edit")).rejects.toMatchObject({ code: "REPORT_REVISION_CONFLICT", status: 409 });
+
+    server.use(http.put("http://localhost:3001/api/v1/reports/report-poll/revision", () => HttpResponse.json({ code: "NOT_FOUND", message: "Cannot PUT route", requestId: "req-missing" }, { status: 404 })));
+    await expect(updateReportRevision("report-poll", { expectedRevision: 1, prosePatch: { executiveSummary: "Edited summary." } }, "csrf-edit")).rejects.toMatchObject({ code: "NOT_FOUND", status: 404 });
   });
 
   it("rejects malformed completed responses", async () => {

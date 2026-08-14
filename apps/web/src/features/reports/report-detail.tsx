@@ -4,13 +4,17 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Button, Card } from "@trace/ui";
 import type { ReportDetail, ReportDetailResponse } from "@trace/shared";
 
+import { ReportEditor, type SaveReportRevision } from "./report-editor";
+
 export type LoadReport = (reportId: string, signal?: AbortSignal) => Promise<ReportDetailResponse>;
+export type ResolveContributorLabels = (report: ReportDetail, signal?: AbortSignal) => Promise<Record<string, string>>;
 const labels = { pending: "Pending", processing: "Processing", completed: "Completed", failed: "Failed" } as const;
 
-interface Props { reportId: string; loadReport: LoadReport; pollIntervalMs?: number }
+interface Props { reportId: string; loadReport: LoadReport; saveRevision?: SaveReportRevision; resolveContributorLabels?: ResolveContributorLabels; pollIntervalMs?: number }
 
-export function ReportDetailView({ reportId, loadReport, pollIntervalMs = 5000 }: Props) {
+export function ReportDetailView({ reportId, loadReport, saveRevision, resolveContributorLabels, pollIntervalMs = 5000 }: Props) {
   const [report, setReport] = useState<ReportDetail>();
+  const [contributorLabels, setContributorLabels] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>();
   const pollingGeneration = useRef(0);
@@ -53,10 +57,21 @@ export function ReportDetailView({ reportId, loadReport, pollIntervalMs = 5000 }
 
   useEffect(() => {
     setReport(undefined);
+    setContributorLabels({});
     setLoading(true);
     startPolling();
     return cancelPolling;
   }, [cancelPolling, reportId, startPolling]);
+
+  useEffect(() => {
+    if (!report?.content || !resolveContributorLabels) return;
+    const labelController = new AbortController();
+    setContributorLabels({});
+    void resolveContributorLabels(report, labelController.signal)
+      .then((resolved) => { if (!labelController.signal.aborted) setContributorLabels(resolved); })
+      .catch((cause) => { if (!(cause instanceof DOMException && cause.name === "AbortError")) setContributorLabels({}); });
+    return () => labelController.abort();
+  }, [report, resolveContributorLabels]);
 
   if (loading && report === undefined) return <Card className="report-state-card" role="status">Loading report…</Card>;
   if (error && report === undefined) return <Card className="report-state-card report-state-error" role="alert"><p>{error}</p><Button className="trace-button-secondary" onClick={startPolling}>Retry</Button></Card>;
@@ -71,6 +86,6 @@ export function ReportDetailView({ reportId, loadReport, pollIntervalMs = 5000 }
     <section className="report-facts" aria-label="Deterministic report facts">
       {[["Repositories", report.facts.repositoryCount], ["Contributors", report.facts.contributorCount], ["Commits", report.facts.commitCount], ["Files changed", report.facts.filesChanged], ["Additions", report.facts.additions], ["Deletions", report.facts.deletions]].map(([label, value]) => <Card key={label}><span>{label}</span><strong>{value}</strong>{label === "Commits" && <small>{value} {value === 1 ? "commit" : "commits"}</small>}</Card>)}
     </section>
-    {report.content && <Card className="report-content-preview"><span>Structured preview</span><h3>Executive summary</h3><p>{report.content.executiveSummary}</p><small>Editing arrives in Day 9.</small></Card>}
+    {report.content && saveRevision ? <ReportEditor report={report} saveRevision={saveRevision} contributorLabels={contributorLabels} onReloadLatest={startPolling} /> : report.content ? <Card className="report-content-preview"><span>Structured preview</span><h3>Executive summary</h3><p>{report.content.executiveSummary}</p></Card> : null}
   </div>;
 }

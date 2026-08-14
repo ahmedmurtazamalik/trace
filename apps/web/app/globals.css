@@ -423,6 +423,22 @@ main#main-content { max-width: 1540px; margin: 0 auto; padding: clamp(1.65rem, 4
 .report-content-preview h3 { color: #172033; }
 .report-content-preview p { color: #53647a; line-height: 1.7; }
 .report-content-preview small { color: #718096; }
+.report-editor { display: grid; gap: 1rem; padding: 1.25rem; }
+.report-editor-heading { display: flex; justify-content: space-between; align-items: start; gap: 1rem; padding-bottom: 1rem; border-bottom: 1px solid #e2e8f0; }
+.report-editor-heading span { color: #2563eb; font-size: .64rem; font-weight: 850; letter-spacing: .08em; text-transform: uppercase; }
+.report-editor-heading h3 { margin: .35rem 0; color: #172033; }
+.report-editor-heading p { margin: 0; color: #66778d; font-size: .74rem; }
+.report-editor-heading strong { flex: 0 0 auto; padding: .45rem .65rem; border: 1px solid #bfdbfe; border-radius: 999px; color: #1e40af; background: #eff6ff; font-size: .68rem; }
+.report-editor label { display: grid; gap: .4rem; color: #34445a; font-size: .72rem; font-weight: 800; }
+.report-editor textarea { width: 100%; min-height: 7.5rem; resize: vertical; padding: .8rem; border: 1px solid #c9d5e3; border-radius: .72rem; color: #172033; background: white; font: inherit; line-height: 1.55; }
+.report-editor textarea:focus { border-color: #3b82f6; outline: 3px solid #dbeafe; }
+.report-editor fieldset { min-width: 0; display: grid; gap: 1rem; margin: .25rem 0; padding: 1rem; border: 1px solid #dbe4ee; border-radius: .85rem; background: #f8fbff; }
+.report-editor legend { padding: 0 .45rem; color: #1e40af; font-size: .72rem; font-weight: 850; overflow-wrap: anywhere; }
+.report-contributor-editor { display: grid; gap: .8rem; padding: 1rem; border-left: 3px solid #93c5fd; background: white; }
+.report-contributor-editor h4 { margin: 0; color: #34445a; font-size: .78rem; overflow-wrap: anywhere; }
+.report-editor-actions { position: sticky; bottom: .75rem; display: flex; justify-content: flex-end; align-items: center; gap: .65rem; padding: .75rem; border: 1px solid #dbe4ee; border-radius: .8rem; background: #ffffffed; box-shadow: 0 12px 30px #1e3a5f17; backdrop-filter: blur(12px); }
+.report-editor-actions > span { margin-right: auto; color: #52647a; font-size: .72rem; font-weight: 750; }
+.report-editor .report-notice-error { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
 .settings-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
 .settings-grid > .trace-card { transition: transform .2s ease, box-shadow .2s ease; }
 .settings-grid > .trace-card:hover { transform: translateY(-3px); box-shadow: 0 16px 38px #1e3a5f13; }
@@ -570,6 +586,13 @@ main#main-content { max-width: 1540px; margin: 0 auto; padding: clamp(1.65rem, 4
   .report-create-card form, .report-facts { grid-template-columns: 1fr; }
   .report-history-card { align-items: stretch; flex-direction: column; }
   .report-history-actions .trace-button { flex: 1 1 auto; text-align: center; }
+  .report-editor { padding: 1rem; }
+  .report-editor-heading, .report-editor-actions, .report-editor .report-notice-error { align-items: stretch; flex-direction: column; }
+  .report-editor-heading strong { width: fit-content; }
+  .report-editor-actions { position: static; }
+  .report-editor-actions > span { margin-right: 0; }
+  .report-editor-actions .trace-button { width: 100%; }
+  .report-editor fieldset, .report-contributor-editor { padding: .8rem; }
   .github-status-grid, .github-repository-preview { grid-template-columns: 1fr; }
   .github-status-card { min-height: auto; }
   .integration-card { grid-template-columns: auto 1fr; }

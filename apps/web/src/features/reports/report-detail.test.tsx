@@ -55,6 +55,23 @@ describe("Day 8 report detail", () => {
     expect(screen.queryByText(/August 13, 2026/)).not.toBeInTheDocument();
   });
 
+  it("renders resolved contributor names without exposing database identifiers", async () => {
+    const named = {
+      ...completed,
+      report: {
+        ...completed.report,
+        content: {
+          executiveSummary: "Development activity was summarized.",
+          repositories: [{ repositoryId: "repo-1", summary: "Repository summary", contributors: [{ contributorId: "cms-internal-id", summary: "Contributor summary", accomplishments: ["Shipped UI"] }] }],
+        },
+      },
+    };
+    const resolveContributorLabels = vi.fn().mockResolvedValue({ "cms-internal-id": "Ali Majid (@alimajidneo)" });
+    render(<ReportDetailView reportId="report-completed" loadReport={vi.fn().mockResolvedValue(named)} saveRevision={vi.fn()} resolveContributorLabels={resolveContributorLabels} />);
+    expect(await screen.findByRole("heading", { name: "Ali Majid (@alimajidneo)" })).toBeInTheDocument();
+    expect(screen.queryByText(/cms-internal-id/)).not.toBeInTheDocument();
+  });
+
   it("offers a safe retry without exposing raw failures and resumes polling", async () => {
     vi.useFakeTimers();
     const loadReport = vi.fn()

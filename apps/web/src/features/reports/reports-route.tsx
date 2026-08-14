@@ -1,9 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { ReportLifecycle } from "./report-lifecycle";
 import { createReport, listReports } from "@/api/reports";
 import { useAuthSession } from "@/auth/session-provider";
+
+const PAKISTAN_TIMEZONE = "Asia/Karachi";
 
 export function dateInTimezone(now: Date, timezone: string) {
   try {
@@ -15,13 +17,8 @@ export function dateInTimezone(now: Date, timezone: string) {
 
 export function ReportsRoute() {
   const { csrfToken } = useAuthSession();
-  const [timezone, setTimezone] = useState("UTC");
-  const [date, setDate] = useState(() => dateInTimezone(new Date(), "UTC"));
-  useEffect(() => {
-    const detected = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
-    setTimezone(detected);
-    setDate(dateInTimezone(new Date(), detected));
-  }, []);
+  const [timezone] = useState(PAKISTAN_TIMEZONE);
+  const [date] = useState(() => dateInTimezone(new Date(), PAKISTAN_TIMEZONE));
   const createLiveReport = (request: Parameters<typeof createReport>[0], signal?: AbortSignal) => {
     if (!csrfToken) throw new Error("Authenticated session is missing CSRF protection.");
     return createReport(request, csrfToken, signal);

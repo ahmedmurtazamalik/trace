@@ -86,7 +86,7 @@ export function ReportLifecycle({ loadReports, createReport, timezone, initialDa
     <Card className="report-create-card">
       <form onSubmit={submit} noValidate>
         <label>Report date<input type="date" value={date} onChange={(event) => setDate(event.target.value)} /></label>
-        <div className="report-timezone"><span>Timezone</span><strong>{timezone}</strong></div>
+        <div className="report-timezone"><span>Timezone</span><strong>Pakistan time ({timezone})</strong></div>
         <Button type="submit" disabled={creating}>{creating ? "Requesting…" : "Create report"}</Button>
       </form>
       {notice && <p className="report-notice-success" role="status">{notice}</p>}
