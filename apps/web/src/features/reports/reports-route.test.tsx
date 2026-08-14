@@ -31,9 +31,10 @@ describe("production Reports route", () => {
     const date = screen.getByLabelText("Report date");
     await userEvent.clear(date);
     await userEvent.type(date, "2026-08-13");
+    expect(screen.getByText("Pakistan time (Asia/Karachi)")).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Create report" }));
     await waitFor(() => expect(adapters.createReport).toHaveBeenCalledWith(
-      { reportDate: "2026-08-13", timezone: expect.any(String) },
+      { reportDate: "2026-08-13", timezone: "Asia/Karachi" },
       "csrf_live_token",
       expect.any(AbortSignal),
     ));

@@ -180,6 +180,9 @@ export function GithubConnectionPanel({
             {pending === "install" ? "Opening GitHub…" : status.installationAuthorization.status === "SUSPENDED" ? "Update GitHub App installation" : "Install GitHub App"}
           </Button>
         </div>}
+        {status.accountConnection.status === "CONNECTED" && status.installationAuthorization.status === "ACTIVE" && <div className="github-actions">
+          <Button className="trace-button-secondary" onClick={install} disabled={Boolean(pending)}>{pending === "install" ? "Opening GitHub…" : "Manage repository access"}</Button>
+        </div>}
       </Card>
       <Card className="github-status-card">
         <div className="github-card-icon"><LockKeyhole aria-hidden="true" size={20} /></div>

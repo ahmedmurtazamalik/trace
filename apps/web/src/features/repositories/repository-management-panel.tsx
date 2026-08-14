@@ -140,8 +140,8 @@ export function RepositoryManagementPanel({
 
   return <div className="repository-stack">
     <Card className="repository-disclosure" role="note">
-      <strong>Live GitHub repository access</strong>
-      <span>GitHub App access and Trace tracking are separate. Previously synchronized historical activity remains after access is removed.</span>
+      <strong>Add repositories through GitHub</strong>
+      <span>Choose repository access in the Trace GitHub App, then add or refresh the authorized list here. Tracking remains a separate choice. <Link className="repository-link" href="/github">Manage GitHub access</Link></span>
     </Card>
 
     <Card className="repository-toolbar-card">
@@ -151,7 +151,7 @@ export function RepositoryManagementPanel({
       </label>
       <div className="repository-summary" aria-live="polite"><strong>{repositories.length}</strong><span>{repositories.length === 1 ? "repository loaded" : "repositories loaded"}</span></div>
       <Button className="trace-button-secondary" disabled={syncing || csrfToken === undefined} onClick={() => void sync()}>
-        <RefreshCw aria-hidden="true" size={16} /> {syncing ? "Synchronizing…" : "Synchronize GitHub"}
+        <RefreshCw aria-hidden="true" size={16} /> {syncing ? "Adding repositories…" : "Add or refresh repositories"}
       </Button>
     </Card>
 

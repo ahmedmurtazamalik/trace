@@ -69,6 +69,13 @@ describe("GitHub connection UX", () => {
     expect(screen.getByText("2 tracked")).toBeInTheDocument();
   });
 
+  it("lets an active installation reopen GitHub to add repository access", async () => {
+    const props = renderPanel({ loadStatus: vi.fn().mockResolvedValue(connected) });
+    await userEvent.click(await screen.findByRole("button", { name: "Manage repository access" }));
+    expect(props.beginInstallation).toHaveBeenCalledOnce();
+    expect(props.navigate).toHaveBeenCalledWith(expect.stringMatching(/^https:\/\/github\.com\/apps\//));
+  });
+
   it("offers installation and suspended-installation recovery through the backend URL", async () => {
     const notInstalled = {
       ...connected,

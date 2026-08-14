@@ -36,7 +36,7 @@ test("repository access and Trace tracking use live API contracts on desktop and
   await authenticated(page);
   await page.goto("/repositories");
   await expect(page.getByRole("heading", { name: "Repositories" })).toBeVisible();
-  await expect(page.getByText("Live GitHub repository access")).toBeVisible();
+  await expect(page.getByText("Add repositories through GitHub")).toBeVisible();
   await expect(page.getByRole("link", { name: "trace-fixture-org/trace" })).toBeVisible();
   const search = page.getByRole("searchbox", { name: "Search repositories" });
   await search.fill("legacy");
