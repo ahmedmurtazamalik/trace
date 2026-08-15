@@ -79,7 +79,8 @@ test("live report HTTP lifecycle is understandable and routes to report details"
   await expect(page.getByText("Live factual reports")).toBeVisible();
   for (const status of ["Completed", "Processing", "Pending", "Failed"]) await expect(page.getByText(status, { exact: true })).toBeVisible();
   await expect(page.getByText("No development activity was found for this date.")).toBeVisible();
-  await expect(page.getByRole("button", { name: "Download report for August 12, 2026 — download delivery is not available yet" })).toBeDisabled();
+  await expect(page.getByText(/Completed reports can be opened to view and download checksum-verified PDF and LaTeX files\./)).toBeVisible();
+  await expect(page.getByText(/PDF downloads remain unavailable/)).toHaveCount(0);
 
   await page.getByLabel("Report date").fill("2026-08-13");
   const createRequest = page.waitForRequest((request) => request.method() === "POST" && new URL(request.url()).pathname === "/api/v1/reports");
@@ -88,7 +89,7 @@ test("live report HTTP lifecycle is understandable and routes to report details"
   expect(created.headers()["x-csrf-token"]).toBe(session.csrfToken);
   await expect(page.getByRole("status")).toContainText("Report requested for August 13, 2026");
 
-  await expect(page.getByRole("link", { name: "Open report for August 12, 2026" })).toHaveAttribute("href", "/reports/report-completed");
+  await expect(page.getByRole("link", { name: "View and download report for August 12, 2026" })).toHaveAttribute("href", "/reports/report-completed");
 });
 
 test("Day 9 editor exposes only narrative fields and supports cancel", async ({ page }) => {
