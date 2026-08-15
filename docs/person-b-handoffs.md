@@ -494,3 +494,52 @@ No Person A-owned backend or shared-contract source was changed.
 ### Next-day joint gate
 - READY after final quality gates, subject to a live authenticated save smoke against Person A's Day 10 revision endpoint.
 - Next planned Person B slice: Day 10 report export/download UX after Person A publishes the frozen artifact endpoint contract.
+
+## Day 10 — Report regeneration and verified artifact delivery
+
+### What was done (Ali / Person B)
+- Added the frozen `POST /api/v1/reports/:id/regenerate` frontend adapter with cookie authentication, canonical CSRF, validated `expectedRevision`, encoded route IDs, cancellation, and runtime response validation.
+- Added a Regenerate control for completed or failed reports. Unsaved narrative edits disable it with clear Save/Cancel guidance, regeneration preserves the current narrative while processing, and bounded polling resumes afterward.
+- Added conflict/session/not-editable/generation-unavailable handling without replacing the current report on failure.
+- Added the frozen `GET /api/v1/reports/:id/download?artifactId=...` adapter for PDF and optional TEX artifacts.
+- Downloads use validated artifact metadata rather than response-provided filenames, stream no more than the frozen expected size, verify content type, byte count, and SHA-256, then create and promptly revoke a browser object URL.
+- Added visible filename, kind, revision, and human-readable size metadata plus expired/unavailable/corrupted-file recovery.
+- Added responsive report-file and action layouts for desktop/mobile.
+- No deterministic report facts, shared schemas, backend, database, worker, infrastructure, root workspace, or root README files were changed.
+
+### How to test
+1. Open a completed report at `/reports/:id`.
+2. Confirm **Report files** shows the current PDF metadata.
+3. Select **Download PDF** and confirm the validated filename is used.
+4. Edit narrative prose without saving; **Regenerate report** must be disabled and explain Save/Cancel.
+5. Cancel or save, then regenerate; the screen should switch to Processing and resume polling.
+6. For final joint proof, repeat against a real authenticated Day 10 API report and open the resulting real PDF.
+
+### Real / mock / unfinished boundary
+- **Real frontend code:** both adapters target `NEXT_PUBLIC_API_ORIGIN`, send cookies, use frozen request/query schemas, and validate every response or byte stream before delivery.
+- **Mock browser proof:** Playwright intercepts contract-shaped HTTP, serves deterministic four-byte `%PDF` test bytes with the matching SHA-256, proves a real Chromium download event and safe suggested filename, and verifies save revision 1 → processing/polling → completed revision 2 → regeneration with `{ expectedRevision: 2 }`. This is transport/integrity/UI proof, not evidence of a valid rendered PDF or PostgreSQL/worker persistence.
+- **Unfinished joint gate:** authenticated browser → merged real API → database/worker → generated PDF → browser download/open, plus a real stale-revision regeneration conflict. Person A's Day 10 backend is now merged; this operational smoke has not yet been run in the authenticated local runtime.
+
+### TDD and verification
+- Regeneration adapter expected RED: missing `regenerateReport`; focused GREEN verified endpoint, CSRF, body, and frozen processing response.
+- Regeneration UI expected RED: missing action and dirty-draft guard; focused GREEN added revision-safe regeneration and polling resume.
+- Download adapter expected RED: missing `downloadReportArtifact`; focused GREEN verified artifact query, safe metadata filename, content type, bounded size, SHA-256, and corrupted-byte rejection.
+- Download UI expected RED: missing current-PDF action, metadata, and expired-file state; focused GREEN added all three.
+- Focused report/API/editor tests: PASS, 29/29.
+- Complete web suite with explicit `NODE_ENV=test`: PASS, 142/142 across 26 files.
+- Report Playwright suite: PASS, 8/8 across desktop and mobile, including Chromium download event, save revision 1 → processing/polling → regenerate revision 2, dirty-state blocking, and mobile overflow coverage.
+- Complete Playwright suite after rebasing onto merged Person A Day 10: PASS, 62/62 across desktop and mobile.
+- Web lint: PASS, no warnings or errors.
+- Web typecheck: PASS.
+- Production build: PASS, all 14 routes generated including dynamic `/reports/[id]`.
+- `git diff --check`: PASS.
+
+### Issues / notes
+- The first all-unit command inherited production React mode from browser/build work and failed uniformly with `act(...) is not supported in production builds`; rerunning with explicit `NODE_ENV=test` passed 137/137. This was an invalid test environment, not a regression.
+- The first download browser mock used a route glob that matched report detail but not nested `/download`, causing repeated `Failed to fetch`. Changing the mock to the explicit `/reports/**` path-segment glob fixed the boundary; the corrected browser scenario passed.
+- Integrity verification intentionally hashes the complete artifact in-browser after enforcing the frozen maximum size. This favors trustworthy delivery over instant download for large reports.
+- `.hermes/` remains local-only and untracked.
+
+### What's next
+- Run the joint authenticated real-backend save/regenerate/download smoke against the now-merged Person A revision, regeneration, and artifact endpoints.
+- Do not mark Day 10 overall complete until browser → API → database/worker → real PDF download/open and stale-revision conflict are proven.

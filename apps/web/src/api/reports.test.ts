@@ -1,7 +1,7 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { http, HttpResponse } from "msw";
 import { setupServer } from "msw/node";
-import { createReport, getReport, updateReportRevision } from "./reports";
+import { createReport, downloadReportArtifact, getReport, regenerateReport, updateReportRevision } from "./reports";
 
 const base = {
   id: "report-poll", reportDate: "2026-08-13", timezone: "UTC", createdAt: "2026-08-13T08:00:00.000Z",
@@ -54,6 +54,39 @@ describe("report API status polling seam", () => {
 
     server.use(http.put("http://localhost:3001/api/v1/reports/report-poll/revision", () => HttpResponse.json({ code: "NOT_FOUND", message: "Cannot PUT route", requestId: "req-missing" }, { status: 404 })));
     await expect(updateReportRevision("report-poll", { expectedRevision: 1, prosePatch: { executiveSummary: "Edited summary." } }, "csrf-edit")).rejects.toMatchObject({ code: "NOT_FOUND", status: 404 });
+  });
+
+  it("requires CSRF and the current revision when regenerating", async () => {
+    let csrf: string | null = null;
+    let body: unknown;
+    server.use(http.post("http://localhost:3001/api/v1/reports/report-poll/regenerate", async ({ request }) => {
+      csrf = request.headers.get("x-csrf-token");
+      body = await request.json();
+      return HttpResponse.json({ report: { ...base, status: "processing", completedAt: null, errorMessage: null, revision: 1, downloadAvailable: false, revisionSource: "manual", content: { executiveSummary: "Edited summary remains authoritative.", repositories: [] }, artifacts: [] } });
+    }));
+
+    await expect(regenerateReport("report-poll", { expectedRevision: 1 }, "csrf-regenerate")).resolves.toMatchObject({ report: { status: "processing", revision: 1, revisionSource: "manual" } });
+    expect(csrf).toBe("csrf-regenerate");
+    expect(body).toEqual({ expectedRevision: 1 });
+  });
+
+  it("downloads only bytes matching frozen artifact metadata and ignores response filenames", async () => {
+    const bytes = new TextEncoder().encode("%PDF");
+    const checksum = Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", bytes))).map((byte) => byte.toString(16).padStart(2, "0")).join("");
+    const artifact = { id: "pdf_safe-1", revision: 1, kind: "pdf" as const, fileName: "trace-report.pdf", contentType: "application/pdf" as const, sizeBytes: bytes.byteLength, checksum };
+    let requestedArtifact: string | null = null;
+    server.use(http.get("http://localhost:3001/api/v1/reports/report-poll/download", ({ request }) => {
+      requestedArtifact = new URL(request.url).searchParams.get("artifactId");
+      return new HttpResponse(bytes, { headers: { "content-type": "application/pdf", "content-disposition": "attachment; filename=../../unsafe.pdf" } });
+    }));
+
+    const downloaded = await downloadReportArtifact("report-poll", artifact);
+    expect(requestedArtifact).toBe("pdf_safe-1");
+    expect(downloaded.fileName).toBe("trace-report.pdf");
+    expect(downloaded.blob).toMatchObject({ size: bytes.byteLength, type: "application/pdf" });
+
+    server.use(http.get("http://localhost:3001/api/v1/reports/report-poll/download", () => new HttpResponse(new TextEncoder().encode("FAKE"), { headers: { "content-type": "application/pdf" } })));
+    await expect(downloadReportArtifact("report-poll", artifact)).rejects.toMatchObject({ code: "INVALID_RESPONSE" });
   });
 
   it("rejects malformed completed responses", async () => {

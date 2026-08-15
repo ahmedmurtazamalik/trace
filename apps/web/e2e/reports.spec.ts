@@ -13,20 +13,39 @@ const editableReport: ReportDetail = {
   revision: 1, revisionSource: "ai", downloadAvailable: true,
   facts: { repositoryCount: 1, contributorCount: 1, commitCount: 8, filesChanged: 21, additions: 342, deletions: 71 },
   content: { executiveSummary: "Initial executive summary.", repositories: [{ repositoryId: "repo_1", summary: "Initial repository summary.", contributors: [{ contributorId: "contributor_1", summary: "Initial contributor summary.", accomplishments: ["Shipped report lifecycle."] }] }] },
-  artifacts: [{ id: "pdf-1", revision: 1, kind: "pdf", fileName: "trace-report.pdf", contentType: "application/pdf", sizeBytes: 1000, checksum: "a".repeat(64) }],
+  artifacts: [{ id: "pdf-1", revision: 1, kind: "pdf", fileName: "trace-report.pdf", contentType: "application/pdf", sizeBytes: 4, checksum: "315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027" }],
 };
 
 async function interceptEditableReport(page: Page) {
   const savedReport: ReportDetail = { ...editableReport, revision: 2, revisionSource: "manual", content: { ...editableReport.content!, executiveSummary: "Updated in the browser with <special> & safe text." }, artifacts: [{ ...editableReport.artifacts[0]!, id: "pdf-2", revision: 2 }] };
+  const savedProcessing: ReportDetail = { ...savedReport, status: "processing", completedAt: null, downloadAvailable: false, artifacts: [] };
+  const regeneratingReport: ReportDetail = { ...savedProcessing };
+  let currentReport = editableReport;
+  const saveBodies: unknown[] = [];
+  const regenerationBodies: unknown[] = [];
   await page.route("**/api/v1/auth/me", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(session) }));
   await page.route("**/api/v1/activity**", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ items: [{ id: "evt-contributor", source: "github", type: "commit", repository: { id: "repo_1", fullName: "trace/web", url: "https://github.com/trace/web" }, contributor: { id: "contributor_1", username: "alice.dev", displayName: "Alice Developer", avatarUrl: null }, occurredAt: "2026-08-12T08:00:00.000Z", facts: { sha: "abcdef1", message: "Ship report lifecycle", branch: "main", filesChanged: 1, additions: 2, deletions: 0, url: null } }], pageInfo: { nextCursor: null, hasNextPage: false } }) }));
-  await page.route("**/api/v1/reports/report-completed**", (route) => {
+  await page.route("**/api/v1/reports/**", (route) => {
     const request = route.request();
-    const path = new URL(request.url()).pathname;
-    if (request.method() === "GET" && path === "/api/v1/reports/report-completed") return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ report: editableReport }) });
-    if (request.method() === "PUT" && path === "/api/v1/reports/report-completed/revision") return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ report: savedReport }) });
+    const url = new URL(request.url());
+    const path = url.pathname;
+    if (request.method() === "GET" && path === "/api/v1/reports/report-completed") return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ report: currentReport }) });
+    if (request.method() === "GET" && path === "/api/v1/reports/report-completed/download" && url.searchParams.get("artifactId") === "pdf-1") return route.fulfill({ status: 200, contentType: "application/pdf", body: "%PDF" });
+    if (request.method() === "PUT" && path === "/api/v1/reports/report-completed/revision") {
+      expect(request.headers()["x-csrf-token"]).toBe(session.csrfToken);
+      saveBodies.push(request.postDataJSON());
+      currentReport = savedReport;
+      return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ report: savedProcessing }) });
+    }
+    if (request.method() === "POST" && path === "/api/v1/reports/report-completed/regenerate") {
+      expect(request.headers()["x-csrf-token"]).toBe(session.csrfToken);
+      regenerationBodies.push(request.postDataJSON());
+      currentReport = regeneratingReport;
+      return route.fulfill({ status: 202, contentType: "application/json", body: JSON.stringify({ report: regeneratingReport }) });
+    }
     return route.fulfill({ status: 404, contentType: "application/json", body: JSON.stringify({ code: "REPORT_NOT_FOUND", message: "Report not found.", requestId: "req_missing" }) });
   });
+  return { saveBodies, regenerationBodies };
 }
 
 
@@ -89,6 +108,37 @@ test("Day 9 editor exposes only narrative fields and supports cancel", async ({ 
   await page.getByRole("button", { name: "Cancel changes" }).click();
   await expect(page.getByLabel("Executive summary")).toHaveValue("Initial executive summary.");
   await expect(page.getByText("All changes saved")).toBeVisible();
+});
+
+test("Day 10 verifies downloads and regenerates only a saved current revision", async ({ page }) => {
+  await page.unrouteAll();
+  const { saveBodies, regenerationBodies } = await interceptEditableReport(page);
+  await page.goto("/reports/report-completed");
+
+  await expect(page.getByRole("heading", { name: "Report files" })).toBeVisible();
+  await expect(page.getByText("trace-report.pdf", { exact: true })).toBeVisible();
+  await expect(page.getByText("PDF · Revision 1 · 4 B", { exact: true })).toBeVisible();
+  const downloadPromise = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Download PDF", exact: true }).click();
+  expect((await downloadPromise).suggestedFilename()).toBe("trace-report.pdf");
+
+  const regenerate = page.getByRole("button", { name: "Regenerate report" });
+  await page.getByLabel("Executive summary").fill("Unsaved before regeneration.");
+  await expect(regenerate).toBeDisabled();
+  await expect(page.getByText("Save or cancel your narrative changes before regenerating.")).toBeVisible();
+  await page.getByRole("button", { name: "Cancel changes" }).click();
+
+  await page.getByLabel("Executive summary").fill("Updated in the browser with <special> & safe text.");
+  await page.getByRole("button", { name: "Save revision" }).click();
+  await expect.poll(() => saveBodies).toEqual([{ expectedRevision: 1, prosePatch: { executiveSummary: "Updated in the browser with <special> & safe text." } }]);
+  await expect(page.getByText("Building your report")).toBeVisible();
+  await expect(page.getByText("Revision 2 · Manually edited")).toBeVisible();
+  await expect(page.getByText("Completed", { exact: true })).toBeVisible({ timeout: 7_000 });
+
+  await expect(regenerate).toBeEnabled();
+  await regenerate.click();
+  await expect.poll(() => regenerationBodies).toEqual([{ expectedRevision: 2 }]);
+  await expect(page.getByText("Building your report")).toBeVisible();
 });
 
 test("Day 9 structured editor stays usable without horizontal overflow on mobile", async ({ page }) => {
