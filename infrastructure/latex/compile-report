@@ -1,0 +1,15 @@
+#!/bin/sh
+set -eu
+
+if [ "$#" -ne 2 ] || [ "$1" != "/input/report.tex" ] || [ "$2" != "/output/report.pdf" ]; then
+  exit 64
+fi
+
+cd /work
+export SOURCE_DATE_EPOCH=946684800
+export FORCE_SOURCE_DATE=1
+export TZ=UTC
+xelatex -no-shell-escape -interaction=nonstopmode -halt-on-error -file-line-error -jobname=report "$1" >/dev/null
+xelatex -no-shell-escape -interaction=nonstopmode -halt-on-error -file-line-error -jobname=report "$1" >/dev/null
+[ -f report.pdf ]
+install -m 0444 report.pdf "$2"

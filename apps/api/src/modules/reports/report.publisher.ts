@@ -5,6 +5,7 @@ import { ReportQueue } from './report.queue';
 const PUBLISH_INTERVAL_MS = 5_000;
 const REQUEST_PUBLISH_TIMEOUT_MS = 1_000;
 const PUBLISH_BATCH_SIZE = 100;
+const PUBLISH_TYPE_BATCH_SIZE = PUBLISH_BATCH_SIZE / 2;
 
 @Injectable()
 export class ReportPublisher implements OnApplicationBootstrap, OnModuleDestroy {
@@ -48,28 +49,72 @@ export class ReportPublisher implements OnApplicationBootstrap, OnModuleDestroy 
   }
 
   private async reconcile(): Promise<void> {
-    const reports = await this.prisma.report.findMany({
-      where: { status: { in: ['pending', 'processing'] }, revisions: { none: {} } },
-      orderBy: [{ publishedAt: { sort: 'asc', nulls: 'first' } }, { createdAt: 'asc' }],
-      take: PUBLISH_BATCH_SIZE,
-      select: { id: true },
-    });
-    for (const report of reports) {
-      await this.publishOne(report.id).catch((error: unknown) => this.logFailure(`report ${report.id}`, error));
+    const [renderReports, initialReports] = await Promise.all([
+      this.prisma.report.findMany({
+        where: { status: 'processing', renderRevision: { not: null } },
+        orderBy: [
+          { renderPublishedAt: { sort: 'asc', nulls: 'first' } },
+          { createdAt: 'asc' },
+        ],
+        take: PUBLISH_TYPE_BATCH_SIZE,
+        select: { id: true },
+      }),
+      this.prisma.report.findMany({
+        where: {
+          status: { in: ['pending', 'processing'] },
+          renderRevision: null,
+          revisions: { none: {} },
+        },
+        orderBy: [
+          { publishedAt: { sort: 'asc', nulls: 'first' } },
+          { createdAt: 'asc' },
+        ],
+        take: PUBLISH_TYPE_BATCH_SIZE,
+        select: { id: true },
+      }),
+    ]);
+    for (const report of [...renderReports, ...initialReports]) {
+      await this.withTimeout(this.publishOne(report.id), REQUEST_PUBLISH_TIMEOUT_MS)
+        .catch((error: unknown) => this.logFailure(`report ${report.id}`, error));
     }
   }
 
   private async publishOne(reportId: string): Promise<void> {
     const report = await this.prisma.report.findFirst({
-      where: { id: reportId, status: { in: ['pending', 'processing'] }, revisions: { none: {} } },
-      select: { id: true },
+      where: {
+        id: reportId,
+        status: { in: ['pending', 'processing'] },
+        OR: [{ revisions: { none: {} } }, { renderRevision: { not: null } }],
+      },
+      select: { id: true, renderRevision: true, renderGeneration: true },
     });
     if (report === null) return;
-    await this.queue.enqueue(report.id);
-    await this.prisma.report.updateMany({
-      where: { id: report.id, status: { in: ['pending', 'processing'] }, revisions: { none: {} } },
-      data: { publishedAt: new Date() },
+    const observedAt = new Date();
+    if (report.renderRevision !== null) {
+      const attempted = await this.prisma.report.updateMany({
+        where: {
+          id: report.id,
+          status: 'processing',
+          renderRevision: report.renderRevision,
+          renderGeneration: report.renderGeneration,
+        },
+        data: { renderPublishedAt: observedAt },
+      });
+      if (attempted.count !== 1) return;
+      await this.queue.enqueue(report.id);
+      return;
+    }
+    const attempted = await this.prisma.report.updateMany({
+      where: {
+        id: report.id,
+        status: { in: ['pending', 'processing'] },
+        renderRevision: null,
+        revisions: { none: {} },
+      },
+      data: { publishedAt: observedAt },
     });
+    if (attempted.count !== 1) return;
+    await this.queue.enqueue(report.id);
   }
 
   private async withTimeout(operation: Promise<void>, timeoutMs: number): Promise<void> {

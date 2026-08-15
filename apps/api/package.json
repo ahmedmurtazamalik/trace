@@ -9,7 +9,7 @@
     "dev": "tsx watch src/main.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "eslint src test",
-    "test": "jest --runInBand test/api-exception.filter.spec.ts test/dependency-health.service.spec.ts test/password-reset-delivery.spec.ts",
+    "test": "jest --runInBand test/api-exception.filter.spec.ts test/dependency-health.service.spec.ts test/password-reset-delivery.spec.ts test/report-publisher.spec.ts",
     "test:integration": "jest --runInBand --testPathPattern=integration.spec.ts"
   },
   "dependencies": {
@@ -19,6 +19,7 @@
     "@trace/config": "workspace:*",
     "@trace/database": "workspace:*",
     "@trace/github": "workspace:*",
+    "@trace/report-storage": "workspace:*",
     "@trace/shared": "workspace:*",
     "argon2": "0.44.0",
     "bullmq": "6.1.0",

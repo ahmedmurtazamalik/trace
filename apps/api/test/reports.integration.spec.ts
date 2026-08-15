@@ -369,15 +369,16 @@ describe('Reports API', () => {
       .send({ reportDate: '2026-08-07', timezone: 'UTC' })
       .expect(201);
     const reportId = reportCreateResponseSchema.parse(created.body as unknown).report.id;
-    expect(await prisma.report.findUniqueOrThrow({ where: { id: reportId } })).toMatchObject({
-      status: 'pending',
-      publishedAt: null,
-    });
+    const failedAttempt = await prisma.report.findUniqueOrThrow({ where: { id: reportId } });
+    expect(failedAttempt).toMatchObject({ status: 'pending' });
+    expect(failedAttempt.publishedAt).toBeInstanceOf(Date);
 
     enqueue.mockRestore();
     const secondPublisher = new ReportPublisher(prisma, reportQueue);
     await Promise.all([app.get(ReportPublisher).publishOwed(), secondPublisher.publishOwed()]);
-    expect((await prisma.report.findUniqueOrThrow({ where: { id: reportId } })).publishedAt).toBeInstanceOf(Date);
+    const retriedAttempt = await prisma.report.findUniqueOrThrow({ where: { id: reportId } });
+    expect(retriedAttempt.publishedAt).toBeInstanceOf(Date);
+    expect(retriedAttempt.publishedAt!.getTime()).toBeGreaterThanOrEqual(failedAttempt.publishedAt!.getTime());
     const queue = new Queue('report-generation', { connection: { url: process.env.REDIS_URL! } });
     try {
       const job = await queue.getJob(`report-${reportId}`);

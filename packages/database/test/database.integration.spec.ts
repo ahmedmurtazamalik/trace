@@ -8,9 +8,23 @@ import { seed } from '../prisma/seed';
 const prisma = new PrismaClient();
 
 async function executeMigration(client: PrismaClient, sql: string): Promise<void> {
-  for (const statement of sql.split(';').map((value) => value.trim()).filter(Boolean)) {
-    await client.$executeRawUnsafe(statement);
+  const statements: string[] = [];
+  let statement = '';
+  let inDollarQuote = false;
+  for (let index = 0; index < sql.length; index += 1) {
+    if (sql.slice(index, index + 2) === '$$') {
+      inDollarQuote = !inDollarQuote;
+      statement += '$$';
+      index += 1;
+    } else if (sql[index] === ';' && !inDollarQuote) {
+      if (statement.trim().length > 0) statements.push(statement.trim());
+      statement = '';
+    } else {
+      statement += sql[index];
+    }
   }
+  if (statement.trim().length > 0) statements.push(statement.trim());
+  for (const migrationStatement of statements) await client.$executeRawUnsafe(migrationStatement);
 }
 
 describe('database foundation', () => {
@@ -150,6 +164,66 @@ describe('database foundation', () => {
     }
   });
 
+  it('backfills a durable render obligation for pre-Day-10 structured reports', async () => {
+    const schema = `report_upgrade_${randomUUID().replaceAll('-', '')}`;
+    const databaseUrl = new URL(process.env.DATABASE_URL as string);
+    databaseUrl.searchParams.set('schema', schema);
+    const isolated = new PrismaClient({ datasourceUrl: databaseUrl.toString() });
+    await prisma.$executeRawUnsafe(`CREATE SCHEMA "${schema}"`);
+
+    try {
+      const migrationsRoot = path.join(__dirname, '../prisma/migrations');
+      const migrations = (await readdir(migrationsRoot)).sort();
+      const firstDay10Migration = '20260814090000_add_report_render_obligation';
+      for (const migration of migrations.filter((name) => /^\d/.test(name) && name < firstDay10Migration)) {
+        const sql = (await readFile(path.join(migrationsRoot, migration, 'migration.sql'), 'utf8'))
+          .replaceAll('"public".', `"${schema}".`);
+        await executeMigration(isolated, sql);
+      }
+      await isolated.$executeRawUnsafe(`
+        INSERT INTO users (id, username, password_hash, created_at, updated_at)
+        VALUES ('legacy_day9_user', 'legacy.day9', 'test-only', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+      `);
+      await isolated.$executeRawUnsafe(`
+        INSERT INTO reports (id, user_id, report_date, timezone, status, input_snapshot, created_at)
+        VALUES ('legacy_day9_report', 'legacy_day9_user', DATE '2026-08-13', 'UTC', 'processing', '{}'::jsonb, CURRENT_TIMESTAMP)
+      `);
+      await isolated.$executeRawUnsafe(`
+        INSERT INTO report_revisions (id, report_id, revision, source, content, created_at)
+        VALUES ('legacy_day9_revision', 'legacy_day9_report', 1, 'ai', '{}'::jsonb, CURRENT_TIMESTAMP)
+      `);
+
+      for (const migration of migrations.filter((name) => /^\d/.test(name) && name >= firstDay10Migration)) {
+        const sql = (await readFile(path.join(migrationsRoot, migration, 'migration.sql'), 'utf8'))
+          .replaceAll('"public".', `"${schema}".`);
+        await executeMigration(isolated, sql);
+      }
+      const rows = await isolated.$queryRawUnsafe<Array<{
+        current_revision_id: string;
+        render_revision: number;
+        render_generation: number;
+        render_published_at: Date | null;
+      }>>(`SELECT current_revision_id, render_revision, render_generation, render_published_at
+            FROM reports WHERE id = 'legacy_day9_report'`);
+      expect(rows).toEqual([{
+        current_revision_id: 'legacy_day9_revision',
+        render_revision: 1,
+        render_generation: 1,
+        render_published_at: null,
+      }]);
+      await isolated.$executeRawUnsafe(`
+        INSERT INTO reports (id, user_id, report_date, timezone, status, input_snapshot, created_at)
+        VALUES ('other_report', 'legacy_day9_user', DATE '2026-08-12', 'UTC', 'pending', '{}'::jsonb, CURRENT_TIMESTAMP)
+      `);
+      await expect(isolated.$executeRawUnsafe(`
+        UPDATE report_revisions SET report_id = 'other_report' WHERE id = 'legacy_day9_revision'
+      `)).rejects.toThrow();
+    } finally {
+      await isolated.$disconnect();
+      await prisma.$executeRawUnsafe(`DROP SCHEMA IF EXISTS "${schema}" CASCADE`);
+    }
+  });
+
   it('enforces canonical repository and SHA uniqueness in PostgreSQL', async () => {
     const existing = await prisma.commit.findUniqueOrThrow({ where: { id: 'seed_commit_api_foundation' } });
 
@@ -216,6 +290,46 @@ describe('database foundation', () => {
     }
   });
 
+  it('enforces current-revision ownership while preserving report deletion cascades', async () => {
+    const reportId = 'test_current_revision_cascade';
+    const revisionId = 'test_current_revision_cascade_revision';
+    const report = await prisma.report.create({
+      data: {
+        id: reportId,
+        userId: 'seed_user_bob',
+        reportDate: new Date('2000-01-01T00:00:00.000Z'),
+        timezone: 'UTC',
+        inputSnapshot: { test: true },
+      },
+    });
+    const revision = await prisma.reportRevision.create({
+      data: { id: revisionId, reportId, revision: 1, source: 'ai', content: { test: true } },
+    });
+    await prisma.report.update({ where: { id: report.id }, data: { currentRevisionId: revision.id } });
+
+    await expect(prisma.report.update({
+      where: { id: 'seed_report_alice_2026_08_11' },
+      data: { currentRevisionId: revisionId },
+    })).rejects.toThrow();
+    await expect(prisma.reportRevision.update({
+      where: { id: revisionId },
+      data: { reportId: 'seed_report_alice_2026_08_11' },
+    })).rejects.toThrow();
+    await prisma.reportRevision.update({ where: { id: revisionId }, data: { latexSource: 'frozen source' } });
+    await expect(prisma.reportRevision.update({
+      where: { id: revisionId },
+      data: { latexSource: 'changed source' },
+    })).rejects.toThrow();
+    await expect(prisma.reportRevision.update({
+      where: { id: revisionId },
+      data: { latexSource: null },
+    })).rejects.toThrow();
+    await expect(prisma.reportRevision.delete({ where: { id: revisionId } })).rejects.toThrow();
+
+    await prisma.report.delete({ where: { id: report.id } });
+    expect(await prisma.reportRevision.count({ where: { id: revision.id } })).toBe(0);
+  });
+
   it('prevents an artifact from referencing another report’s revision', async () => {
     const otherReport = await prisma.report.create({
       data: {
@@ -237,7 +351,7 @@ describe('database foundation', () => {
             kind: 'pdf',
             storageKey: 'test/cross-report.pdf',
             sizeBytes: 10,
-            checksum: 'test-checksum',
+            checksum: 'a'.repeat(64),
           },
         }),
       ).rejects.toMatchObject({ code: 'P2003' });

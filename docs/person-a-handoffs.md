@@ -340,3 +340,33 @@ Final recorded results:
 ### Deferred by plan
 
 - No arbitrary LaTeX, compilation, storage, artifact, download, revision-edit endpoint, regeneration, or `completed` transition is included; those remain Day 10.
+
+---
+
+## Day 10 — Person A
+
+### Done
+
+- Added deterministic fixed-template LaTeX rendering of frozen structured report revisions with exact snapshot repository/contributor correspondence, complete TeX metacharacter escaping, control-character rejection, and a 2 MiB expanded UTF-8 source bound. The exact first-render source is frozen on the revision and reused with any already persisted immutable objects, so same-revision regeneration remains stable across renderer/compiler deployments.
+- Added a pinned XeLaTeX image and direct-argv Docker compiler boundary with no network or shell escape, read-only root, dropped capabilities, no-new-privileges, non-root execution, fixed entrypoint/paths, bounded CPU/memory/PIDs/time, 32 MiB intermediate and 64 MiB temporary `tmpfs` mounts, a fixed reproducible build epoch, bounded structural PDF parsing, orphan-container termination, and deterministic host-temp cleanup.
+- Added shared filesystem artifact storage with restrictive owner/report/revision keys, traversal and intermediate/final symlink rejection, no-follow file handles with pre/post `fstat` verification, bounded reads, atomic idempotent immutable writes, and explicit production persistent-volume configuration.
+- Added authoritative `currentRevisionId`, monotonic render generations, durable render obligations, independent bounded initial/render publication batches with pre-I/O attempt-clock rotation, database-clock processing leases longer than the maximum compiler timeout, and exact current-revision/generation/lease fences. Failed publication cohorts cannot starve later obligations, and stale or expired workers cannot activate artifacts or silently consume failed jobs.
+- Backfilled pre-Day-10 structured processing reports into render obligations and enforced current-revision ownership while preserving ordinary report/revision deletion cascades.
+- Enforced non-null artifact revision ownership, one artifact per report/revision/kind, positive bounded sizes, and lowercase SHA-256 checksums at the database layer.
+- Added owner-only, CSRF-protected revision update and regeneration routes. Manual edits create immutable sparse-prose revisions; regeneration preserves current content and rerenders it rather than invoking the narrative provider.
+- Added owner-only current-artifact downloads that authorize through report relationships, reject foreign artifact IDs, perform bounded storage reads, and verify exact size and SHA-256 before streaming with private/no-store headers.
+- Kept lifecycle output truthful: incomplete reports hide historical artifacts, terminal compilation errors remain failed under duplicate/redelivered jobs until an owner requests a new generation, transient storage failures retain a reconciled processing obligation, and only successful object persistence plus atomic database finalization marks a report completed.
+
+### Configuration
+
+- For local development, build `trace-latex:local` with `docker build --tag trace-latex:local infrastructure/latex`. Exercise an exact staged compiler candidate with `pnpm test:latex:docker`; the command rebuilds and tags the image with the current staged tree and passes that exact tag to both real-container tests.
+- `NODE_ENV` must be explicitly `development`, `test`, or `production`; missing or unknown modes fail closed before compiler or storage defaults are considered.
+- `REPORT_LATEX_IMAGE` is required as an immutable `@sha256:<digest>` image reference in production and defaults to `trace-latex:local` only in explicit non-production modes.
+- `REPORT_LATEX_TIMEOUT_MS` is bounded to 5,000–120,000 ms (default 30,000).
+- `REPORT_STORAGE_DRIVER=filesystem` is currently the only accepted adapter.
+- `REPORT_STORAGE_ROOT` must be an explicit absolute path in production and must be mounted on persistent shared storage visible to API and worker processes.
+
+### Verification boundary
+
+- Renderer, compiler-boundary, real Docker PDF compilation, storage, worker lifecycle/fencing, revision concurrency, regeneration, CSRF, owner isolation, and checksum-verified download tests cover the Day 10 behavior.
+- Production never falls back to fake rendering, fake storage, or the deterministic report provider.
