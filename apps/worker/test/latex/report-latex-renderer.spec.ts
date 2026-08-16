@@ -67,6 +67,24 @@ describe('Trace LaTeX report renderer', () => {
     expect(latex).toContain('Second paragraph.');
   });
 
+  it('renders an honest placeholder instead of an invalid empty accomplishments list', () => {
+    const emptyAccomplishments = {
+      ...content,
+      repositories: [{
+        ...content.repositories[0],
+        contributors: [{
+          ...content.repositories[0]!.contributors[0],
+          accomplishments: [],
+        }],
+      }],
+    };
+
+    const latex = renderReportLatex(snapshot, emptyAccomplishments, 1);
+
+    expect(latex).toContain('No accomplishments recorded.');
+    expect(latex).not.toContain('\\begin{itemize}[leftmargin=*]\n\n\\end{itemize}');
+  });
+
   it('rejects C0, DEL, and C1 controls while preserving supported whitespace', () => {
     expect(() => escapeLatex('bad\u0000value')).toThrow('REPORT_RENDER_INVALID');
     expect(() => escapeLatex('bad\u007fvalue')).toThrow('REPORT_RENDER_INVALID');
