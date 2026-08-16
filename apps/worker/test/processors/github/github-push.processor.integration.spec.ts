@@ -28,6 +28,10 @@ describeIntegration('GitHub push processor', () => {
   const extendedOidDeliveryId = `worker-extended-oid-${suffix}`;
   const intermediateOidDeliveryId = `worker-intermediate-oid-${suffix}`;
   const malformedNestedDeliveryId = `worker-malformed-nested-${suffix}`;
+  const payloadIdentityDeliveryIds = [
+    `worker-payload-installation-${suffix}`,
+    `worker-payload-repository-${suffix}`,
+  ];
   const reassignedDeliveryId = `worker-reassigned-${suffix}`;
   const otherInstallationId = `worker-other-installation-${suffix}`;
   const reassignedInstallationId = `worker-reassigned-installation-${suffix}`;
@@ -114,7 +118,7 @@ describeIntegration('GitHub push processor', () => {
     await prisma.pushEvent.deleteMany({ where: { repositoryId } });
     await prisma.commit.deleteMany({ where: { repositoryId } });
     await prisma.contributor.deleteMany({ where: { githubUserId: senderGithubId } });
-    await prisma.githubWebhookDelivery.deleteMany({ where: { id: { in: [deliveryId, overlappingDeliveryId, queuedDeliveryId, malformedDeliveryId, failedDeliveryId, revokedDeliveryId, mismatchedAuthorityDeliveryId, invalidPathDeliveryId, extendedOidDeliveryId, ...[41, 42, 63].map((length) => `${intermediateOidDeliveryId}-${length}`), malformedNestedDeliveryId, reassignedDeliveryId] } } });
+    await prisma.githubWebhookDelivery.deleteMany({ where: { id: { in: [deliveryId, overlappingDeliveryId, queuedDeliveryId, malformedDeliveryId, failedDeliveryId, revokedDeliveryId, mismatchedAuthorityDeliveryId, invalidPathDeliveryId, extendedOidDeliveryId, ...[41, 42, 63].map((length) => `${intermediateOidDeliveryId}-${length}`), malformedNestedDeliveryId, ...payloadIdentityDeliveryIds, reassignedDeliveryId] } } });
     await prisma.userRepository.deleteMany({ where: { repositoryId } });
     await prisma.repository.deleteMany({ where: { id: repositoryId } });
     await prisma.githubInstallation.deleteMany({ where: { id: otherInstallationId } });
@@ -509,6 +513,41 @@ describeIntegration('GitHub push processor', () => {
       expect(await prisma.pushEvent.count({ where: { githubDeliveryId: revokedGithubDeliveryId } })).toBe(0);
     } finally {
       await prisma.userRepository.updateMany({ where: { repositoryId }, data: { trackingEnabled: true } });
+    }
+  });
+
+  it('binds durable payload installation and repository identities before enrichment', async () => {
+    const source = await prisma.githubWebhookDelivery.findUniqueOrThrow({ where: { id: deliveryId } });
+    const cases = [
+      { field: 'installation', id: payloadIdentityDeliveryIds[0]!, value: Number(githubInstallationId + 100n) },
+      { field: 'repository', id: payloadIdentityDeliveryIds[1]!, value: Number(githubRepositoryId + 100n) },
+    ];
+
+    for (const item of cases) {
+      const payload = structuredClone(source.payload) as Record<string, unknown>;
+      const identity = payload[item.field] as Record<string, unknown>;
+      identity.id = item.value;
+      const githubDeliveryId = randomUUID();
+      await prisma.githubWebhookDelivery.create({
+        data: {
+          id: item.id,
+          githubDeliveryId,
+          eventName: 'push',
+          githubInstallationId,
+          githubRepositoryId,
+          installationId,
+          repositoryId,
+          payloadHash: '7'.repeat(64),
+          publishedAt: new Date(),
+          payload: payload as Prisma.InputJsonValue,
+        },
+      });
+      const enrichCommit = jest.fn().mockRejectedValue(new Error('must not run'));
+
+      await expect(new GithubPushProcessor(prisma, { commit: enrichCommit }).process(item.id))
+        .rejects.toThrow('Webhook delivery authority does not match its payload.');
+      expect(enrichCommit).not.toHaveBeenCalled();
+      await expect(prisma.pushEvent.count({ where: { githubDeliveryId } })).resolves.toBe(0);
     }
   });
 

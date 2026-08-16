@@ -110,6 +110,37 @@ describe('configured structured report provider', () => {
     }
   });
 
+  it('cancels every unused provider response body before returning a closed error', async () => {
+    const cases: Array<{ status: number; headers: Record<string, string>; expected: string }> = [
+      { status: 401, headers: {}, expected: 'REPORT_PROVIDER_AUTH' },
+      { status: 500, headers: {}, expected: 'REPORT_PROVIDER_FAILED' },
+      { status: 200, headers: { 'content-length': '101' }, expected: 'REPORT_PROVIDER_RESPONSE_TOO_LARGE' },
+    ];
+    for (const item of cases) {
+      const cancel = jest.fn().mockResolvedValue(undefined);
+      const body = new ReadableStream<Uint8Array>({
+        start(stream) {
+          stream.enqueue(new TextEncoder().encode('unused provider body'));
+        },
+        cancel,
+      });
+      const provider = new ConfiguredReportProvider({
+        endpoint: 'https://llm.example.test/v1/chat/completions',
+        apiKey: 'key',
+        model: 'structured-model',
+        maximumResponseBytes: 100,
+        allowedHosts: new Set(['llm.example.test']),
+        fetchImplementation: jest.fn().mockResolvedValue(new Response(body, {
+          status: item.status,
+          headers: item.headers,
+        })),
+      });
+
+      await expect(provider.generate(snapshot)).rejects.toThrow(item.expected);
+      expect(cancel).toHaveBeenCalledTimes(1);
+    }
+  });
+
   it('rejects private endpoints, redirects, and oversized outbound snapshots', async () => {
     expect(() => new ConfiguredReportProvider({
       endpoint: 'https://127.0.0.1/v1/chat/completions', apiKey: 'key', model: 'model',

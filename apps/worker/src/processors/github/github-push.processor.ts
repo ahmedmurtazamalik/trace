@@ -51,6 +51,12 @@ export class GithubPushProcessor {
     }
     if (snapshot.status === 'completed' || snapshot.status === 'failed') return;
     const snapshotPayload = this.payload(snapshot.payload);
+    if (
+      snapshot.githubInstallationId !== BigInt(snapshotPayload.installation.id)
+      || snapshot.githubRepositoryId !== BigInt(snapshotPayload.repository.id)
+    ) {
+      throw new Error('Webhook delivery authority does not match its payload.');
+    }
     const snapshotRepository = await this.prisma.repository.findUnique({ where: { id: snapshot.repositoryId } });
     if (snapshotRepository === null) throw new Error('Webhook delivery repository is unavailable.');
     const snapshotInstallation = await this.prisma.githubInstallation.findUnique({ where: { id: snapshot.installationId } });

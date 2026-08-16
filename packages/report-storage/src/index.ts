@@ -42,6 +42,7 @@ export class FileSystemArtifactStorage implements ArtifactStorage {
     });
     await new Promise<void>((resolveWrite, rejectWrite) => {
       let settled = false;
+      let terminationRequested = false;
       const finish = (error?: Error): void => {
         if (settled) return;
         settled = true;
@@ -50,25 +51,24 @@ export class FileSystemArtifactStorage implements ArtifactStorage {
         else rejectWrite(error);
       };
       const terminate = (): void => {
-        writer.kill('SIGKILL');
+        if (terminationRequested) return;
+        terminationRequested = true;
         writer.stdin.destroy();
-        writer.unref();
+        writer.kill('SIGKILL');
       };
       const abort = (): void => {
         terminate();
-        finish(new Error(STORAGE_FAILED));
       };
       signal?.addEventListener('abort', abort, { once: true });
       writer.once('error', () => {
         terminate();
-        finish(new Error(STORAGE_FAILED));
+        if (writer.pid === undefined) finish(new Error(STORAGE_FAILED));
       });
       writer.stdin.once('error', () => {
         terminate();
-        finish(new Error(STORAGE_FAILED));
       });
       writer.once('close', (code) => {
-        if (code === 0 && signal?.aborted !== true) finish();
+        if (code === 0 && signal?.aborted !== true && !terminationRequested) finish();
         else finish(new Error(STORAGE_FAILED));
       });
       if (signal?.aborted === true) abort();

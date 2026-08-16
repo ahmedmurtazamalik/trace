@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process';
-import { mkdir, mkdtemp, rm, stat, symlink, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, stat, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { promisify } from 'node:util';
@@ -29,16 +29,32 @@ describe('report artifact storage', () => {
 
   it('terminates a hung filesystem writer when the storage deadline aborts', async () => {
     const helper = resolve(root, 'hanging-writer.cjs');
-    await writeFile(helper, "process.stdin.resume(); setInterval(() => undefined, 60_000);\n", { mode: 0o500 });
+    await writeFile(helper, "const fs = require('node:fs'); const path = require('node:path'); fs.writeFileSync(path.join(process.argv[2], 'writer.pid'), String(process.pid)); process.stdin.resume(); setInterval(() => undefined, 60_000);\n", { mode: 0o500 });
     const storage = new FileSystemArtifactStorage(root, helper);
     const controller = new AbortController();
     const startedAt = Date.now();
     const key = 'users/user_1/reports/report_1/revisions/2/generations/3/attempts/11111111-2222-4333-8444-555555555555/report.pdf';
     const writing = storage.put(key, Buffer.from('%PDF-1.7 trace'), controller.signal);
-    setTimeout(() => controller.abort(), 25);
+    let writerPid: number | undefined;
+    for (let attempt = 0; attempt < 50 && writerPid === undefined; attempt += 1) {
+      try {
+        writerPid = Number(await readFile(join(root, 'writer.pid'), 'utf8'));
+      } catch {
+        await new Promise((resolveWait) => setTimeout(resolveWait, 10));
+      }
+    }
+    expect(writerPid).toBeDefined();
+    controller.abort();
 
     await expect(writing).rejects.toThrow('REPORT_STORAGE_FAILED');
     expect(Date.now() - startedAt).toBeLessThan(1_000);
+    let processError: NodeJS.ErrnoException | undefined;
+    try {
+      process.kill(writerPid!, 0);
+    } catch (error) {
+      processError = error as NodeJS.ErrnoException;
+    }
+    expect(processError?.code).toBe('ESRCH');
   });
 
   it('rejects traversal, unexpected names, symlinks, and oversized reads', async () => {

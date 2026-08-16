@@ -70,9 +70,15 @@ export class ConfiguredReportProvider implements StructuredReportProvider {
         redirect: 'error',
         signal: controller.signal,
       });
-      if (response.status === 401 || response.status === 403) throw new Error('REPORT_PROVIDER_AUTH');
-      if (!response.ok) throw new Error('REPORT_PROVIDER_FAILED');
-      const responseBody = await this.boundedBody(response);
+      if (response.status === 401 || response.status === 403) {
+        await this.cancelBody(response, controller);
+        throw new Error('REPORT_PROVIDER_AUTH');
+      }
+      if (!response.ok) {
+        await this.cancelBody(response, controller);
+        throw new Error('REPORT_PROVIDER_FAILED');
+      }
+      const responseBody = await this.boundedBody(response, controller);
       const envelope = JSON.parse(responseBody) as unknown;
       return this.restoreIdentifiers(JSON.parse(this.content(envelope)) as unknown, outbound.identifiers);
     } catch (error) {
@@ -83,10 +89,13 @@ export class ConfiguredReportProvider implements StructuredReportProvider {
     }
   }
 
-  private async boundedBody(response: Response): Promise<string> {
+  private async boundedBody(response: Response, controller: AbortController): Promise<string> {
     const maximum = this.options.maximumResponseBytes ?? 1_000_000;
     const length = response.headers.get('content-length');
-    if (length !== null && Number(length) > maximum) throw new Error('REPORT_PROVIDER_RESPONSE_TOO_LARGE');
+    if (length !== null && Number(length) > maximum) {
+      await this.cancelBody(response, controller);
+      throw new Error('REPORT_PROVIDER_RESPONSE_TOO_LARGE');
+    }
     const reader: ReadableStreamDefaultReader<Uint8Array> | undefined = response.body?.getReader();
     if (reader === undefined) throw new Error('REPORT_PROVIDER_FAILED');
     const chunks: Uint8Array[] = [];
@@ -96,6 +105,7 @@ export class ConfiguredReportProvider implements StructuredReportProvider {
       if (result.done) break;
       bytes += result.value.byteLength;
       if (bytes > maximum) {
+        controller.abort();
         await reader.cancel();
         throw new Error('REPORT_PROVIDER_RESPONSE_TOO_LARGE');
       }
@@ -108,6 +118,11 @@ export class ConfiguredReportProvider implements StructuredReportProvider {
       offset += chunk.byteLength;
     }
     return new TextDecoder().decode(output);
+  }
+
+  private async cancelBody(response: Response, controller: AbortController): Promise<void> {
+    controller.abort();
+    await response.body?.cancel().catch(() => undefined);
   }
 
   private content(value: unknown): string {
