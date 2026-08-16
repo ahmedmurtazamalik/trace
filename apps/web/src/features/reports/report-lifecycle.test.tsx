@@ -26,13 +26,14 @@ describe("Day 8 report lifecycle", () => {
     const { createReport } = setup();
 
     expect(await screen.findByRole("heading", { name: "Report history" })).toBeInTheDocument();
-    expect(screen.getByText(/PDF downloads remain unavailable until frontend download delivery is implemented\./)).toBeInTheDocument();
+    expect(screen.getByText(/Completed reports can be opened to view and download checksum-verified PDF and LaTeX files\./)).toBeInTheDocument();
+    expect(screen.queryByText(/PDF downloads remain unavailable/)).not.toBeInTheDocument();
     expect(await screen.findByText("Completed")).toBeInTheDocument();
     for (const status of ["Processing", "Pending", "Failed"]) expect(screen.getByText(status)).toBeInTheDocument();
     expect(screen.getByText("Generation could not be completed.")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Open report for August 12, 2026" })).toHaveAttribute("href", "/reports/completed");
-    expect(screen.getByRole("button", { name: "Download report for August 12, 2026 — download delivery is not available yet" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "Download report for August 11, 2026 — download delivery is not available yet" })).toBeDisabled();
+    expect(screen.getByRole("link", { name: "View and download report for August 12, 2026" })).toHaveAttribute("href", "/reports/completed");
+    expect(screen.getByRole("link", { name: "Open report for August 11, 2026" })).toHaveAttribute("href", "/reports/processing");
+    expect(screen.queryByRole("button", { name: /download delivery is not available yet/i })).not.toBeInTheDocument();
 
     await userEvent.clear(screen.getByLabelText("Report date"));
     await userEvent.type(screen.getByLabelText("Report date"), "2026-08-13");
@@ -50,7 +51,7 @@ describe("Day 8 report lifecycle", () => {
       }),
     });
 
-    expect(await screen.findByRole("link", { name: "Open report for August 12, 2026" })).toHaveAttribute(
+    expect(await screen.findByRole("link", { name: "View and download report for August 12, 2026" })).toHaveAttribute(
       "href",
       "/reports/report%2Fwith%20reserved%3Fcharacters",
     );

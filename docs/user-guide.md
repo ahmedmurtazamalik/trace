@@ -62,15 +62,18 @@ Reset links are single-use and expire after 30 minutes. A missing, invalid, cons
 
 Repository rows on the GitHub page are labelled illustrative. Real repository access and tracking controls arrive in the repository-management work.
 
-## Request and track reports
+## Request, edit, regenerate, and download reports
 
 1. Open **Reports** in the protected workspace.
 2. Choose the development-activity date. Trace displays the detected IANA timezone used for that request.
-3. Select **Create report**.
-4. Use report history to review **Pending**, **Processing**, **Completed**, or **Failed** status and open a detail view.
-5. PDF download remains disabled until a later frontend delivery route is implemented, even if report metadata already references a current PDF artifact.
+3. Select **Create report**. Trace opens the saved report and shows its current processing status.
+4. Use report history to review **Pending**, **Processing**, **Completed**, or **Failed** reports and open a detail view.
+5. For a completed report, edit only the narrative fields, then select **Save revision**. Deterministic facts remain read-only. Saving adopts the new revision and resumes status refresh while Trace processes it.
+6. Save or cancel unsaved narrative changes before regenerating. Trace disables regeneration while a draft is unsaved so it cannot be lost.
+7. Select **Regenerate report** on a completed or failed report to retry from the current saved revision. If a newer revision already exists, reload it before editing or regenerating again.
+8. Download only artifacts listed for the current revision. Trace verifies the file size and checksum before delivering the trusted filename and media type. If a file is unavailable, expired, or corrupt, refresh the report and try again.
 
-Reports now use Trace's authenticated live API. Creating a report sends the selected date and detected timezone with the in-memory CSRF token; Trace stores the authorized factual snapshot, queues generation, and returns persisted list/detail status after refresh. Duplicate dates, unavailable generation, expired sessions, empty history, load retries, and safe failures are handled without exposing internal errors. PDF controls remain disabled because frontend download delivery is not implemented yet; artifact metadata alone does not enable an inert control. Automated browser tests deterministically intercept the same validated HTTP contracts; the API integration suite separately proves PostgreSQL persistence, ownership, CSRF, and Redis publication.
+Reports use Trace's authenticated live API. Create, save, and regenerate requests include the in-memory CSRF token; report status refreshes automatically while work is pending or processing. Safe conflict and artifact errors do not expose backend internals.
 
 ## Accessibility
 
