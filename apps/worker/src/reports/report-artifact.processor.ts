@@ -81,8 +81,6 @@ export class ReportArtifactProcessor {
     }
 
     try {
-      await this.storage.put(latexKey, latexBytes);
-      await this.storage.put(pdfKey, pdf);
       await this.persist(reportId, token, claim, latexBytes, pdf);
     } catch {
       await this.release(reportId, token, claim).catch(() => undefined);
@@ -190,23 +188,24 @@ export class ReportArtifactProcessor {
   ): Promise<void> {
     await this.prisma.$transaction(async (transaction) => {
       await transaction.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${reportId}, 0))`;
-      const owned = await transaction.$queryRaw<Array<{ owned: boolean }>>`
-        SELECT EXISTS (
-          SELECT 1 FROM "reports" r
-          WHERE r."id" = ${reportId}
-            AND r."status" = 'processing'
-            AND r."processing_token" = ${token}
-            AND r."processing_expires_at" > clock_timestamp()
-            AND r."current_revision_id" = ${claim.revisionId}
-            AND r."render_revision" = ${claim.revision}
-            AND r."render_generation" = ${claim.generation}
-        ) AS "owned"
+      const renewed = await transaction.$executeRaw`
+        UPDATE "reports"
+        SET "processing_expires_at" = clock_timestamp() + (${this.leaseDurationMs} * interval '1 millisecond')
+        WHERE "id" = ${reportId}
+          AND "status" = 'processing'
+          AND "processing_token" = ${token}
+          AND "processing_expires_at" > clock_timestamp()
+          AND "current_revision_id" = ${claim.revisionId}
+          AND "render_revision" = ${claim.revision}
+          AND "render_generation" = ${claim.generation}
       `;
-      if (owned[0]?.owned !== true) throw new Error(RENDER_RETRY);
-      for (const artifact of [
+      if (renewed !== 1) throw new Error(RENDER_RETRY);
+      const artifacts = [
         { kind: 'latex' as const, bytes: latex, key: `users/${claim.userId}/reports/${reportId}/revisions/${claim.revision}/report.tex` },
         { kind: 'pdf' as const, bytes: pdf, key: `users/${claim.userId}/reports/${reportId}/revisions/${claim.revision}/report.pdf` },
-      ]) {
+      ];
+      for (const artifact of artifacts) await this.storage.put(artifact.key, artifact.bytes);
+      for (const artifact of artifacts) {
         await transaction.reportArtifact.upsert({
           where: { storageKey: artifact.key },
           create: {

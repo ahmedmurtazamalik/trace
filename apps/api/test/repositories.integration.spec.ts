@@ -16,6 +16,7 @@ import { createApplication } from '../src/bootstrap';
 const username = 'day4.repositories.user';
 const email = 'day4.repositories@example.test';
 const password = 'correct-horse-battery-staple';
+const cursorUsername = 'day4.repositories.cursor.other';
 
 function cookie(response: request.Response): string {
   const value: unknown = (response.headers as Record<string, unknown>)['set-cookie'];
@@ -32,7 +33,7 @@ describe('Repository API', () => {
   beforeAll(async () => {
     process.env.NODE_ENV = 'test';
     process.env.DATABASE_URL = 'postgresql://trace:trace_dev_password@localhost:5432/trace?schema=public';
-    process.env.REDIS_URL = 'redis://localhost:6379';
+    process.env.REDIS_URL ??= 'redis://localhost:6379';
     process.env.SESSION_SECRET = 'test-only-session-secret-at-least-32-characters';
     process.env.GITHUB_APP_CLIENT_ID = 'test-client-id';
     process.env.GITHUB_APP_SLUG = 'trace-test-app';
@@ -58,7 +59,7 @@ describe('Repository API', () => {
       await prisma.githubInstallation.deleteMany({ where: { githubAccountId: user.githubAccount.id } });
       await prisma.githubAccount.delete({ where: { id: user.githubAccount.id } });
     }
-    await prisma.user.deleteMany({ where: { username } });
+    await prisma.user.deleteMany({ where: { username: { in: [username, cursorUsername] } } });
     await redis.flushdb();
   });
 
@@ -73,7 +74,7 @@ describe('Repository API', () => {
         await prisma.githubInstallation.deleteMany({ where: { githubAccountId: user.githubAccount.id } });
         await prisma.githubAccount.delete({ where: { id: user.githubAccount.id } });
       }
-      await prisma.user.deleteMany({ where: { username } });
+      await prisma.user.deleteMany({ where: { username: { in: [username, cursorUsername] } } });
     } finally {
       await app.close();
     }
@@ -296,6 +297,20 @@ describe('Repository API', () => {
     await request(server).get('/api/v1/repositories')
       .query({ limit: 1, cursor: firstPage.pageInfo.nextCursor, search: 'other-filter' })
       .set('Cookie', identity.cookie).expect(400);
+    await request(server).get('/api/v1/repositories')
+      .query({ limit: 2, cursor: firstPage.pageInfo.nextCursor })
+      .set('Cookie', identity.cookie).expect(400);
+    const cursor = firstPage.pageInfo.nextCursor ?? '';
+    const tampered = `${cursor.slice(0, -1)}${cursor.endsWith('A') ? 'B' : 'A'}`;
+    await request(server).get('/api/v1/repositories')
+      .query({ limit: 1, cursor: tampered }).set('Cookie', identity.cookie).expect(400);
+    const other = await request(server).post('/api/v1/auth/register').send({
+      username: cursorUsername,
+      email: 'day4.repositories.cursor.other@example.test',
+      password,
+    }).expect(201);
+    await request(server).get('/api/v1/repositories')
+      .query({ limit: 1, cursor }).set('Cookie', cookie(other)).expect(400);
 
     const search = await request(server).get('/api/v1/repositories').query({ search: ' WEB ' }).set('Cookie', identity.cookie).expect(200);
     expect(repositoryListResponseSchema.parse(search.body as unknown).items.map((item) => item.name)).toEqual(['web']);

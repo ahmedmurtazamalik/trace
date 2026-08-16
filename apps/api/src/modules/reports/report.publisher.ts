@@ -132,7 +132,7 @@ export class ReportPublisher implements OnApplicationBootstrap, OnModuleDestroy 
   }
 
   private logFailure(operation: string, error: unknown): void {
-    const message = error instanceof Error ? error.message : 'Unknown report publication failure.';
-    this.logger.error(`Failed ${operation}: ${message}`);
+    const type = error instanceof Error ? error.name : 'UnknownError';
+    this.logger.error(`Failed ${operation} (type=${type})`);
   }
 }

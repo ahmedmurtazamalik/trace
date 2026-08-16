@@ -17,7 +17,7 @@ import {
 
 const API_ORIGIN = (process.env.NEXT_PUBLIC_API_ORIGIN ?? "http://localhost:3001").replace(/\/$/, "");
 
-type ClientCode = RepositoryErrorCode | "UNAUTHENTICATED" | "CSRF_INVALID" | "VALIDATION_ERROR" | "SERVICE_UNAVAILABLE" | "INVALID_RESPONSE" | "NETWORK_ERROR" | "UNEXPECTED_ERROR";
+type ClientCode = RepositoryErrorCode | "UNAUTHENTICATED" | "CSRF_INVALID" | "VALIDATION_ERROR" | "RATE_LIMITED" | "SERVICE_UNAVAILABLE" | "INVALID_RESPONSE" | "NETWORK_ERROR" | "UNEXPECTED_ERROR";
 
 const messages: Record<ClientCode, string> = {
   REPOSITORY_NOT_FOUND: "This repository is not available to your Trace account.",
@@ -27,6 +27,7 @@ const messages: Record<ClientCode, string> = {
   UNAUTHENTICATED: "Your session has expired. Please sign in again.",
   CSRF_INVALID: "Your security session is no longer valid. Please sign in again.",
   VALIDATION_ERROR: "The repository request is invalid. Clear the filters and try again.",
+  RATE_LIMITED: "Too many repository synchronization requests. Please wait and try again.",
   SERVICE_UNAVAILABLE: "Repository synchronization is temporarily unavailable. Please try again.",
   INVALID_RESPONSE: "Trace received an invalid repository response. Please try again.",
   NETWORK_ERROR: "Trace could not reach the server. Check your connection and try again.",

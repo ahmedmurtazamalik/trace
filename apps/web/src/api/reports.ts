@@ -4,10 +4,11 @@ import {
 } from "@trace/shared";
 
 const API_ORIGIN = (process.env.NEXT_PUBLIC_API_ORIGIN ?? "http://localhost:3001").replace(/\/$/, "");
-export type ReportClientCode = "UNAUTHENTICATED" | "NOT_FOUND" | "REPORT_NOT_FOUND" | "REPORT_ALREADY_EXISTS" | "REPORT_NOT_EDITABLE" | "REPORT_REVISION_CONFLICT" | "REPORT_GENERATION_UNAVAILABLE" | "INVALID_RESPONSE" | "NETWORK_ERROR" | "UNEXPECTED_ERROR";
+export type ReportClientCode = "UNAUTHENTICATED" | "NOT_FOUND" | "RATE_LIMITED" | "REPORT_NOT_FOUND" | "REPORT_ALREADY_EXISTS" | "REPORT_NOT_EDITABLE" | "REPORT_REVISION_CONFLICT" | "REPORT_GENERATION_UNAVAILABLE" | "INVALID_RESPONSE" | "NETWORK_ERROR" | "UNEXPECTED_ERROR";
 const messages: Record<ReportClientCode, string> = {
   UNAUTHENTICATED: "Your session has expired. Please sign in again.",
   NOT_FOUND: "The requested report feature is not available in the current backend.",
+  RATE_LIMITED: "Too many report requests. Please wait and try again.",
   REPORT_NOT_FOUND: "This report is no longer available.",
   REPORT_ALREADY_EXISTS: "A report already exists for this date. Open it from report history.",
   REPORT_NOT_EDITABLE: "This report cannot be edited in its current state.",

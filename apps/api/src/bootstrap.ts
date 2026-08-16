@@ -1,6 +1,7 @@
 import { RequestMethod, ValidationPipe, type INestApplication } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
-import { json, raw, urlencoded, type ErrorRequestHandler } from 'express';
+import { json, raw, type ErrorRequestHandler } from 'express';
+import helmet from 'helmet';
 import { AppModule } from './app.module';
 import { ApiExceptionFilter } from './common/errors/api-exception.filter';
 import { TRACE_CONFIG } from './common/config/config.token';
@@ -11,6 +12,7 @@ export async function createApplication(): Promise<INestApplication> {
   const app = await NestFactory.create(AppModule, { bodyParser: false });
   const config = app.get<TraceConfig>(TRACE_CONFIG);
 
+  app.use(helmet());
   app.use(establishRequestId);
   app.use('/api/v1/webhooks/github', raw({ type: 'application/json', limit: '256kb' }));
   const payloadLimitHandler: ErrorRequestHandler = (error, request, response, next) => {
@@ -32,7 +34,6 @@ export async function createApplication(): Promise<INestApplication> {
     next(error);
   };
   app.use(json({ limit: '1mb' }));
-  app.use(urlencoded({ extended: false, limit: '64kb' }));
   app.use(payloadLimitHandler);
   app.useGlobalPipes(new ValidationPipe({
     whitelist: true,

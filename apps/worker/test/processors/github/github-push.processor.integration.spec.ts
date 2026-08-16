@@ -21,8 +21,10 @@ describeIntegration('GitHub push processor', () => {
   const queuedDeliveryId = `worker-queued-${suffix}`;
   const malformedDeliveryId = `worker-malformed-${suffix}`;
   const failedDeliveryId = `worker-failed-${suffix}`;
+  const revokedDeliveryId = `worker-revoked-${suffix}`;
   const mismatchedAuthorityDeliveryId = `worker-authority-${suffix}`;
   const invalidPathDeliveryId = `worker-invalid-path-${suffix}`;
+  const extendedOidDeliveryId = `worker-extended-oid-${suffix}`;
   const reassignedDeliveryId = `worker-reassigned-${suffix}`;
   const otherInstallationId = `worker-other-installation-${suffix}`;
   const reassignedInstallationId = `worker-reassigned-installation-${suffix}`;
@@ -109,7 +111,7 @@ describeIntegration('GitHub push processor', () => {
     await prisma.pushEvent.deleteMany({ where: { repositoryId } });
     await prisma.commit.deleteMany({ where: { repositoryId } });
     await prisma.contributor.deleteMany({ where: { githubUserId: senderGithubId } });
-    await prisma.githubWebhookDelivery.deleteMany({ where: { id: { in: [deliveryId, overlappingDeliveryId, queuedDeliveryId, malformedDeliveryId, failedDeliveryId, mismatchedAuthorityDeliveryId, invalidPathDeliveryId, reassignedDeliveryId] } } });
+    await prisma.githubWebhookDelivery.deleteMany({ where: { id: { in: [deliveryId, overlappingDeliveryId, queuedDeliveryId, malformedDeliveryId, failedDeliveryId, revokedDeliveryId, mismatchedAuthorityDeliveryId, invalidPathDeliveryId, extendedOidDeliveryId, reassignedDeliveryId] } } });
     await prisma.userRepository.deleteMany({ where: { repositoryId } });
     await prisma.repository.deleteMany({ where: { id: repositoryId } });
     await prisma.githubInstallation.deleteMany({ where: { id: otherInstallationId } });
@@ -161,6 +163,47 @@ describeIntegration('GitHub push processor', () => {
       { sourceKey: `github:commit:${repositoryId}:${sha}`, type: 'commit' },
       { sourceKey: `github:push:${githubDeliveryId}`, type: 'push' },
     ]);
+  });
+
+  it('processes the complete 40-to-64-character Git object ID range accepted at ingress', async () => {
+    const extendedSha = 'd'.repeat(64);
+    await prisma.githubWebhookDelivery.create({
+      data: {
+        id: extendedOidDeliveryId,
+        githubDeliveryId: randomUUID(),
+        eventName: 'push',
+        githubInstallationId,
+        githubRepositoryId,
+        installationId,
+        repositoryId,
+        payloadHash: 'd'.repeat(64),
+        publishedAt: new Date(),
+        payload: {
+          ref: 'refs/heads/sha256-transition',
+          before: 'e'.repeat(64),
+          after: extendedSha,
+          installation: { id: Number(githubInstallationId) },
+          repository: { id: Number(githubRepositoryId), full_name: 'trace-test/processor' },
+          sender: { id: Number(senderGithubId), login: 'stable-sender' },
+          commits: [{
+            id: extendedSha,
+            tree_id: 'f'.repeat(64),
+            distinct: true,
+            message: 'Accept an extended Git object ID',
+            timestamp: '2026-08-12T13:00:00.000Z',
+            url: `https://github.com/trace-test/processor/commit/${extendedSha}`,
+            author: { name: 'Authored Name', email: 'author@example.test', username: null },
+            committer: { name: 'Stable Sender', email: 'sender@example.test', username: 'stable-sender' },
+            added: [], removed: [], modified: ['src/oid.ts'],
+          }],
+        },
+      },
+    });
+
+    await new GithubPushProcessor(prisma).process(extendedOidDeliveryId);
+
+    await expect(prisma.githubWebhookDelivery.findUniqueOrThrow({ where: { id: extendedOidDeliveryId } })).resolves.toMatchObject({ status: 'completed' });
+    await expect(prisma.commit.findUnique({ where: { repositoryId_sha: { repositoryId, sha: extendedSha } } })).resolves.not.toBeNull();
   });
 
   it('reuses canonical commit activity across overlapping deliveries and enriches only once', async () => {
@@ -372,6 +415,39 @@ describeIntegration('GitHub push processor', () => {
     expect(await prisma.activityEvent.count({ where: { sourceKey: `github:push:${failedGithubDeliveryId}` } })).toBe(0);
   });
 
+  it('terminally rejects queued work after tracking authority is revoked', async () => {
+    const source = await prisma.githubWebhookDelivery.findUniqueOrThrow({ where: { id: deliveryId } });
+    const revokedGithubDeliveryId = randomUUID();
+    await prisma.githubWebhookDelivery.create({
+      data: {
+        id: revokedDeliveryId,
+        githubDeliveryId: revokedGithubDeliveryId,
+        eventName: 'push',
+        githubInstallationId,
+        githubRepositoryId,
+        installationId,
+        repositoryId,
+        payloadHash: '7'.repeat(64),
+        publishedAt: new Date(),
+        payload: source.payload === null ? {} : source.payload,
+      },
+    });
+    await prisma.userRepository.updateMany({ where: { repositoryId }, data: { trackingEnabled: false } });
+    const enrichCommit = jest.fn().mockRejectedValue(new Error('must not run'));
+
+    try {
+      await new GithubPushProcessor(prisma, { commit: enrichCommit }).process(revokedDeliveryId);
+      expect(enrichCommit).not.toHaveBeenCalled();
+      await expect(prisma.githubWebhookDelivery.findUniqueOrThrow({ where: { id: revokedDeliveryId } })).resolves.toMatchObject({
+        status: 'failed',
+        processingError: 'Webhook authority is unavailable.',
+      });
+      expect(await prisma.pushEvent.count({ where: { githubDeliveryId: revokedGithubDeliveryId } })).toBe(0);
+    } finally {
+      await prisma.userRepository.updateMany({ where: { repositoryId }, data: { trackingEnabled: true } });
+    }
+  });
+
   it('rejects a delivery whose internal installation does not own its repository before enrichment', async () => {
     const source = await prisma.githubWebhookDelivery.findUniqueOrThrow({ where: { id: deliveryId } });
     await prisma.githubInstallation.create({
@@ -490,7 +566,13 @@ describeIntegration('GitHub push processor', () => {
     try {
       expect(processingSettled).toBe(false);
       releaseReassignment();
-      await expect(processing).rejects.toThrow('Webhook delivery authority does not match its repository.');
+      await processing;
+      const rejectedDelivery = await prisma.githubWebhookDelivery.findUniqueOrThrow({ where: { id: reassignedDeliveryId } });
+      expect(rejectedDelivery).toMatchObject({
+        status: 'failed',
+        processingError: 'Webhook authority is unavailable.',
+      });
+      expect(rejectedDelivery.processedAt).toBeInstanceOf(Date);
       expect(await prisma.pushEvent.count({ where: { githubDeliveryId: reassignedGithubDeliveryId } })).toBe(0);
       expect(await prisma.commit.count({ where: { repositoryId, sha: reassignedSha } })).toBe(0);
     } finally {

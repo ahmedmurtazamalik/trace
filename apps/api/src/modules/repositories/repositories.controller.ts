@@ -1,7 +1,9 @@
-import { Controller, Delete, Get, HttpCode, Param, Post, Query, UseGuards } from '@nestjs/common';
+import { Controller, Delete, Get, HttpCode, Param, Post, Query, Req, UseGuards } from '@nestjs/common';
 import type { RepositoryDetailResponse, RepositoryListResponse, RepositoryTrackingResponse } from '@trace/shared';
+import type { Request } from 'express';
 import { CurrentSession } from '../auth/current-session.decorator';
 import { CsrfGuard } from '../auth/csrf.guard';
+import { AuthRateLimitService } from '../auth/auth-rate-limit.service';
 import type { AuthenticatedSession } from '../auth/auth.types';
 import { SessionAuthGuard } from '../auth/session-auth.guard';
 import { RepositoriesService } from './repositories.service';
@@ -9,7 +11,10 @@ import { RepositoriesService } from './repositories.service';
 @Controller('repositories')
 @UseGuards(SessionAuthGuard)
 export class RepositoriesController {
-  constructor(private readonly repositories: RepositoriesService) {}
+  constructor(
+    private readonly repositories: RepositoriesService,
+    private readonly rateLimits: AuthRateLimitService,
+  ) {}
 
   @Get()
   list(@CurrentSession() session: AuthenticatedSession, @Query() query: unknown): Promise<RepositoryListResponse> {
@@ -37,7 +42,10 @@ export class RepositoriesController {
   @Post('sync')
   @HttpCode(200)
   @UseGuards(CsrfGuard)
-  synchronize(@CurrentSession() session: AuthenticatedSession): Promise<{ accessibleRepositoryCount: number }> {
+  async synchronize(@CurrentSession() session: AuthenticatedSession, @Req() request: Request): Promise<{ accessibleRepositoryCount: number }> {
+    await this.rateLimits.consume('repository-sync', session.user.id, 30, 3_600_000);
+    await this.rateLimits.consume('repository-sync:address', request.socket.remoteAddress ?? 'unknown', 150, 3_600_000);
+    await this.rateLimits.consume('repository-sync:deployment', 'all', 1_500, 3_600_000);
     return this.repositories.synchronize(session.user.id);
   }
 }

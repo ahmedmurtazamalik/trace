@@ -23,10 +23,10 @@ describe("GitHub API client", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     await expect(getGithubStatus()).resolves.toEqual(connected);
-    await expect(connectGithub()).resolves.toEqual(expect.objectContaining({ authorizationUrl: expect.stringMatching(/^https:\/\/github\.com\//) }));
+    await expect(connectGithub("csrf-value")).resolves.toEqual(expect.objectContaining({ authorizationUrl: expect.stringMatching(/^https:\/\/github\.com\//) }));
     expect(fetchMock.mock.calls.map(([url, init]) => [url, init.method, init.credentials])).toEqual([
       ["http://localhost:3001/api/v1/github/status", "GET", "include"],
-      ["http://localhost:3001/api/v1/github/connect", "GET", "include"],
+      ["http://localhost:3001/api/v1/github/connect", "POST", "include"],
     ]);
   });
 
@@ -49,12 +49,12 @@ describe("GitHub API client", () => {
     }));
     vi.stubGlobal("fetch", fetchMock);
 
-    await expect(getGithubInstallation()).resolves.toEqual({
+    await expect(getGithubInstallation("csrf-value")).resolves.toEqual({
       installationUrl: "https://github.com/apps/trace/installations/new?state=opaque-state",
     });
     expect(fetchMock).toHaveBeenCalledWith(
       "http://localhost:3001/api/v1/github/installation",
-      expect.objectContaining({ method: "GET", credentials: "include" }),
+      expect.objectContaining({ method: "POST", credentials: "include", headers: { "x-csrf-token": "csrf-value" } }),
     );
   });
 
@@ -64,7 +64,7 @@ describe("GitHub API client", () => {
       .mockResolvedValueOnce(response({ code: "GITHUB_CALLBACK_FAILED", message: "raw provider secret", requestId: "request-1" }, 502)));
 
     await expect(getGithubStatus()).rejects.toMatchObject({ code: "INVALID_RESPONSE" });
-    await expect(connectGithub()).rejects.toEqual(expect.objectContaining({
+    await expect(connectGithub("csrf-value")).rejects.toEqual(expect.objectContaining({
       name: "GithubApiError",
       code: "GITHUB_CALLBACK_FAILED",
       message: "GitHub could not complete the connection. Please try again.",

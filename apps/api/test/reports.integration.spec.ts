@@ -33,7 +33,7 @@ describe('Reports API', () => {
 
   beforeAll(async () => {
     process.env.NODE_ENV = 'test';
-    process.env.REDIS_URL = 'redis://localhost:6379';
+    process.env.REDIS_URL ??= 'redis://localhost:6379';
     process.env.SESSION_SECRET = 'test-only-session-secret-at-least-32-characters';
     process.env.GITHUB_APP_CLIENT_ID = 'test-client-id';
     process.env.GITHUB_APP_SLUG = 'trace-test-app';

@@ -70,10 +70,14 @@ export function GithubConnectionPanel({
   }, []);
 
   async function begin() {
+    if (!csrfToken) {
+      setError("Your security session is no longer valid. Please sign in again.");
+      return;
+    }
     setPending("connect");
     setError(undefined);
     try {
-      const result = await beginConnection();
+      const result = await beginConnection(csrfToken);
       navigate(result.authorizationUrl);
     } catch (reason) {
       setError(errorMessage(reason));
@@ -82,10 +86,14 @@ export function GithubConnectionPanel({
   }
 
   async function install() {
+    if (!csrfToken) {
+      setError("Your security session is no longer valid. Please sign in again.");
+      return;
+    }
     setPending("install");
     setError(undefined);
     try {
-      const result = await beginInstallation();
+      const result = await beginInstallation(csrfToken);
       navigate(result.installationUrl);
     } catch (reason) {
       setError(errorMessage(reason));

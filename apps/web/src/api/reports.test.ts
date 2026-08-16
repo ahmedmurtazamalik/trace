@@ -34,6 +34,26 @@ describe("report API status polling seam", () => {
     expect(csrf).toBe("csrf-live");
   });
 
+  it("preserves safe rate-limit outcomes for create and revision mutations", async () => {
+    server.use(
+      http.post("http://localhost:3001/api/v1/reports", () => HttpResponse.json({ code: "RATE_LIMITED", message: "raw limiter detail", requestId: "req-create-limit" }, { status: 429 })),
+      http.put("http://localhost:3001/api/v1/reports/report-poll/revision", () => HttpResponse.json({ code: "RATE_LIMITED", message: "raw limiter detail", requestId: "req-revision-limit" }, { status: 429 })),
+    );
+
+    await expect(createReport({ reportDate: "2026-08-13", timezone: "UTC" }, "csrf-live")).rejects.toMatchObject({
+      code: "RATE_LIMITED",
+      message: "Too many report requests. Please wait and try again.",
+      status: 429,
+      requestId: "req-create-limit",
+    });
+    await expect(updateReportRevision("report-poll", { expectedRevision: 1, prosePatch: { executiveSummary: "Edited summary." } }, "csrf-live")).rejects.toMatchObject({
+      code: "RATE_LIMITED",
+      message: "Too many report requests. Please wait and try again.",
+      status: 429,
+      requestId: "req-revision-limit",
+    });
+  });
+
   it("requires CSRF, validates the structured patch, and preserves revision conflict codes", async () => {
     let csrf: string | null = null;
     let body: unknown;

@@ -60,6 +60,31 @@ export class GithubPushProcessor {
     ) {
       throw new Error('Webhook delivery authority does not match its repository.');
     }
+    const activeAuthority = await this.prisma.userRepository.findFirst({
+      where: {
+        repositoryId: snapshotRepository.id,
+        trackingEnabled: true,
+        accessRemovedAt: null,
+        user: {
+          disabledAt: null,
+          githubAccount: {
+            is: {
+              unlinkedAt: null,
+              installations: { some: { id: snapshotInstallation.id, suspendedAt: null } },
+            },
+          },
+        },
+        repository: { accessRemovedAt: null },
+      },
+      select: { id: true },
+    });
+    if (activeAuthority === null) {
+      await this.prisma.githubWebhookDelivery.updateMany({
+        where: { id: snapshot.id, status: { in: ['pending', 'processing'] } },
+        data: { status: 'failed', processedAt: new Date(), processingError: 'Webhook authority is unavailable.' },
+      });
+      return;
+    }
     const enriched = new Map<string, GithubCommitFacts>();
     const enrichmentLeases = new Set<string>();
     try {
@@ -95,23 +120,37 @@ export class GithubPushProcessor {
         }
       }
       await this.prisma.$transaction(async (transaction) => {
-      const authority = await transaction.githubWebhookDelivery.findUnique({
-        where: { id: deliveryId },
-        select: { installationId: true, repositoryId: true },
-      });
-      if (authority?.installationId === null || authority?.installationId === undefined
-        || authority.repositoryId === null || authority.repositoryId === undefined) {
-        throw new Error('Webhook delivery is unavailable for processing.');
-      }
       await transaction.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${deliveryId}, 0))`;
-      await transaction.$queryRaw`SELECT id FROM github_installations WHERE id = ${authority.installationId} FOR UPDATE`;
-      await transaction.$queryRaw`SELECT id FROM repositories WHERE id = ${authority.repositoryId} FOR UPDATE`;
       await transaction.$queryRaw`SELECT id FROM github_webhook_deliveries WHERE id = ${deliveryId} FOR UPDATE`;
       const delivery = await transaction.githubWebhookDelivery.findUnique({ where: { id: deliveryId } });
       if (delivery === null || delivery.eventName !== 'push' || delivery.repositoryId === null || delivery.installationId === null) {
         throw new Error('Webhook delivery is unavailable for processing.');
       }
       if (delivery.status === 'completed' || delivery.status === 'failed') return;
+      const lockedAuthority = await transaction.$queryRaw<Array<{ id: string }>>`
+        SELECT ur.id
+        FROM github_installations gi
+        JOIN github_accounts ga ON ga.id = gi.github_account_id
+        JOIN users u ON u.id = ga.user_id
+        JOIN repositories r ON r.github_installation_id = gi.id
+        JOIN user_repositories ur ON ur.repository_id = r.id AND ur.user_id = u.id
+        WHERE gi.id = ${delivery.installationId}
+          AND r.id = ${delivery.repositoryId}
+          AND gi.suspended_at IS NULL
+          AND ga.unlinked_at IS NULL
+          AND u.disabled_at IS NULL
+          AND r.access_removed_at IS NULL
+          AND ur.access_removed_at IS NULL
+          AND ur.tracking_enabled = TRUE
+        FOR UPDATE OF gi, ga, u, r, ur
+      `;
+      if (lockedAuthority.length === 0) {
+        await transaction.githubWebhookDelivery.update({
+          where: { id: delivery.id },
+          data: { status: 'failed', processedAt: new Date(), processingError: 'Webhook authority is unavailable.' },
+        });
+        return;
+      }
       const payload = this.payload(delivery.payload);
       if (
         delivery.githubInstallationId !== BigInt(payload.installation.id)
@@ -348,7 +387,7 @@ export class GithubPushProcessor {
   }
 
   private sha(value: unknown): value is string {
-    return typeof value === 'string' && /^[0-9a-f]{40}$/i.test(value);
+    return typeof value === 'string' && /^[0-9a-f]{40,64}$/i.test(value);
   }
 
   private positiveSafeInteger(value: unknown): value is number {

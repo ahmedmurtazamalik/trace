@@ -41,6 +41,8 @@ describe('Frozen Day 5-7 activity and dashboard contract', () => {
 
   it('rejects secret-like, invalid-timezone, and unbounded fields', () => {
     expect(activityListQuerySchema.safeParse({ limit: 101 }).success).toBe(false);
+    expect(activityListQuerySchema.safeParse({ cursor: 'c'.repeat(2_049) }).success).toBe(false);
+    expect(dashboardQuerySchema.safeParse({ date: '2026-08-12', repositoryId: 'r'.repeat(257) }).success).toBe(false);
     expect(activityListQuerySchema.safeParse({ timezone: 'not/a-zone' }).success).toBe(false);
     expect(activityListQuerySchema.safeParse({ source: 'github', type: 'untracked_file' }).success).toBe(false);
     expect(activityListResponseSchema.safeParse({

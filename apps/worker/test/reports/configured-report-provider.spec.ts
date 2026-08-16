@@ -38,6 +38,54 @@ describe('configured structured report provider', () => {
     });
   });
 
+  it('aliases internal identifiers before disclosure and restores them after response parsing', async () => {
+    const sensitiveSnapshot: ReportInputSnapshot = {
+      version: 1,
+      reportDate: '2026-08-13',
+      timezone: 'UTC',
+      facts: { repositoryCount: 1, contributorCount: 1, commitCount: 1, filesChanged: 1, additions: 2, deletions: 1 },
+      repositories: [{
+        id: 'internal-repository-id',
+        fullName: 'private-owner/private-repository',
+        facts: { repositoryCount: 1, contributorCount: 1, commitCount: 1, filesChanged: 1, additions: 2, deletions: 1 },
+        contributors: [{
+          id: 'internal-contributor-id', username: 'developer', displayName: 'Developer',
+          facts: { repositoryCount: 1, contributorCount: 1, commitCount: 1, filesChanged: 1, additions: 2, deletions: 1 },
+        }],
+        evidence: [{
+          activityId: 'internal-activity-id', occurredAt: '2026-08-13T10:00:00.000Z', type: 'commit',
+          sha: 'a'.repeat(40), message: 'Implement private feature',
+        }],
+      }],
+    };
+    let outboundBody = '';
+    const fetchImplementation = jest.fn<ReturnType<typeof fetch>, Parameters<typeof fetch>>().mockImplementation((_url, init) => {
+      if (typeof init?.body !== 'string') throw new Error('Expected a serialized provider request body.');
+      outboundBody = init.body;
+      const request = JSON.parse(outboundBody) as { messages: Array<{ content: string }> };
+      const prompt = JSON.parse(request.messages[1]!.content) as { requiredContent: unknown };
+      return Promise.resolve(new Response(JSON.stringify({
+        choices: [{ message: { content: JSON.stringify(prompt.requiredContent) } }],
+      }), { status: 200 }));
+    });
+    const provider = new ConfiguredReportProvider({
+      endpoint: 'https://llm.example.test/v1/chat/completions', apiKey: 'test-api-key', model: 'model',
+      allowedHosts: new Set(['llm.example.test']), fetchImplementation,
+    });
+
+    const output = await provider.generate(sensitiveSnapshot) as { repositories: Array<{ repositoryId: string; contributors: Array<{ contributorId: string }> }> };
+    expect(output.repositories[0]).toMatchObject({
+      repositoryId: 'internal-repository-id',
+      contributors: [{ contributorId: 'internal-contributor-id' }],
+    });
+    expect(outboundBody).not.toContain('internal-repository-id');
+    expect(outboundBody).not.toContain('internal-contributor-id');
+    expect(outboundBody).not.toContain('internal-activity-id');
+    expect(outboundBody).not.toContain('a'.repeat(40));
+    expect(outboundBody).toContain('private-owner/private-repository');
+    expect(outboundBody).toContain('Implement private feature');
+  });
+
   it('uses the deterministic fake explicitly and rejects incomplete configured-provider settings', () => {
     expect(reportProviderFromEnvironment({ REPORT_LLM_PROVIDER: 'fake' }).constructor.name).toBe('DeterministicReportProvider');
     expect(() => reportProviderFromEnvironment({ REPORT_LLM_PROVIDER: 'configured' })).toThrow('Invalid report provider configuration.');

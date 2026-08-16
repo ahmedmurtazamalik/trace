@@ -95,14 +95,20 @@ export class ReportsService {
 
     let report;
     try {
-      report = await this.prisma.report.create({
-        data: {
-          userId,
-          reportDate,
-          timezone: request.timezone,
-          status: 'pending',
-          inputSnapshot: snapshot as Prisma.InputJsonValue,
-        },
+      report = await this.prisma.$transaction(async (transaction) => {
+        const created = await transaction.report.create({
+          data: {
+            userId,
+            reportDate,
+            timezone: request.timezone,
+            status: 'pending',
+            inputSnapshot: snapshot as Prisma.InputJsonValue,
+          },
+        });
+        await transaction.auditLog.create({
+          data: { actorUserId: userId, action: 'report.created', targetType: 'report', targetId: created.id },
+        });
+        return created;
       });
     } catch (error) {
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
@@ -170,12 +176,22 @@ export class ReportsService {
 
   async detail(userId: string, reportId: string): Promise<ReportDetailResponse> {
     if (reportId.length === 0 || reportId.length > 256) throw this.notFound();
-    const report = await this.prisma.report.findFirst({
-      where: { id: reportId, userId },
-      include: {
-        currentRevision: true,
-        artifacts: { include: { revision: { select: { revision: true } } }, orderBy: { createdAt: 'asc' } },
-      },
+    const report = await this.prisma.$transaction(async (transaction) => {
+      await transaction.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${reportId}, 0))`;
+      const current = await transaction.report.findFirst({
+        where: { id: reportId, userId },
+        include: { currentRevision: true },
+      });
+      if (current === null) return null;
+      const artifacts = current.currentRevisionId === null
+        ? []
+        : await transaction.reportArtifact.findMany({
+          where: { reportId, revisionId: current.currentRevisionId },
+          include: { revision: { select: { revision: true } } },
+          orderBy: { createdAt: 'asc' },
+          take: 2,
+        });
+      return { ...current, artifacts };
     });
     if (report === null) throw this.notFound();
     const revision = report.currentRevision;
@@ -246,6 +262,15 @@ export class ReportsService {
         },
       });
       if (updated.count !== 1) throw this.revisionConflict();
+      await transaction.auditLog.create({
+        data: {
+          actorUserId: userId,
+          action: 'report.revision_updated',
+          targetType: 'report',
+          targetId: reportId,
+          metadata: { revision: nextRevision },
+        },
+      });
     });
     await this.publisher.publishOneBounded(reportId);
     return this.detail(userId, reportId);
@@ -284,6 +309,15 @@ export class ReportsService {
         },
       });
       if (updated.count !== 1) throw this.revisionConflict();
+      await transaction.auditLog.create({
+        data: {
+          actorUserId: userId,
+          action: 'report.regenerated',
+          targetType: 'report',
+          targetId: reportId,
+          metadata: { revision: current.revision, generation: report.renderGeneration + 1 },
+        },
+      });
     });
     await this.publisher.publishOneBounded(reportId);
     return this.detail(userId, reportId);

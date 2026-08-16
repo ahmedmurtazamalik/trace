@@ -208,6 +208,7 @@ describe('report artifact processor', () => {
     expect(report).toMatchObject({ status: 'processing', renderRevision: 2 });
     expect(report.currentRevision?.revision).toBe(2);
     expect(await prisma.reportArtifact.count({ where: { reportId } })).toBe(0);
+    expect(storage.objects.size).toBe(0);
   });
 
   it('rejects finalization when only the render-revision obligation changes', async () => {

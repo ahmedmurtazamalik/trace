@@ -40,7 +40,8 @@ export class ApiExceptionFilter implements ExceptionFilter {
     const requestId = request.requestId ?? request.header('x-request-id') ?? 'unknown';
 
     if (!(exception instanceof HttpException)) {
-      this.logger.error(`Unhandled request exception (requestId=${requestId})`, exception instanceof Error ? exception.stack : undefined);
+      const type = exception instanceof Error ? exception.name : 'UnknownError';
+      this.logger.error(`Unhandled request exception (requestId=${requestId}, type=${type})`);
     }
 
     const requestedCode = body.code ?? defaultCodes[status] ?? 'INTERNAL_SERVER_ERROR';

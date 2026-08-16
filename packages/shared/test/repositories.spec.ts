@@ -11,6 +11,7 @@ import {
 describe('Day 4 repository contract', () => {
   it('freezes stable cursor pagination, search, and accessibility/tracking separation', () => {
     expect(repositoryListQuerySchema.parse({ limit: '25', search: 'trace' })).toEqual({ limit: 25, search: 'trace' });
+    expect(repositoryListQuerySchema.safeParse({ cursor: 'c'.repeat(2_049) }).success).toBe(false);
     expect(repositoryListResponseSchema.parse(listFixture)).toEqual(listFixture);
   });
 

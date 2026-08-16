@@ -124,7 +124,7 @@ Published in:
 
 Frozen operations:
 
-- `GET /api/v1/github/connect` (also used to reconnect)
+- `POST /api/v1/github/connect` with `X-CSRF-Token` (also used to reconnect; hardened on Day 11)
 - `GET /api/v1/github/callback`
 - `GET /api/v1/github/status`
 - `DELETE /api/v1/github/connection`
@@ -223,7 +223,7 @@ Final recorded results:
 - Redis jobs contain `{ deliveryId }` only. Day 6 reads the durable row and processes its validated `payload`.
 - Worker terminal-failure callbacks receive only the delivery row ID and stable code `WEBHOOK_PROCESSING_FAILED`; raw exception or payload text is neither passed to observability nor retained in BullMQ failure fields.
 - The queue and API both default to `github-webhook-deliveries`. Worker concurrency must remain within 1–32.
-- Webhook retries revalidate current installation, repository, user, membership, and tracking authority. Already accepted pending rows retain an independent durable publication obligation, so later revocation cannot strand them.
+- Webhook retries retain an independent durable publication obligation while authority remains valid. Day 11 supersedes the original acceptance semantics: every publication and worker attempt revalidates current installation, repository, user, membership, and tracking authority, and later revocation terminally rejects pending work rather than processing it.
 
 ### Deferred by plan
 
@@ -237,7 +237,7 @@ Final recorded results:
 ### Done
 
 - Composed the real GitHub activity processor into the existing `github-webhook-deliveries` worker; the executable now validates PostgreSQL, Redis, and GitHub App configuration and closes Prisma with BullMQ on signals or fatal run-loop failure.
-- Reads only the durable internal delivery-row ID from Redis, revalidates the complete delivery → installation → repository authority chain against stable external IDs before provider I/O and again transactionally under delivery-advisory → installation-row → repository-row → delivery-row locks, and moves the delivery through `processing` to `completed`. Later revocation does not strand already accepted historical work, while concurrent repository reassignment cannot race canonical persistence.
+- Reads only the durable internal delivery-row ID from Redis and validates the complete delivery → installation → repository authority chain against stable external IDs. Day 11 supersedes the original post-acceptance behavior: later revocation terminally rejects pending work, while concurrent repository reassignment cannot race canonical persistence.
 - Stores one push per GitHub delivery UUID and one commit per repository+SHA, with repository-relative file paths/statuses and generic push/commit activity rows.
 - Assigns contributor foreign keys only from stable GitHub numeric user IDs. Webhook author/committer name, email, and optional username are retained as raw facts and are never used to guess identity.
 - Uses deterministic activity `sourceKey` values for push and commit idempotency. Concurrent overlapping deliveries in one worker process coalesce the same repository+SHA enrichment request through transaction completion; all processes converge through database uniqueness on one commit and one commit activity.
@@ -370,3 +370,41 @@ Final recorded results:
 
 - Renderer, compiler-boundary, real Docker PDF compilation, storage, worker lifecycle/fencing, revision concurrency, regeneration, CSRF, owner isolation, and checksum-verified download tests cover the Day 10 behavior.
 - Production never falls back to fake rendering, fake storage, or the deterministic report provider.
+
+---
+
+## Day 11 — Person A
+
+### Done
+
+- Completed the backend endpoint authorization/CSRF/authenticity/rate-limit matrix in `docs/backend-security.md`; no endpoint treats frontend visibility as authority.
+- Hardened HTTP handling with Helmet, JSON-only general API parsing, conservative caller request-ID validation, generic 5xx responses, and redacted infrastructure/provider logging.
+- Required explicit `NODE_ENV=development|test|production`; missing and unknown deployment modes fail closed.
+- Added composed Redis-backed per-user, trusted direct-address, and deployment-wide hourly budgets for report creation, revision, regeneration, and repository synchronization.
+- Bound repository/dashboard query inputs, signed repository cursors to caller and query context, and made inaccessible repository filters indistinguishable `404` responses.
+- Bounded GitHub response bodies, repository page counts, tokens, and projected identity/repository fields.
+- Revalidated live GitHub installation, repository, account, user, access, and tracking authority before webhook publication and during worker persistence. Every pending PostgreSQL row remains an owed deterministic publication so Redis loss is repaired. Fenced attempt clocks rotate rejecting or hanging poison rows fairly before a second delivery/authority lock and revalidation around a bounded queue wait in an expiring transaction; revoked work becomes terminal, and canonical activity cannot be created after revocation.
+- Moved immutable report-object publication behind the report/revision/generation/token ownership lock, renewed the exact lease before storage, and restored the live-lease predicate at final activation. Expired work cannot create active artifact rows or complete a report.
+- Bounded report-detail artifact reads to the current revision and serialized the detail snapshot with report lifecycle mutation.
+- Added durable audit rows for GitHub connection/install/disconnect, repository synchronization/tracking, and report create/revision/regeneration mutations.
+- Minimized configured-provider disclosure by replacing database IDs, activity IDs, and commit SHAs with request-local aliases. Private repository names, contributor identities, timestamps, activity types, aggregate facts, and commit messages remain explicit provider prose inputs.
+- Upgraded both Vitest consumers and pinned patched Vite `6.4.3`; full and production lockfile audits report no known vulnerabilities.
+
+### Verification
+
+- Workspace package tests passed sequentially; worker: 77 passed with two intentional Docker-only skips.
+- PostgreSQL database integration: 10/10 passed.
+- API integration on isolated Redis DB 13: 10 suites, 74/74 passed.
+- Focused worker authority/artifact integration: 18/18 passed.
+- Workspace lint, strict TypeScript, and production build passed.
+- Real Docker XeLaTeX acceptance: 2/2 passed.
+- Desktop/mobile Playwright: 60/60 passed.
+- Full and production `pnpm audit --audit-level=low`: no known vulnerabilities.
+
+### Residual risks
+
+- Configured LLM use is an operator opt-in and intentionally discloses the documented prose inputs to the selected provider; provider contractual retention, region, and deletion guarantees are operational responsibilities.
+- Burst rate limits are not lifetime storage quotas. Retention, account quotas, audit retention, and operational alerting remain production policy work.
+- Live GitHub/LLM credentials were not used during acceptance; controlled adapters cover their bounded and fail-closed contracts.
+- Filesystem report storage requires a persistent shared production volume; multi-host object storage is not claimed.
+- Password-reset delivery remains fail-closed until an approved bounded delivery provider is configured.

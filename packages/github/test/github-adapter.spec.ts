@@ -56,6 +56,32 @@ describe('GitHub authorization adapters', () => {
     expect(url.toString()).not.toContain('client-secret');
   });
 
+  it('bounds GitHub response bytes and projected identity fields', async () => {
+    const adapter = new RealGithubAuthorizationAdapter({
+      clientId: 'client-id', clientSecret: 'client-secret', appId: '123', privateKey: 'invalid-test-key',
+    });
+    const originalFetch = global.fetch;
+    const cancel = jest.fn();
+    try {
+      global.fetch = jest.fn()
+        .mockResolvedValueOnce(new Response(JSON.stringify({ access_token: 'token' }), { status: 200 }))
+        .mockResolvedValueOnce(new Response(JSON.stringify({ id: 1, login: 'x'.repeat(101) }), { status: 200 })) as typeof fetch;
+      await expect(adapter.authorize('code')).rejects.toThrow('GitHub user lookup failed');
+
+      const oversized = new ReadableStream<Uint8Array>({
+        start(controller) { controller.enqueue(new Uint8Array(300_000)); },
+        cancel,
+      });
+      global.fetch = jest.fn()
+        .mockResolvedValueOnce(new Response(JSON.stringify({ access_token: 'token' }), { status: 200 }))
+        .mockResolvedValueOnce(new Response(oversized, { status: 200 })) as typeof fetch;
+      await expect(adapter.authorize('code')).rejects.toThrow('GitHub user lookup failed');
+      expect(cancel).toHaveBeenCalled();
+    } finally {
+      global.fetch = originalFetch;
+    }
+  });
+
   it('fails closed when GitHub authorization is not configured', async () => {
     const adapter = new UnavailableGithubAuthorizationAdapter();
     expect(() => adapter.authorizationUrl({ state: 'state', callbackUrl: 'https://trace.example/callback' })).toThrow('not configured');

@@ -24,6 +24,7 @@ export class ConfiguredReportProvider implements StructuredReportProvider {
   }
 
   async generate(snapshot: ReportInputSnapshot): Promise<unknown> {
+    const outbound = this.outboundSnapshot(snapshot);
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), this.options.timeoutMs ?? 30_000);
     try {
@@ -47,14 +48,14 @@ export class ConfiguredReportProvider implements StructuredReportProvider {
                   contributors: [{ contributorId: 'exact ID', summary: 'exact requiredContent summary', accomplishments: [] }],
                 }],
               },
-              requiredContent: groundedTemplate(snapshot),
+              requiredContent: groundedTemplate(outbound.snapshot),
               rules: {
                 executiveSummary: 'Use the deterministic aggregate-facts sentence demonstrated by the fake provider.',
                 repositorySummary: 'Start with the deterministic repository-facts sentence; optionally append " Evidence: " and exact evidence messages separated by "; ".',
                 contributorSummary: 'Use the deterministic contributor commit-count sentence.',
                 accomplishments: 'Must be empty because the snapshot does not attribute evidence messages to contributors.',
               },
-              snapshot,
+              snapshot: outbound.snapshot,
             }),
           },
         ],
@@ -73,7 +74,7 @@ export class ConfiguredReportProvider implements StructuredReportProvider {
       if (!response.ok) throw new Error('REPORT_PROVIDER_FAILED');
       const responseBody = await this.boundedBody(response);
       const envelope = JSON.parse(responseBody) as unknown;
-      return JSON.parse(this.content(envelope)) as unknown;
+      return this.restoreIdentifiers(JSON.parse(this.content(envelope)) as unknown, outbound.identifiers);
     } catch (error) {
       if (error instanceof Error && error.message.startsWith('REPORT_PROVIDER_')) throw error;
       throw new Error('REPORT_PROVIDER_FAILED');
@@ -120,6 +121,60 @@ export class ConfiguredReportProvider implements StructuredReportProvider {
     const content = (message as Record<string, unknown>).content;
     if (typeof content !== 'string' || content.length === 0) throw new Error('REPORT_PROVIDER_FAILED');
     return content;
+  }
+
+  private outboundSnapshot(snapshot: ReportInputSnapshot): {
+    snapshot: ReportInputSnapshot;
+    identifiers: ReadonlyMap<string, string>;
+  } {
+    const identifiers = new Map<string, string>();
+    const repositories = snapshot.repositories.map((repository, repositoryIndex) => {
+      const repositoryAlias = `repository-${repositoryIndex + 1}`;
+      identifiers.set(repositoryAlias, repository.id);
+      return {
+        ...repository,
+        id: repositoryAlias,
+        contributors: repository.contributors.map((contributor, contributorIndex) => {
+          const contributorAlias = `contributor-${repositoryIndex + 1}-${contributorIndex + 1}`;
+          identifiers.set(contributorAlias, contributor.id);
+          return { ...contributor, id: contributorAlias };
+        }),
+        evidence: repository.evidence.map((evidence, evidenceIndex) => ({
+          ...evidence,
+          activityId: `evidence-${repositoryIndex + 1}-${evidenceIndex + 1}`,
+          sha: (repositoryIndex * 10_000 + evidenceIndex + 1).toString(16).padStart(40, '0'),
+        })),
+      };
+    });
+    return { snapshot: { ...snapshot, repositories }, identifiers };
+  }
+
+  private restoreIdentifiers(value: unknown, identifiers: ReadonlyMap<string, string>): unknown {
+    if (typeof value !== 'object' || value === null || Array.isArray(value)) return value;
+    const record = value as Record<string, unknown>;
+    if (!Array.isArray(record.repositories)) return value;
+    const repositories = record.repositories as unknown[];
+    return {
+      ...record,
+      repositories: repositories.map((repository) => {
+        if (typeof repository !== 'object' || repository === null || Array.isArray(repository)) return repository;
+        const entry = repository as Record<string, unknown>;
+        return {
+          ...entry,
+          repositoryId: typeof entry.repositoryId === 'string' ? identifiers.get(entry.repositoryId) ?? entry.repositoryId : entry.repositoryId,
+          contributors: Array.isArray(entry.contributors)
+            ? (entry.contributors as unknown[]).map((contributor) => {
+              if (typeof contributor !== 'object' || contributor === null || Array.isArray(contributor)) return contributor;
+              const item = contributor as Record<string, unknown>;
+              return {
+                ...item,
+                contributorId: typeof item.contributorId === 'string' ? identifiers.get(item.contributorId) ?? item.contributorId : item.contributorId,
+              };
+            })
+            : entry.contributors,
+        };
+      }),
+    };
   }
 
   private validEndpoint(endpoint: string): boolean {

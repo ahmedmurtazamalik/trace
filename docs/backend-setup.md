@@ -2,7 +2,7 @@
 
 ## Scope
 
-This document covers the Day 1 backend foundation and Person A's Day 2 authentication backend. GitHub OAuth/App installation, webhooks, queues, report generation, storage, frontend behavior, and the future CLI remain unimplemented.
+This document covers the implemented Trace training-MVP backend: authentication, GitHub OAuth/App installation, repositories, signed webhooks, queues/workers, dashboards, report generation/revision, controlled LaTeX compilation, and filesystem artifact storage. Frontend behavior is documented alongside the API contracts; the opt-in local activity CLI remains deferred.
 
 ## Requirements
 

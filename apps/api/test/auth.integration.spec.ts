@@ -43,7 +43,7 @@ describe('authentication API', () => {
   beforeAll(async () => {
     process.env.NODE_ENV = 'test';
     process.env.DATABASE_URL = 'postgresql://trace:trace_dev_password@localhost:5432/trace?schema=public';
-    process.env.REDIS_URL = 'redis://localhost:6379';
+    process.env.REDIS_URL ??= 'redis://localhost:6379';
     process.env.SESSION_SECRET = 'test-only-session-secret-at-least-32-characters';
     app = await createApplication();
     await app.init();
@@ -99,6 +99,19 @@ describe('authentication API', () => {
     expect((await prisma.passwordResetToken.findUniqueOrThrow({ where: { id: previous.id } })).consumedAt).not.toBeNull();
     expect(await prisma.passwordResetToken.findUniqueOrThrow({ where: { id: olderIssuer.id } })).toMatchObject({ consumedAt: null });
     expect(await prisma.passwordResetToken.findUniqueOrThrow({ where: { id: newerIssuer.id } })).toMatchObject({ consumedAt: null });
+  });
+
+  it('rejects form-encoded login attempts that can bypass CORS preflight', async () => {
+    await request(server).post('/api/v1/auth/register').send({ username, email, password }).expect(201);
+
+    const response = await request(server)
+      .post('/api/v1/auth/login')
+      .set('Origin', 'https://attacker.example.test')
+      .type('form')
+      .send({ username, password })
+      .expect(400);
+
+    expect((response.headers as Record<string, unknown>)['set-cookie']).toBeUndefined();
   });
 
   it('registers a user, establishes a secure session, and requires CSRF to log out', async () => {

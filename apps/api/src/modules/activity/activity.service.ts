@@ -119,6 +119,23 @@ export class ActivityService {
     const parsed = dashboardQuerySchema.safeParse(input);
     if (!parsed.success) throw this.validationError();
     const query: DashboardQuery = parsed.data;
+    if (query.repositoryId !== undefined) {
+      const membership = await this.prisma.userRepository.findFirst({
+        where: {
+          userId,
+          repositoryId: query.repositoryId,
+          accessRemovedAt: null,
+          repository: {
+            accessRemovedAt: null,
+            installation: { suspendedAt: null, githubAccount: { userId, unlinkedAt: null } },
+          },
+        },
+        select: { repositoryId: true },
+      });
+      if (membership === null) {
+        throw new HttpException({ code: 'REPOSITORY_NOT_FOUND', message: 'Repository not found.' }, HttpStatus.NOT_FOUND);
+      }
+    }
     const account = await this.prisma.githubAccount.findUnique({ where: { userId }, select: { unlinkedAt: true } });
     if (account === null || account.unlinkedAt !== null) return this.emptyDashboard(query, 'GITHUB_NOT_CONNECTED');
     const trackedRepositories = await this.prisma.userRepository.count({

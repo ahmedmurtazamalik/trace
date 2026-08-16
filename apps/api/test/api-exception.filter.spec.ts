@@ -1,4 +1,4 @@
-import { type ArgumentsHost, InternalServerErrorException, ServiceUnavailableException } from '@nestjs/common';
+import { type ArgumentsHost, InternalServerErrorException, Logger, ServiceUnavailableException } from '@nestjs/common';
 
 import { ApiExceptionFilter } from '../src/common/errors/api-exception.filter';
 
@@ -36,6 +36,18 @@ describe('ApiExceptionFilter', () => {
       message: 'An internal server error occurred.',
       requestId: 'request-123',
     });
+  });
+
+  it('does not write arbitrary unhandled exception details to logs', () => {
+    const { host } = createHttpHost();
+    const logger = jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+    const secret = 'postgresql://trace:password@private-host/trace?token=opaque-secret';
+
+    new ApiExceptionFilter().catch(new Error(secret), host);
+
+    expect(logger).toHaveBeenCalledWith('Unhandled request exception (requestId=request-123, type=Error)');
+    expect(JSON.stringify(logger.mock.calls)).not.toContain(secret);
+    logger.mockRestore();
   });
 
   it('allows only the fixed public dependency-unavailable message', () => {

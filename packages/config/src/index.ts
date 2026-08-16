@@ -2,7 +2,7 @@ import { z } from 'zod';
 
 const rawEnvironmentSchema = z
   .object({
-    NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
+    NODE_ENV: z.enum(['development', 'test', 'production']),
     PORT: z.coerce.number().int().min(1).max(65_535).default(3001),
     DATABASE_URL: z.url().startsWith('postgresql://'),
     REDIS_URL: z.url().refine((value) => value.startsWith('redis://') || value.startsWith('rediss://'), {
@@ -26,14 +26,31 @@ const rawEnvironmentSchema = z
     STORAGE_SECRET_KEY: z.string().min(1).optional(),
   })
   .superRefine((environment, context) => {
-    if (
-      environment.NODE_ENV === 'production' &&
-      (environment.SESSION_SECRET === undefined || /^(replace|change-?me)/i.test(environment.SESSION_SECRET))
-    ) {
+    if (environment.NODE_ENV !== 'production') return;
+    if (environment.SESSION_SECRET === undefined || /^(replace|change-?me)/i.test(environment.SESSION_SECRET)) {
       context.addIssue({
         code: 'custom',
         path: ['SESSION_SECRET'],
         message: 'SESSION_SECRET is required in production, must contain at least 32 characters, and cannot be a placeholder',
+      });
+    }
+    for (const [field, value] of [
+      ['FRONTEND_ORIGIN', environment.FRONTEND_ORIGIN],
+      ['GITHUB_CALLBACK_URL', environment.GITHUB_CALLBACK_URL],
+      ['GITHUB_INSTALLATION_CALLBACK_URL', environment.GITHUB_INSTALLATION_CALLBACK_URL],
+    ] as const) {
+      if (value !== undefined && new URL(value).protocol !== 'https:') {
+        context.addIssue({ code: 'custom', path: [field], message: `${field} must use HTTPS in production` });
+      }
+    }
+    if (
+      environment.GITHUB_WEBHOOK_SECRET !== undefined &&
+      (environment.GITHUB_WEBHOOK_SECRET.length < 32 || /^(replace|change-?me|secret)/i.test(environment.GITHUB_WEBHOOK_SECRET))
+    ) {
+      context.addIssue({
+        code: 'custom',
+        path: ['GITHUB_WEBHOOK_SECRET'],
+        message: 'GITHUB_WEBHOOK_SECRET must contain at least 32 non-placeholder characters in production',
       });
     }
   });

@@ -1,20 +1,25 @@
 import { HttpException, HttpStatus, Inject, Injectable } from '@nestjs/common';
+import { createHmac, timingSafeEqual } from 'node:crypto';
+import type { TraceConfig } from '@trace/config';
 import { Prisma, PrismaService, type Repository, type UserRepository } from '@trace/database';
 import type { GithubAuthorizationAdapter, GithubRepositoryAccess } from '@trace/github';
 import type { RepositoryDetailResponse, RepositoryListQuery, RepositoryListResponse, RepositorySummary, RepositoryTrackingResponse } from '@trace/shared';
 import { repositoryListQuerySchema } from '@trace/shared';
 import { GITHUB_AUTHORIZATION_ADAPTER } from '../github/github.tokens';
+import { TRACE_CONFIG } from '../../common/config/config.token';
 
 @Injectable()
 export class RepositoriesService {
   constructor(
     private readonly prisma: PrismaService,
     @Inject(GITHUB_AUTHORIZATION_ADAPTER) private readonly github: GithubAuthorizationAdapter,
+    @Inject(TRACE_CONFIG) private readonly config: TraceConfig,
   ) {}
 
   async list(userId: string, input: unknown): Promise<RepositoryListResponse> {
     const query = this.listQuery(input);
-    const cursor = this.decodeCursor(query.cursor, query.search ?? null);
+    const fingerprint = this.cursorFingerprint(userId, query);
+    const cursor = this.decodeCursor(query.cursor, fingerprint);
     const search = query.search;
     const rows = await this.prisma.userRepository.findMany({
       where: {
@@ -54,7 +59,7 @@ export class RepositoriesService {
       items,
       pageInfo: {
         hasNextPage,
-        nextCursor: hasNextPage && last !== undefined ? this.encodeCursor(last.repository.fullName, last.repositoryId, search ?? null) : null,
+        nextCursor: hasNextPage && last !== undefined ? this.encodeCursor(last.repository.fullName, last.repositoryId, fingerprint) : null,
       },
     };
   }
@@ -97,6 +102,16 @@ export class RepositoriesService {
         where: { userId_repositoryId: { userId, repositoryId } },
         data: { trackingEnabled: enabled },
       });
+      if (row.trackingEnabled !== enabled) {
+        await transaction.auditLog.create({
+          data: {
+            actorUserId: userId,
+            action: enabled ? 'repository.tracking_enabled' : 'repository.tracking_disabled',
+            targetType: 'repository',
+            targetId: repositoryId,
+          },
+        });
+      }
       return { repositoryId, trackingEnabled: enabled };
     });
   }
@@ -262,6 +277,15 @@ export class RepositoriesService {
           });
         }
       }
+      await transaction.auditLog.create({
+        data: {
+          actorUserId: userId,
+          action: 'repositories.synchronized',
+          targetType: 'github_installation',
+          targetId: installationId,
+          metadata: { accessibleRepositoryCount: acceptedRepositoryCount, removedRepositoryCount: removableIds.length },
+        },
+      });
       return acceptedRepositoryCount;
     });
   }
@@ -324,24 +348,49 @@ export class RepositoriesService {
     return parsed.data;
   }
 
-  private encodeCursor(fullName: string, id: string, search: string | null): string {
-    return Buffer.from(JSON.stringify({ fullName, id, search })).toString('base64url');
+  private cursorFingerprint(userId: string, query: RepositoryListQuery): string {
+    return JSON.stringify({ version: 1, userId, search: query.search ?? null, limit: query.limit });
   }
 
-  private decodeCursor(cursor: string | undefined, search: string | null): { fullName: string; id: string } | null {
+  private encodeCursor(fullName: string, id: string, fingerprint: string): string {
+    const payload = Buffer.from(JSON.stringify({ version: 1, fullName, id, fingerprint })).toString('base64url');
+    return `${payload}.${this.cursorSignature(payload)}`;
+  }
+
+  private decodeCursor(cursor: string | undefined, fingerprint: string): { fullName: string; id: string } | null {
     if (cursor === undefined) return null;
     try {
-      const value = JSON.parse(Buffer.from(cursor, 'base64url').toString('utf8')) as unknown;
+      if (cursor.length > 2_048) throw new Error('cursor too large');
+      const parts = cursor.split('.');
+      if (parts.length !== 2) throw new Error('invalid cursor');
+      const [payload, signature] = parts as [string, string];
+      if (!/^[A-Za-z0-9_-]+$/.test(payload) || !/^[A-Za-z0-9_-]{43}$/.test(signature)) {
+        throw new Error('invalid cursor encoding');
+      }
+      const decoded = Buffer.from(payload, 'base64url');
+      if (decoded.toString('base64url') !== payload) throw new Error('non-canonical cursor');
+      const expected = Buffer.from(this.cursorSignature(payload), 'base64url');
+      const supplied = Buffer.from(signature, 'base64url');
+      if (supplied.length !== expected.length || !timingSafeEqual(supplied, expected)) throw new Error('invalid signature');
+      const value = JSON.parse(decoded.toString('utf8')) as unknown;
+      if (typeof value !== 'object' || value === null || Array.isArray(value)) throw new Error('invalid cursor');
+      const encoded = value as { version?: unknown; fullName?: unknown; id?: unknown; fingerprint?: unknown };
       if (
-        typeof value !== 'object' || value === null ||
-        typeof (value as { fullName?: unknown }).fullName !== 'string' ||
-        typeof (value as { id?: unknown }).id !== 'string' ||
-        (value as { search?: unknown }).search !== search
+        encoded.version !== 1 ||
+        typeof encoded.fullName !== 'string' || encoded.fullName.length === 0 || encoded.fullName.length > 512 ||
+        typeof encoded.id !== 'string' || encoded.id.length === 0 || encoded.id.length > 256 ||
+        encoded.fingerprint !== fingerprint
       ) throw new Error('invalid cursor');
-      return value as { fullName: string; id: string };
+      return { fullName: encoded.fullName, id: encoded.id };
     } catch {
       throw this.error('VALIDATION_ERROR', 'Request validation failed.', HttpStatus.BAD_REQUEST);
     }
+  }
+
+  private cursorSignature(payload: string): string {
+    const secret = this.config.sessionSecret;
+    if (secret === undefined) throw new Error('Repository cursor signing is unavailable.');
+    return createHmac('sha256', secret).update(`repository-cursor:v1:${payload}`).digest('base64url');
   }
 
   private error(code: string, message: string, status: HttpStatus): HttpException {
