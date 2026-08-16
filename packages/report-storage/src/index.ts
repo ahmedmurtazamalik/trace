@@ -4,13 +4,13 @@ import { chmod, link, mkdir, open, rm } from 'node:fs/promises';
 import type { FileHandle } from 'node:fs/promises';
 import { isAbsolute, join, resolve } from 'node:path';
 
-const KEY_PATTERN = /^users\/[A-Za-z0-9_-]{1,128}\/reports\/[A-Za-z0-9_-]{1,128}\/revisions\/[1-9][0-9]{0,8}\/report\.(?:pdf|tex)$/;
+const KEY_PATTERN = /^users\/[A-Za-z0-9_-]{1,128}\/reports\/[A-Za-z0-9_-]{1,128}\/revisions\/[1-9][0-9]{0,8}\/(?:generations\/[1-9][0-9]{0,8}\/attempts\/[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\/)?report\.(?:pdf|tex)$/;
 const STORAGE_FAILED = 'REPORT_STORAGE_FAILED';
 const MAX_ARTIFACT_BYTES = 100_000_000;
 const DIRECTORY_FLAGS = constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW;
 
 export interface ArtifactStorage {
-  put(key: string, bytes: Buffer): Promise<void>;
+  put(key: string, bytes: Buffer, signal?: AbortSignal): Promise<void>;
   get(key: string, maximumBytes: number): Promise<Buffer>;
   getOptional(key: string, maximumBytes: number): Promise<Buffer | null>;
 }
@@ -23,13 +23,15 @@ export class FileSystemArtifactStorage implements ArtifactStorage {
     this.root = resolve(root);
   }
 
-  async put(key: string, bytes: Buffer): Promise<void> {
+  async put(key: string, bytes: Buffer, signal?: AbortSignal): Promise<void> {
+    signal?.throwIfAborted();
     this.validateKey(key);
     if (bytes.length < 1 || bytes.length > MAX_ARTIFACT_BYTES) throw new Error(STORAGE_FAILED);
     let parent: FileHandle | undefined;
     let temporary: string | undefined;
     try {
       const opened = await this.openParent(key, true);
+      signal?.throwIfAborted();
       parent = opened.parent;
       const destination = this.at(parent, opened.name);
       temporary = this.at(parent, `.${randomUUID()}.tmp`);
@@ -39,8 +41,10 @@ export class FileSystemArtifactStorage implements ArtifactStorage {
         0o600,
       );
       try {
-        await handle.writeFile(bytes);
+        await handle.writeFile(bytes, { signal });
+        signal?.throwIfAborted();
         await handle.sync();
+        signal?.throwIfAborted();
         await handle.chmod(0o400);
         const metadata = await handle.stat();
         if (!metadata.isFile() || metadata.isSymbolicLink() || metadata.size !== bytes.length) {
@@ -50,6 +54,7 @@ export class FileSystemArtifactStorage implements ArtifactStorage {
         await handle.close();
       }
       try {
+        signal?.throwIfAborted();
         await link(temporary, destination);
       } catch (error) {
         if (!isNodeError(error, 'EEXIST')) throw error;

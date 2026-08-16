@@ -219,6 +219,18 @@ describe('GitHub webhook acceptance', () => {
     } })).toBe(2);
   }, 30_000);
 
+  it.each([41, 42, 63])('rejects a signed push with an impossible %i-character Git object ID', async (length) => {
+    await trackedRepository();
+    const payload = JSON.stringify({
+      ...JSON.parse(pushPayload()) as object,
+      after: 'a'.repeat(length),
+    });
+
+    await postPush(payload).expect(400);
+    await expect(fixtureDeliveryCount()).resolves.toBe(0);
+    await expect(queue.getJobCounts()).resolves.toMatchObject({ waiting: 0, delayed: 0, active: 0 });
+  });
+
   it('acknowledges a duplicate delivery without duplicating its row or queue job', async () => {
     await trackedRepository();
     const payload = pushPayload();

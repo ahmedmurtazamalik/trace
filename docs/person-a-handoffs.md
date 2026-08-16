@@ -349,7 +349,7 @@ Final recorded results:
 
 - Added deterministic fixed-template LaTeX rendering of frozen structured report revisions with exact snapshot repository/contributor correspondence, complete TeX metacharacter escaping, control-character rejection, and a 2 MiB expanded UTF-8 source bound. The exact first-render source is frozen on the revision and reused with any already persisted immutable objects, so same-revision regeneration remains stable across renderer/compiler deployments.
 - Added a pinned XeLaTeX image and direct-argv Docker compiler boundary with no network or shell escape, read-only root, dropped capabilities, no-new-privileges, non-root execution, fixed entrypoint/paths, bounded CPU/memory/PIDs/time, 32 MiB intermediate and 64 MiB temporary `tmpfs` mounts, a fixed reproducible build epoch, bounded structural PDF parsing, orphan-container termination, and deterministic host-temp cleanup.
-- Added shared filesystem artifact storage with restrictive owner/report/revision keys, traversal and intermediate/final symlink rejection, no-follow file handles with pre/post `fstat` verification, bounded reads, atomic idempotent immutable writes, and explicit production persistent-volume configuration.
+- Added shared filesystem artifact storage with restrictive owner/report/revision/generation/attempt keys, traversal and intermediate/final symlink rejection, no-follow file handles with pre/post `fstat` verification, bounded reads, abortable deadline-bounded writes, atomic idempotent immutable objects, and explicit production persistent-volume configuration. Generation-scoped objects are staged outside database transactions; only a still-current revision/generation/lease may atomically activate their metadata, so stalled storage holds no report advisory lock and stale objects remain unreachable.
 - Added authoritative `currentRevisionId`, monotonic render generations, durable render obligations, independent bounded initial/render publication batches with pre-I/O attempt-clock rotation, database-clock processing leases longer than the maximum compiler timeout, and exact current-revision/generation/lease fences. Failed publication cohorts cannot starve later obligations, and stale or expired workers cannot activate artifacts or silently consume failed jobs.
 - Backfilled pre-Day-10 structured processing reports into render obligations and enforced current-revision ownership while preserving ordinary report/revision deletion cascades.
 - Enforced non-null artifact revision ownership, one artifact per report/revision/kind, positive bounded sizes, and lowercase SHA-256 checksums at the database layer.
@@ -384,7 +384,7 @@ Final recorded results:
 - Bound repository/dashboard query inputs, signed repository cursors to caller and query context, and made inaccessible repository filters indistinguishable `404` responses.
 - Bounded GitHub response bodies, repository page counts, tokens, and projected identity/repository fields.
 - Revalidated live GitHub installation, repository, account, user, access, and tracking authority before webhook publication and during worker persistence. Every pending PostgreSQL row remains an owed deterministic publication so Redis loss is repaired. Fenced attempt clocks rotate rejecting or hanging poison rows fairly before a second delivery/authority lock and revalidation around a bounded queue wait in an expiring transaction; revoked work becomes terminal, and canonical activity cannot be created after revocation.
-- Moved immutable report-object publication behind the report/revision/generation/token ownership lock, renewed the exact lease before storage, and restored the live-lease predicate at final activation. Expired work cannot create active artifact rows or complete a report.
+- Moved immutable report-object writes outside database transactions onto report/revision/generation/token-scoped attempt keys under an abort deadline shorter than the lease. Final activation reacquires the report lock and requires the exact live token/revision/generation lease; expired work may leave only unreachable staged objects and cannot create active artifact rows or complete a report.
 - Bounded report-detail artifact reads to the current revision and serialized the detail snapshot with report lifecycle mutation.
 - Added durable audit rows for GitHub connection/install/disconnect, repository synchronization/tracking, and report create/revision/regeneration mutations.
 - Minimized configured-provider disclosure by replacing database IDs, activity IDs, and commit SHAs with request-local aliases. Private repository names, contributor identities, timestamps, activity types, aggregate facts, and commit messages remain explicit provider prose inputs.
@@ -392,13 +392,13 @@ Final recorded results:
 
 ### Verification
 
-- Workspace package tests passed sequentially; worker: 77 passed with two intentional Docker-only skips.
+- Workspace package tests passed sequentially; worker: 83 passed with two intentional Docker-only skips.
 - PostgreSQL database integration: 10/10 passed.
-- API integration on isolated Redis DB 13: 10 suites, 74/74 passed.
-- Focused worker authority/artifact integration: 18/18 passed.
+- API integration on isolated Redis DB 13: 10 suites, 77/77 passed.
+- Focused worker authority/artifact integration: 24/24 passed.
 - Workspace lint, strict TypeScript, and production build passed.
 - Real Docker XeLaTeX acceptance: 2/2 passed.
-- Desktop/mobile Playwright: 60/60 passed.
+- Integrated desktop/mobile Playwright: 62/62 passed.
 - Full and production `pnpm audit --audit-level=low`: no known vulnerabilities.
 
 ### Residual risks

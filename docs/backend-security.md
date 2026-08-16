@@ -45,20 +45,20 @@ This document records the Day 11 backend security boundary. Server-side identity
 - **State and concurrency:** OAuth/install states are random, purpose-specific, exact-session-bound, expiring, and single-use. Repository synchronization, webhook delivery, queue publication, report generation, revision, and artifact completion use database-backed idempotency or generation/lease fences. Every pending PostgreSQL webhook row remains an owed deterministic publication so Redis job loss is repaired. Reconciliation commits fenced attempt clocks for the selected cohort before queue I/O so poison rows rotate behind later obligations; publication locks and revalidates the exact delivery and authority rows again around a one-second queue wait inside an expiring transaction, serializing publication with revocation without allowing one hung enqueue to retain locks or stall future intervals. The worker revalidates authority again, and revoked work becomes terminal without canonical activity writes. Report artifact publication renews exact ownership before storage and requires the renewed lease to remain live at final activation.
 - **Input and query bounds:** Global JSON/raw payload limits, strict schemas, bounded identifiers, 2,048-character opaque cursors, page-size maxima, timezone validation, and bounded webhook fields constrain allocation and query work.
 - **LLM privacy:** The configured provider is an explicit deployment opt-in. It receives bounded aggregate facts, private repository names, contributor display identities, timestamps, activity types, and exact commit messages needed for report prose. Stable database IDs, activity IDs, and commit SHAs are replaced with request-local aliases before transmission; repository/contributor aliases are restored only after parsing. Provider configuration fails closed; raw credentials and provider responses are not persisted or returned.
-- **LaTeX and artifacts:** Untrusted text is escaped and bounded. Compilation uses immutable production images, fixed UID/GID `65532:65532`, no network, no shell escape, resource/time bounds, structural PDF validation, and deterministic normalization. Artifact keys are owner/report/revision scoped; storage reads are bounded, no-follow, nonblocking, checksum-verified, and immutable.
+- **LaTeX and artifacts:** Untrusted text is escaped and bounded. Compilation uses immutable production images, fixed UID/GID `65532:65532`, no network, no shell escape, resource/time bounds, structural PDF validation, and deterministic normalization. Artifact keys are owner/report/revision/generation/attempt scoped; abortable deadline-bounded immutable writes occur outside database transactions, and only a still-current fenced generation is activated. Storage reads are bounded, no-follow, nonblocking, and checksum-verified.
 - **Logging, audit, and secrets:** Client 5xx responses are generic. Unhandled and queue-publication logs record request/operation correlation and error type, never arbitrary exception messages or stacks. GitHub link/install/disconnect, repository synchronization/tracking, and report create/revision/regeneration mutations write durable audit rows in the authoritative transaction. Runtime secrets come from validated environment configuration and are never committed or returned.
 - **Dependencies:** Both full-lockfile and production dependency audits are required at the Day 11 gate. The test toolchain is pinned to patched Vitest/Vite versions. Missing optional providers fail closed at their feature boundary without disabling liveness.
 
 ## Day 11 verification evidence
 
-- `pnpm -r --workspace-concurrency=1 --if-present test`: all package tests passed; worker reported 77 passed and two intentional Docker-only skips.
+- All workspace package tests passed; worker reported 83 passed and two intentional Docker-only skips.
 - `pnpm --filter @trace/database test:integration`: 10/10 PostgreSQL migration, constraint, and seed tests passed.
-- `pnpm --filter @trace/api test:integration` against isolated Redis DB 13: 10 suites and 74/74 tests passed.
-- Focused authority/artifact worker integration: 18/18 tests passed.
+- `pnpm --filter @trace/api test:integration` against isolated Redis DB 13: 10 suites and 77/77 tests passed.
+- Focused authority/artifact worker integration: 24/24 tests passed.
 - `pnpm lint`, `pnpm typecheck`, and `NODE_ENV=production pnpm build`: passed for every workspace package and the optimized Next.js build.
 - `pnpm audit --audit-level=low` and `pnpm audit --prod --audit-level=low`: no known vulnerabilities.
 - `pnpm test:latex:docker`: 2/2 real sandboxed XeLaTeX acceptance tests passed, including forced-timeout cleanup.
-- `pnpm --filter @trace/web test:e2e`: 60/60 desktop/mobile Playwright tests passed.
+- `pnpm --filter @trace/web test:e2e`: 62/62 desktop/mobile Playwright tests passed on the integrated Day 10/11 tree.
 
 ## Residual risks and explicit non-claims
 

@@ -387,7 +387,7 @@ export class GithubPushProcessor {
   }
 
   private sha(value: unknown): value is string {
-    return typeof value === 'string' && /^[0-9a-f]{40,64}$/i.test(value);
+    return typeof value === 'string' && /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/i.test(value);
   }
 
   private positiveSafeInteger(value: unknown): value is number {

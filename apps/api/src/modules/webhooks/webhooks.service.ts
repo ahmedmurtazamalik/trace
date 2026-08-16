@@ -162,9 +162,9 @@ export class WebhooksService {
     return typeof value.ref === 'string'
       && /^refs\/(heads|tags)\/[\x20-\x7e]{1,255}$/.test(value.ref)
       && typeof value.before === 'string'
-      && /^[a-f0-9]{40,64}$/i.test(value.before)
+      && /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/i.test(value.before)
       && typeof value.after === 'string'
-      && /^[a-f0-9]{40,64}$/i.test(value.after)
+      && /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/i.test(value.after)
       && installation !== null
       && this.providerId(installation.id)
       && repository !== null
@@ -222,7 +222,7 @@ export class WebhooksService {
   }
 
   private sha(value: unknown): value is string {
-    return typeof value === 'string' && /^[a-f0-9]{40,64}$/i.test(value);
+    return typeof value === 'string' && /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/i.test(value);
   }
 
   private boundedString(value: unknown, maximum: number): value is string {

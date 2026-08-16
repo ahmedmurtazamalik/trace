@@ -13,9 +13,9 @@ describe('report artifact storage', () => {
   beforeEach(async () => { root = await mkdtemp(join(tmpdir(), 'trace-storage-test-')); });
   afterEach(async () => { await rm(root, { recursive: true, force: true }); });
 
-  it('writes and reads a restrictive artifact key idempotently', async () => {
+  it('writes and reads a restrictive generation-scoped artifact key idempotently', async () => {
     const storage = new FileSystemArtifactStorage(root);
-    const key = 'users/user_1/reports/report_1/revisions/2/report.pdf';
+    const key = 'users/user_1/reports/report_1/revisions/2/generations/3/attempts/11111111-2222-4333-8444-555555555555/report.pdf';
     const bytes = Buffer.from('%PDF-1.7 trace');
 
     await storage.put(key, bytes);

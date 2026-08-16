@@ -27,7 +27,8 @@ class MemoryStorage implements ArtifactStorage {
   readonly objects = new Map<string, Buffer>();
   failNextPut = false;
 
-  put(key: string, bytes: Buffer): Promise<void> {
+  put(key: string, bytes: Buffer, signal?: AbortSignal): Promise<void> {
+    signal?.throwIfAborted();
     if (this.failNextPut) {
       this.failNextPut = false;
       throw new Error('storage unavailable with secret details');
@@ -49,6 +50,31 @@ class MemoryStorage implements ArtifactStorage {
     const value = this.objects.get(key);
     if (value === undefined || value.length > maximumBytes) throw new Error('not found');
     return Promise.resolve(Buffer.from(value));
+  }
+}
+
+class BlockingPutStorage extends MemoryStorage {
+  private releasePut = (): void => undefined;
+  private markStarted = (): void => undefined;
+  readonly putStarted = new Promise<void>((resolve) => { this.markStarted = resolve; });
+  private readonly putReleased = new Promise<void>((resolve) => { this.releasePut = resolve; });
+
+  override async put(key: string, bytes: Buffer, signal?: AbortSignal): Promise<void> {
+    this.markStarted();
+    let rejectAbort: (reason?: unknown) => void;
+    const aborted = new Promise<void>((_resolve, reject) => { rejectAbort = reject; });
+    const onAbort = (): void => rejectAbort(signal?.reason ?? new Error('aborted'));
+    signal?.addEventListener('abort', onAbort, { once: true });
+    try {
+      await Promise.race([this.putReleased, aborted]);
+      await super.put(key, bytes, signal);
+    } finally {
+      signal?.removeEventListener('abort', onAbort);
+    }
+  }
+
+  release(): void {
+    this.releasePut();
   }
 }
 
@@ -99,14 +125,66 @@ describe('report artifact processor', () => {
     expect(report).toMatchObject({
       status: 'completed', error: null,
       renderRevision: null, renderPublishedAt: null, processingToken: null,
-      latexPath: `users/${userId}/reports/${reportId}/revisions/1/report.tex`,
-      pdfPath: `users/${userId}/reports/${reportId}/revisions/1/report.pdf`,
     });
+    expect(report.latexPath).toMatch(new RegExp(`^users/${userId}/reports/${reportId}/revisions/1/generations/1/attempts/[a-f0-9-]+/report\\.tex$`));
+    expect(report.pdfPath).toMatch(new RegExp(`^users/${userId}/reports/${reportId}/revisions/1/generations/1/attempts/[a-f0-9-]+/report\\.pdf$`));
     expect(report.completedAt).toBeInstanceOf(Date);
     expect(report.currentRevision).toMatchObject({ revision: 1, source: 'ai' });
     expect(report.artifacts).toHaveLength(2);
     expect(new Set(report.artifacts.map((artifact) => artifact.revisionId))).toEqual(new Set([report.currentRevision?.id]));
     expect(storage.objects.size).toBe(2);
+  });
+
+  it('keeps database transactions and the report advisory lock free while storage is stalled', async () => {
+    const storage = new BlockingPutStorage();
+    const processor = new ReportArtifactProcessor(
+      prisma,
+      new ReportProcessor(prisma, new DeterministicReportProvider()),
+      compiler(),
+      storage,
+    );
+    const processing = processor.process(reportId);
+    await storage.putStarted;
+    const contender = new PrismaClient();
+    let acquired = false;
+    try {
+      acquired = await contender.$transaction(async (transaction) => {
+        const rows = await transaction.$queryRaw<Array<{ acquired: boolean }>>`
+          SELECT pg_try_advisory_xact_lock(hashtextextended(${reportId}, 0)) AS "acquired"
+        `;
+        return rows[0]?.acquired === true;
+      });
+    } finally {
+      storage.release();
+      await processing;
+      await contender.$disconnect();
+    }
+
+    expect(acquired).toBe(true);
+    expect([...storage.objects.keys()]).toEqual(expect.arrayContaining([
+      expect.stringMatching(/\/generations\/1\/attempts\/[a-f0-9-]+\/report\.tex$/),
+      expect.stringMatching(/\/generations\/1\/attempts\/[a-f0-9-]+\/report\.pdf$/),
+    ]));
+  });
+
+  it('aborts a stalled storage write before its lease and leaves a retryable obligation', async () => {
+    const storage = new BlockingPutStorage();
+    const processor = new ReportArtifactProcessor(
+      prisma,
+      new ReportProcessor(prisma, new DeterministicReportProvider()),
+      compiler(),
+      storage,
+      30_000,
+      50,
+    );
+    const startedAt = Date.now();
+
+    await expect(processor.process(reportId)).rejects.toThrow('REPORT_RENDER_RETRY');
+
+    expect(Date.now() - startedAt).toBeLessThan(1_000);
+    const report = await prisma.report.findUniqueOrThrow({ where: { id: reportId } });
+    expect(report).toMatchObject({ status: 'processing', processingToken: null });
+    await expect(prisma.reportArtifact.count({ where: { reportId } })).resolves.toBe(0);
   });
 
   it('reuses frozen source and artifacts across same-revision deployment regeneration', async () => {
@@ -145,7 +223,14 @@ describe('report artifact processor', () => {
     expect(await prisma.reportArtifact.count({ where: { reportId } })).toBe(2);
     expect(storage.objects.size).toBe(2);
     expect(compileMock).toHaveBeenCalledTimes(1);
-    for (const [key, bytes] of originalObjects) expect(storage.objects.get(key)).toEqual(bytes);
+    const originalLatex = originalObjects.get(latexKey);
+    if (originalLatex === undefined) throw new Error('missing original LaTeX bytes');
+    expect(storage.objects.get(latexKey)).toBeUndefined();
+    const replacementLatex = [...storage.objects].find(([key]) => key.includes('/generations/2/') && key.endsWith('/report.tex'));
+    expect(replacementLatex?.[1]).toEqual(originalLatex);
+    const pdfEntry = [...originalObjects].find(([key]) => key.endsWith('/report.pdf'));
+    if (pdfEntry === undefined) throw new Error('missing original PDF bytes');
+    expect(storage.objects.get(pdfEntry[0])).toEqual(pdfEntry[1]);
   });
 
   it('leaves a truthful processing obligation after transient storage failure and retries idempotently', async () => {
@@ -208,7 +293,48 @@ describe('report artifact processor', () => {
     expect(report).toMatchObject({ status: 'processing', renderRevision: 2 });
     expect(report.currentRevision?.revision).toBe(2);
     expect(await prisma.reportArtifact.count({ where: { reportId } })).toBe(0);
-    expect(storage.objects.size).toBe(0);
+    expect([...storage.objects.keys()]).toEqual(expect.arrayContaining([
+      expect.stringMatching(/\/revisions\/1\/generations\/1\/attempts\/[a-f0-9-]+\/report\.tex$/),
+      expect.stringMatching(/\/revisions\/1\/generations\/1\/attempts\/[a-f0-9-]+\/report\.pdf$/),
+    ]));
+    expect(report.latexPath).toBeNull();
+    expect(report.pdfPath).toBeNull();
+  });
+
+  it('isolates stale same-generation attempt objects from a replacement lease holder', async () => {
+    let release: (() => void) | undefined;
+    const wait = new Promise<void>((resolve) => { release = resolve; });
+    const storage = new MemoryStorage();
+    const stale = new ReportArtifactProcessor(
+      prisma,
+      new ReportProcessor(prisma, new DeterministicReportProvider()),
+      compiler(async () => { await wait; return pdf; }),
+      storage,
+    );
+    const staleProcessing = stale.process(reportId);
+    await new Promise((resolve) => setTimeout(resolve, 75));
+    await prisma.report.update({
+      where: { id: reportId },
+      data: { processingToken: null, processingExpiresAt: null },
+    });
+    release?.();
+    await expect(staleProcessing).rejects.toThrow('REPORT_RENDER_RETRY');
+
+    const replacementDocument = await PDFDocument.create();
+    replacementDocument.addPage([400, 250]);
+    const replacementPdf = Buffer.from(await replacementDocument.save({ useObjectStreams: false }));
+    await new ReportArtifactProcessor(
+      prisma,
+      new ReportProcessor(prisma, new DeterministicReportProvider()),
+      compiler(() => Promise.resolve(replacementPdf)),
+      storage,
+    ).process(reportId);
+
+    const report = await prisma.report.findUniqueOrThrow({ where: { id: reportId }, include: { artifacts: true } });
+    expect(report).toMatchObject({ status: 'completed', renderRevision: null, processingToken: null });
+    expect(report.artifacts).toHaveLength(2);
+    expect(storage.objects.size).toBe(4);
+    expect(report.artifacts.every(({ storageKey }) => storageKey.includes('/attempts/'))).toBe(true);
   });
 
   it('rejects finalization when only the render-revision obligation changes', async () => {
