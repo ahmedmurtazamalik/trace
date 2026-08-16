@@ -371,6 +371,7 @@ export class RepositoriesService {
       if (decoded.toString('base64url') !== payload) throw new Error('non-canonical cursor');
       const expected = Buffer.from(this.cursorSignature(payload), 'base64url');
       const supplied = Buffer.from(signature, 'base64url');
+      if (supplied.toString('base64url') !== signature) throw new Error('non-canonical signature');
       if (supplied.length !== expected.length || !timingSafeEqual(supplied, expected)) throw new Error('invalid signature');
       const value = JSON.parse(decoded.toString('utf8')) as unknown;
       if (typeof value !== 'object' || value === null || Array.isArray(value)) throw new Error('invalid cursor');

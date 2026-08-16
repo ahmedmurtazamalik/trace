@@ -33,7 +33,7 @@ describe('GitHub webhook acceptance', () => {
     app = await createApplication();
     jest.spyOn(app.get(GithubWebhookPublisher), 'onApplicationBootstrap').mockImplementation(() => undefined);
     await app.init();
-    app.get(GithubWebhookPublisher).onModuleDestroy();
+    await app.get(GithubWebhookPublisher).onModuleDestroy();
     await app.get(GithubWebhookPublisher).publishOwed();
     server = app.getHttpServer() as Server;
     prisma = app.get(PrismaService);

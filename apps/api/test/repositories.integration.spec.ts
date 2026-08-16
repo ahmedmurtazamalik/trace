@@ -301,7 +301,11 @@ describe('Repository API', () => {
       .query({ limit: 2, cursor: firstPage.pageInfo.nextCursor })
       .set('Cookie', identity.cookie).expect(400);
     const cursor = firstPage.pageInfo.nextCursor ?? '';
-    const tampered = `${cursor.slice(0, -1)}${cursor.endsWith('A') ? 'B' : 'A'}`;
+    const [payload, signature] = cursor.split('.') as [string, string];
+    const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
+    const finalIndex = alphabet.indexOf(signature.at(-1) ?? '');
+    expect(finalIndex % 4).toBe(0);
+    const tampered = `${payload}.${signature.slice(0, -1)}${alphabet[finalIndex + 1]}`;
     await request(server).get('/api/v1/repositories')
       .query({ limit: 1, cursor: tampered }).set('Cookie', identity.cookie).expect(400);
     const other = await request(server).post('/api/v1/auth/register').send({

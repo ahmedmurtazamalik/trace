@@ -63,9 +63,10 @@ export class GithubWebhookPublisher implements OnApplicationBootstrap, OnModuleD
     }));
   }
 
-  onModuleDestroy(): void {
+  async onModuleDestroy(): Promise<void> {
     if (this.interval !== undefined) clearInterval(this.interval);
     this.interval = undefined;
+    await this.reconciliation?.catch(() => undefined);
   }
 
   private async publishOne(deliveryId: string, signal: AbortSignal): Promise<void> {

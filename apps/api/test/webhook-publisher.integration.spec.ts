@@ -172,6 +172,21 @@ describe('GitHub webhook publisher fairness', () => {
     expect(retried).toBe(false);
     await prisma.githubInstallation.update({ where: { id: installationId }, data: { suspendedAt: null } });
   }, 10_000);
+
+  it('waits for in-flight reconciliation during module destruction', async () => {
+    let finish: (() => void) | undefined;
+    const reconciliation = new Promise<void>((resolve) => { finish = resolve; });
+    const publisher = new GithubWebhookPublisher(prisma as unknown as PrismaService, { enqueue: jest.fn() } as never);
+    (publisher as unknown as { reconciliation: Promise<void> | undefined }).reconciliation = reconciliation;
+    let destroyed = false;
+
+    const destruction = publisher.onModuleDestroy().then(() => { destroyed = true; });
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(destroyed).toBe(false);
+    finish?.();
+    await destruction;
+    expect(destroyed).toBe(true);
+  });
 });
 
 async function executeMigration(client: PrismaClient, sql: string): Promise<void> {

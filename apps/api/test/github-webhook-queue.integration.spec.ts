@@ -78,4 +78,46 @@ describeIntegration('GitHub webhook queue recovery', () => {
       await rm(marker, { force: true });
     }
   });
+
+  it('does not return from destruction while an admitted enqueue can still spawn', async () => {
+    const queue = new GithubWebhookQueue({ redisUrl } as TraceConfig);
+    const marker = join(tmpdir(), `trace-queue-destroy-${randomUUID()}`);
+    let releaseAcquire: (() => void) | undefined;
+    const acquireGate = new Promise<void>((resolve) => { releaseAcquire = resolve; });
+    jest.spyOn(queue as unknown as { acquire: () => Promise<void> }, 'acquire').mockImplementation(() => acquireGate);
+    jest.spyOn(queue as unknown as { helperSource: () => string }, 'helperSource').mockReturnValue(
+      `require('node:fs').writeFileSync(${JSON.stringify(marker)}, 'late'); process.stdout.write('OK');`,
+    );
+
+    try {
+      const publication = queue.enqueue(`destroyed-${randomUUID()}`);
+      await new Promise((resolve) => setImmediate(resolve));
+      const destruction = queue.onModuleDestroy();
+      releaseAcquire?.();
+      await destruction;
+      await expect(publication).rejects.toThrow('Webhook queue is closing.');
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      await expect(access(marker)).rejects.toBeDefined();
+    } finally {
+      await rm(marker, { force: true });
+    }
+  });
+
+  it('resolves BullMQ independently of the API process working directory', async () => {
+    const previousCwd = process.cwd();
+    const deliveryId = `cwd-independent-${randomUUID()}`;
+    const jobId = `github-webhook-${deliveryId}`;
+    const rawQueue = new Queue<{ deliveryId: string }>(GITHUB_WEBHOOK_QUEUE, { connection: { url: redisUrl! } });
+    const queue = new GithubWebhookQueue({ redisUrl } as TraceConfig);
+    try {
+      process.chdir(join(__dirname, '../../..'));
+      await queue.enqueue(deliveryId);
+      expect(await rawQueue.getJob(jobId)).toBeDefined();
+    } finally {
+      process.chdir(previousCwd);
+      await queue.onModuleDestroy();
+      await (await rawQueue.getJob(jobId))?.remove().catch(() => undefined);
+      await rawQueue.close();
+    }
+  });
 });

@@ -1,6 +1,7 @@
 import { Inject, Injectable, type OnModuleDestroy } from '@nestjs/common';
 import type { TraceConfig } from '@trace/config';
 import { spawn, type ChildProcess } from 'node:child_process';
+import { createRequire } from 'node:module';
 import { TRACE_CONFIG } from '../../common/config/config.token';
 
 export const GITHUB_WEBHOOK_QUEUE = 'github-webhook-deliveries';
@@ -10,7 +11,7 @@ const HELPER_CONCURRENCY = 4;
 const SUCCESS_OUTPUT = 'OK';
 
 const PUBLICATION_HELPER_SOURCE = String.raw`
-const { Queue } = require('bullmq');
+const { Queue } = require(process.env.TRACE_BULLMQ_MODULE);
 const queue = new Queue(process.env.TRACE_QUEUE_NAME, {
   connection: {
     url: process.env.TRACE_REDIS_URL,
@@ -53,17 +54,28 @@ interface SlotWaiter {
 @Injectable()
 export class GithubWebhookQueue implements OnModuleDestroy {
   private readonly redisUrl: string;
+  private readonly bullmqModule: string;
   private readonly children = new Set<ChildProcess>();
+  private readonly operations = new Set<Promise<void>>();
   private readonly waiters: SlotWaiter[] = [];
   private active = 0;
   private closing = false;
 
   constructor(@Inject(TRACE_CONFIG) config: TraceConfig) {
     this.redisUrl = config.redisUrl;
+    this.bullmqModule = createRequire(__filename).resolve('bullmq');
   }
 
-  async enqueue(deliveryId: string, signal?: AbortSignal): Promise<void> {
+  enqueue(deliveryId: string, signal?: AbortSignal): Promise<void> {
     if (!/^[A-Za-z0-9_-]{1,128}$/.test(deliveryId)) throw new Error('Webhook queue reference is invalid.');
+    const operation = this.enqueueTracked(deliveryId, signal);
+    this.operations.add(operation);
+    const forget = (): void => { this.operations.delete(operation); };
+    void operation.then(forget, forget);
+    return operation;
+  }
+
+  private async enqueueTracked(deliveryId: string, signal?: AbortSignal): Promise<void> {
     await this.acquire(signal);
     try {
       await this.runHelper(deliveryId, signal);
@@ -83,6 +95,7 @@ export class GithubWebhookQueue implements OnModuleDestroy {
       if (child.exitCode !== null || child.signalCode !== null) return;
       await new Promise<void>((resolve) => child.once('close', () => resolve()));
     }));
+    await Promise.allSettled(Array.from(this.operations));
   }
 
   protected helperSource(): string {
@@ -91,10 +104,11 @@ export class GithubWebhookQueue implements OnModuleDestroy {
 
   private async runHelper(deliveryId: string, signal?: AbortSignal): Promise<void> {
     signal?.throwIfAborted();
+    if (this.closing) throw new Error('Webhook queue is closing.');
     const child = spawn(process.execPath, ['-e', this.helperSource()], {
-      cwd: process.cwd(),
       env: {
         PATH: process.env.PATH,
+        TRACE_BULLMQ_MODULE: this.bullmqModule,
         TRACE_REDIS_URL: this.redisUrl,
         TRACE_QUEUE_NAME: GITHUB_WEBHOOK_QUEUE,
         TRACE_JOB_NAME: PROCESS_GITHUB_WEBHOOK_JOB,
