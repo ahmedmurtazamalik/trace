@@ -68,6 +68,23 @@ describe("Day 9 structured report editor", () => {
     expect(screen.getByRole("status")).toHaveTextContent("Revision 2 saved");
   });
 
+  it("allows failed reports to create a recovery revision through the existing secure save contract", () => {
+    const failed: ReportDetail = {
+      ...report,
+      status: "failed",
+      completedAt: null,
+      errorMessage: "Report rendering failed.",
+      downloadAvailable: false,
+      artifacts: [],
+    };
+
+    render(<ReportEditor report={failed} saveRevision={vi.fn()} />);
+
+    expect(screen.getByLabelText("Executive summary")).not.toBeDisabled();
+    fireEvent.change(screen.getByLabelText("Executive summary"), { target: { value: "Recovery revision." } });
+    expect(screen.getByRole("button", { name: "Save revision" })).toBeEnabled();
+  });
+
   it("validates bounded prose and safely handles a revision conflict with reload guidance", async () => {
     const save = vi.fn().mockRejectedValue({ code: "REPORT_REVISION_CONFLICT" });
     render(<ReportEditor report={report} saveRevision={save} />);

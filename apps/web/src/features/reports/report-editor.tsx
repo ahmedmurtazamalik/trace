@@ -57,7 +57,7 @@ function applyPatch(content: ReportContent, prosePatch: ReportRevisionUpdateRequ
 export function ReportEditor({ report, saveRevision, contributorLabels = {}, onReloadLatest, onDirtyChange, onSaved }: Props) {
   if (!report.content || !report.revision || !report.revisionSource) return null;
   const editableReport: EditableReport = { ...report, content: report.content, revision: report.revision, revisionSource: report.revisionSource };
-  return <ReportEditorReady report={editableReport} saveRevision={saveRevision} contributorLabels={contributorLabels} onReloadLatest={onReloadLatest} onDirtyChange={onDirtyChange} onSaved={onSaved} editable={report.status === "completed"} />;
+  return <ReportEditorReady report={editableReport} saveRevision={saveRevision} contributorLabels={contributorLabels} onReloadLatest={onReloadLatest} onDirtyChange={onDirtyChange} onSaved={onSaved} editable={["completed", "failed"].includes(report.status)} />;
 }
 function ReportEditorReady({ report, saveRevision, contributorLabels, onReloadLatest, onDirtyChange, onSaved, editable }: { report: EditableReport; saveRevision: SaveReportRevision; contributorLabels: Record<string, string>; onReloadLatest?: () => void; onDirtyChange?: (dirty: boolean) => void; onSaved?: ReportRevisionSaved; editable: boolean }) {
   const [current, setCurrent] = useState(report);
