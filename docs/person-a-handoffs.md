@@ -392,10 +392,10 @@ Final recorded results:
 
 ### Verification
 
-- Workspace package tests passed sequentially; web: 148/148, worker: 88 passed with two intentional Docker-only skips, shared: 25/25, report storage: 5/5.
+- Workspace package tests passed sequentially; web: 148/148, worker: 91 passed with two intentional Docker-only skips, shared: 25/25, report storage: 5/5.
 - PostgreSQL database integration and the complete monorepo test command passed against disposable databases.
 - API integration on isolated Redis DB 13: 10 suites, 78/78 passed.
-- Focused worker authority/artifact integration is included in the passing 88-test worker gate.
+- Focused worker authority/artifact integration is included in the passing 91-test worker gate.
 - Workspace lint, strict TypeScript, and production build passed.
 - Real Docker XeLaTeX acceptance: 2/2 passed.
 - Integrated desktop/mobile Playwright: 62/62 passed.

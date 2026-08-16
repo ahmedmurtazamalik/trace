@@ -111,8 +111,6 @@ export class GithubPushProcessor {
                 promise: this.enricher.commit({
                   githubInstallationId: snapshot.githubInstallationId,
                   githubRepositoryId: snapshot.githubRepositoryId,
-                  owner: snapshotRepository.owner,
-                  name: snapshotRepository.name,
                   sha,
                 }),
                 consumers: 0,
