@@ -125,9 +125,47 @@ describe('GitHub webhook publisher fairness', () => {
 
     await new Promise((resolve) => setTimeout(resolve, 2_000));
     await publisher.publishOwed();
-    expect(enqueue).toHaveBeenCalledWith(healthyId);
+    expect(enqueue).toHaveBeenCalledWith(healthyId, expect.any(AbortSignal));
     await expect(prisma.githubWebhookDelivery.findUniqueOrThrow({ where: { id: healthyId } }))
       .resolves.toMatchObject({ status: 'pending' });
+  }, 10_000);
+
+  it('aborts a timed-out retry before revocation releases a delayed queue operation', async () => {
+    const deliveryId = `late-retry-${randomUUID()}`;
+    await prisma.githubWebhookDelivery.create({
+      data: {
+        id: deliveryId,
+        githubDeliveryId: randomUUID(),
+        eventName: 'push',
+        githubInstallationId,
+        githubRepositoryId,
+        installationId,
+        repositoryId,
+        payloadHash: 'f'.repeat(64),
+        payload: {},
+      },
+    });
+    let queueStarted!: () => void;
+    const started = new Promise<void>((resolve) => { queueStarted = resolve; });
+    let releaseQueue!: () => void;
+    const release = new Promise<void>((resolve) => { releaseQueue = resolve; });
+    let retried = false;
+    const enqueue = jest.fn(async (_id: string, signal?: AbortSignal) => {
+      queueStarted();
+      await release;
+      if (signal?.aborted !== true) retried = true;
+    });
+    const publisher = new GithubWebhookPublisher(prisma as unknown as PrismaService, { enqueue } as never);
+
+    const publishing = publisher.publishOwed();
+    await started;
+    await publishing;
+    await prisma.githubInstallation.update({ where: { id: installationId }, data: { suspendedAt: new Date() } });
+    releaseQueue();
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(retried).toBe(false);
+    await prisma.githubInstallation.update({ where: { id: installationId }, data: { suspendedAt: null } });
   }, 10_000);
 });
 

@@ -152,6 +152,14 @@ describe('GitHub authorization adapters', () => {
       await expect(adapter.verifyInstallation('code', 91n)).rejects.toThrow('GitHub installation verification failed');
       expect(verificationUserFailure.cancel).toHaveBeenCalledTimes(1);
       expect(installationSibling.cancel).toHaveBeenCalledTimes(1);
+
+      const fulfilledSibling = streaming(200);
+      global.fetch = jest.fn()
+        .mockResolvedValueOnce(new Response(JSON.stringify({ access_token: 'token' }), { status: 200 }))
+        .mockRejectedValueOnce(new Error('network failure'))
+        .mockResolvedValueOnce(fulfilledSibling.response) as typeof fetch;
+      await expect(adapter.verifyInstallation('code', 91n)).rejects.toThrow('GitHub installation verification failed');
+      expect(fulfilledSibling.cancel).toHaveBeenCalledTimes(1);
     } finally {
       global.fetch = originalFetch;
     }

@@ -89,8 +89,9 @@ describe('GitHub webhook worker lifecycle', () => {
       await new Promise((resolve) => setTimeout(resolve, 10));
     }
 
-    await expect(worker.close()).resolves.toBeUndefined();
+    await expect(worker.close()).rejects.toThrow('Webhook worker shutdown failed.');
     await processorFinished;
+    worker = undefined;
   });
 
   it.each(['pause', 'count', 'close'] as const)(
@@ -134,7 +135,7 @@ describe('GitHub webhook worker lifecycle', () => {
       await worker.start();
 
       const startedAt = Date.now();
-      await worker.close();
+      await expect(worker.close()).rejects.toThrow('Webhook worker shutdown failed.');
 
       expect(Date.now() - startedAt).toBeLessThan(200);
       expect(workerDisconnect).toHaveBeenCalledTimes(1);

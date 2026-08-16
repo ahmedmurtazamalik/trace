@@ -26,7 +26,10 @@ export class GithubWebhookPublisher implements OnApplicationBootstrap, OnModuleD
   }
 
   async publishOneBounded(deliveryId: string): Promise<void> {
-    await this.withTimeout(this.publishOne(deliveryId), REQUEST_PUBLISH_TIMEOUT_MS).catch(() => undefined);
+    await this.withTimeout(
+      (signal) => this.publishOne(deliveryId, signal),
+      REQUEST_PUBLISH_TIMEOUT_MS,
+    ).catch(() => undefined);
   }
 
   async publishOwed(): Promise<void> {
@@ -65,9 +68,9 @@ export class GithubWebhookPublisher implements OnApplicationBootstrap, OnModuleD
     this.interval = undefined;
   }
 
-  private async publishOne(deliveryId: string): Promise<void> {
+  private async publishOne(deliveryId: string, signal: AbortSignal): Promise<void> {
     if (!await this.markAttempt(deliveryId)) return;
-    await this.publishAttempt(deliveryId);
+    await this.publishAttempt(deliveryId, signal);
   }
 
   private async markAttempt(deliveryId: string): Promise<boolean> {
@@ -81,14 +84,23 @@ export class GithubWebhookPublisher implements OnApplicationBootstrap, OnModuleD
     });
   }
 
-  private async publishAttempt(deliveryId: string): Promise<void> {
-    await this.prisma.$transaction(async (transaction) => {
-      if (!await this.lockCurrentAuthority(transaction, deliveryId)) return;
-      await this.withTimeout(this.queue.enqueue(deliveryId), REQUEST_PUBLISH_TIMEOUT_MS);
-    }, {
-      maxWait: REQUEST_PUBLISH_TIMEOUT_MS,
-      timeout: PUBLICATION_TRANSACTION_TIMEOUT_MS,
-    });
+  private async publishAttempt(deliveryId: string, parentSignal?: AbortSignal): Promise<void> {
+    const operation = (signal: AbortSignal) => {
+      signal.throwIfAborted();
+      return this.prisma.$transaction(async (transaction) => {
+        if (!await this.lockCurrentAuthority(transaction, deliveryId)) return;
+        signal.throwIfAborted();
+        await this.untilAbort(this.queue.enqueue(deliveryId, signal), signal);
+      }, {
+        maxWait: REQUEST_PUBLISH_TIMEOUT_MS,
+        timeout: PUBLICATION_TRANSACTION_TIMEOUT_MS,
+      });
+    };
+    if (parentSignal !== undefined) {
+      await operation(parentSignal);
+      return;
+    }
+    await this.withTimeout(operation, REQUEST_PUBLISH_TIMEOUT_MS);
   }
 
   private async lockCurrentAuthority(transaction: Prisma.TransactionClient, deliveryId: string): Promise<boolean> {
@@ -131,17 +143,37 @@ export class GithubWebhookPublisher implements OnApplicationBootstrap, OnModuleD
     return false;
   }
 
-  private async withTimeout(operation: Promise<void>, timeoutMs: number): Promise<void> {
+  private async withTimeout(operation: (signal: AbortSignal) => Promise<void>, timeoutMs: number): Promise<void> {
+    const controller = new AbortController();
     let timer: NodeJS.Timeout | undefined;
     try {
       await Promise.race([
-        operation,
+        operation(controller.signal),
         new Promise<never>((_resolve, reject) => {
-          timer = setTimeout(() => reject(new Error('Webhook queue publication timed out.')), timeoutMs);
+          timer = setTimeout(() => {
+            controller.abort();
+            reject(new Error('Webhook queue publication timed out.'));
+          }, timeoutMs);
         }),
       ]);
     } finally {
       if (timer !== undefined) clearTimeout(timer);
+    }
+  }
+
+  private async untilAbort(operation: Promise<void>, signal: AbortSignal): Promise<void> {
+    signal.throwIfAborted();
+    let rejectAborted: ((reason: unknown) => void) | undefined;
+    const aborted = new Promise<never>((_resolve, reject) => {
+      rejectAborted = reject;
+    });
+    const onAbort = (): void => rejectAborted?.(signal.reason);
+    signal.addEventListener('abort', onAbort, { once: true });
+    if (signal.aborted) onAbort();
+    try {
+      await Promise.race([operation, aborted]);
+    } finally {
+      signal.removeEventListener('abort', onAbort);
     }
   }
 }

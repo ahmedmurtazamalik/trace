@@ -192,7 +192,7 @@ export class RealGithubAuthorizationAdapter implements GithubAuthorizationAdapte
 
   async verifyInstallation(code: string, installationId: bigint): Promise<{ user: GithubAuthorizedUser; installation: GithubInstallationAccess }> {
     const accessToken = await this.exchangeToken(code);
-    const [userResponse, installationResponse] = await Promise.all([
+    const fetchResults = await Promise.allSettled([
       fetch('https://api.github.com/user', {
         headers: { Accept: 'application/vnd.github+json', Authorization: `Bearer ${accessToken}`, 'X-GitHub-Api-Version': '2022-11-28' },
         signal: AbortSignal.timeout(5_000),
@@ -202,6 +202,14 @@ export class RealGithubAuthorizationAdapter implements GithubAuthorizationAdapte
         signal: AbortSignal.timeout(5_000),
       }),
     ]);
+    if (fetchResults[0].status === 'rejected' || fetchResults[1].status === 'rejected') {
+      await Promise.all(fetchResults.map(async (result) => {
+        if (result.status === 'fulfilled') await this.cancel(result.value);
+      }));
+      throw new Error('GitHub installation verification failed');
+    }
+    const userResponse = fetchResults[0].value;
+    const installationResponse = fetchResults[1].value;
     if (!userResponse.ok || !installationResponse.ok) {
       await Promise.all([this.cancel(userResponse), this.cancel(installationResponse)]);
       throw new Error('GitHub installation verification failed');

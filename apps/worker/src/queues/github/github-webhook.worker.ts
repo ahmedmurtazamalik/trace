@@ -150,12 +150,18 @@ export class GithubWebhookWorker {
           ]).then(() => undefined),
           deadline,
         );
-      } catch {
-        void this.attempt(() => worker?.close(true)).catch(() => undefined);
-        void this.attempt(() => queue?.close()).catch(() => undefined);
-        void this.attempt(() => worker?.disconnect()).catch(() => undefined);
-        void this.attempt(() => queue?.disconnect()).catch(() => undefined);
-        void this.runPromise?.catch(() => undefined);
+      } catch (error) {
+        const forcedDeadline = Date.now() + (this.options.shutdownTimeoutMs ?? 10_000);
+        const forcedCleanup = Promise.allSettled([
+          this.attempt(() => worker?.close(true)),
+          this.attempt(() => queue?.close()),
+          this.attempt(() => worker?.disconnect()),
+          this.attempt(() => queue?.disconnect()),
+          this.runPromise?.catch(() => undefined) ?? Promise.resolve(),
+        ]).then(() => undefined);
+        await this.beforeDeadline(forcedCleanup, forcedDeadline).catch(() => undefined);
+        this.runPromise = undefined;
+        throw new Error('Webhook worker shutdown failed.', { cause: error });
       }
       this.runPromise = undefined;
     })();
