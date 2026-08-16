@@ -20,7 +20,7 @@ corepack pnpm install
 cp .env.example .env
 ```
 
-Keep `.env` local. It is ignored by Git. Before any production start, replace every placeholder and use externally managed secrets. Production config rejects missing, weak, or known placeholder session secrets.
+Keep `.env` local. It is ignored by Git. The API development/start scripts and worker start script load this repository-root file with Node's `--env-file-if-exists`; blank optional integration variables mean “not configured” rather than invalid present credentials. Before any production start, replace every placeholder and use externally managed secrets. Production config rejects missing, weak, or known placeholder session secrets.
 
 ## Local dependencies
 
@@ -95,6 +95,16 @@ corepack pnpm --filter @trace/api start
 ```
 
 The default port is `3001`. The root liveness and readiness endpoints are deliberately outside `/api/v1`; all product APIs are versioned under `/api/v1`.
+
+## Workers
+
+After building, start the queue workers with:
+
+```bash
+corepack pnpm --filter @trace/worker start
+```
+
+The worker start script loads the same repository-root `.env`. GitHub activity processing requires real `GITHUB_APP_ID` and `GITHUB_APP_PRIVATE_KEY` values and fails closed while those optional local placeholders remain blank. The deterministic report provider remains available for local development; production requires its separately documented configured provider and immutable compiler/storage settings.
 
 ## Quality gates
 

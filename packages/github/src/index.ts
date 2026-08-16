@@ -126,14 +126,14 @@ export class RealGithubAuthorizationAdapter implements GithubAuthorizationAdapte
       body: JSON.stringify({ client_id: this.input.clientId, client_secret: this.input.clientSecret, code }),
       signal: AbortSignal.timeout(5_000),
     });
-    if (!tokenResponse.ok) throw new Error('GitHub token exchange failed');
+    await this.requireOk(tokenResponse, 'GitHub token exchange failed');
     const tokenData = await this.boundedJson(tokenResponse, 65_536, 'GitHub token exchange failed') as { access_token?: string };
     if (!this.boundedString(tokenData.access_token, 1_024)) throw new Error('GitHub token exchange failed');
     const userResponse = await fetch('https://api.github.com/user', {
       headers: { Accept: 'application/vnd.github+json', Authorization: `Bearer ${tokenData.access_token}`, 'X-GitHub-Api-Version': '2022-11-28' },
       signal: AbortSignal.timeout(5_000),
     });
-    if (!userResponse.ok) throw new Error('GitHub user lookup failed');
+    await this.requireOk(userResponse, 'GitHub user lookup failed');
     const user = await this.boundedJson(userResponse, 262_144, 'GitHub user lookup failed') as GithubUserPayload;
     if (!this.validUser(user)) throw new Error('GitHub user lookup failed');
     return { user: { id: BigInt(user.id), username: user.login, displayName: user.name ?? null, avatarUrl: user.avatar_url ?? null } };
@@ -144,7 +144,7 @@ export class RealGithubAuthorizationAdapter implements GithubAuthorizationAdapte
       headers: { Accept: 'application/vnd.github+json', Authorization: `Bearer ${this.appJwt()}`, 'X-GitHub-Api-Version': '2022-11-28' },
       signal: AbortSignal.timeout(5_000),
     });
-    if (!response.ok) throw new Error('GitHub installation lookup failed');
+    await this.requireOk(response, 'GitHub installation lookup failed');
     const value = await this.boundedJson(response, 262_144, 'GitHub installation lookup failed') as GithubInstallationPayload;
     const accountLogin = value.account?.login;
     if (!Number.isSafeInteger(value.id) || BigInt(value.id as number) !== installationId || !this.boundedString(accountLogin, 100)) {
@@ -164,7 +164,7 @@ export class RealGithubAuthorizationAdapter implements GithubAuthorizationAdapte
       headers: { Accept: 'application/vnd.github+json', Authorization: `Bearer ${this.appJwt()}`, 'X-GitHub-Api-Version': '2022-11-28' },
       signal: AbortSignal.timeout(5_000),
     });
-    if (!tokenResponse.ok) throw new Error('GitHub repository synchronization failed');
+    await this.requireOk(tokenResponse, 'GitHub repository synchronization failed');
     const tokenData = await this.boundedJson(tokenResponse, 65_536, 'GitHub repository synchronization failed') as { token?: string };
     if (!this.boundedString(tokenData.token, 1_024)) throw new Error('GitHub repository synchronization failed');
 
@@ -176,7 +176,7 @@ export class RealGithubAuthorizationAdapter implements GithubAuthorizationAdapte
         headers: { Accept: 'application/vnd.github+json', Authorization: `Bearer ${tokenData.token}`, 'X-GitHub-Api-Version': '2022-11-28' },
         signal: AbortSignal.timeout(5_000),
       });
-      if (!response.ok) throw new Error('GitHub repository synchronization failed');
+      await this.requireOk(response, 'GitHub repository synchronization failed');
       const value = await this.boundedJson(response, 2_097_152, 'GitHub repository synchronization failed') as { repositories?: unknown[] };
       if (!Array.isArray(value.repositories)) throw new Error('GitHub repository synchronization failed');
       const pageRepositories = value.repositories.map((item) => this.repository(item));
@@ -202,9 +202,19 @@ export class RealGithubAuthorizationAdapter implements GithubAuthorizationAdapte
         signal: AbortSignal.timeout(5_000),
       }),
     ]);
-    if (!userResponse.ok || !installationResponse.ok) throw new Error('GitHub installation verification failed');
-    const user = await this.boundedJson(userResponse, 262_144, 'GitHub installation verification failed') as GithubUserPayload;
-    const value = await this.boundedJson(installationResponse, 262_144, 'GitHub installation verification failed') as GithubInstallationPayload;
+    if (!userResponse.ok || !installationResponse.ok) {
+      await Promise.all([this.cancel(userResponse), this.cancel(installationResponse)]);
+      throw new Error('GitHub installation verification failed');
+    }
+    const [userResult, installationResult] = await Promise.allSettled([
+      this.boundedJson(userResponse, 262_144, 'GitHub installation verification failed'),
+      this.boundedJson(installationResponse, 262_144, 'GitHub installation verification failed'),
+    ]);
+    if (userResult.status === 'rejected' || installationResult.status === 'rejected') {
+      throw new Error('GitHub installation verification failed');
+    }
+    const user = userResult.value as GithubUserPayload;
+    const value = installationResult.value as GithubInstallationPayload;
     const accountLogin = value.account?.login;
     if (!this.validUser(user) || !Number.isSafeInteger(value.id) || BigInt(value.id as number) !== installationId || !this.boundedString(accountLogin, 100)) {
       throw new Error('GitHub installation verification failed');
@@ -222,7 +232,7 @@ export class RealGithubAuthorizationAdapter implements GithubAuthorizationAdapte
       body: JSON.stringify({ client_id: this.input.clientId, client_secret: this.input.clientSecret, code }),
       signal: AbortSignal.timeout(5_000),
     });
-    if (!tokenResponse.ok) throw new Error('GitHub token exchange failed');
+    await this.requireOk(tokenResponse, 'GitHub token exchange failed');
     const tokenData = await this.boundedJson(tokenResponse, 65_536, 'GitHub token exchange failed') as { access_token?: string };
     if (!this.boundedString(tokenData.access_token, 1_024)) throw new Error('GitHub token exchange failed');
     return tokenData.access_token;
@@ -231,7 +241,10 @@ export class RealGithubAuthorizationAdapter implements GithubAuthorizationAdapte
   private async boundedJson(response: Response, maximum: number, failure: string): Promise<unknown> {
     try {
       const length = response.headers.get('content-length');
-      if (length !== null && (!/^\d+$/.test(length) || Number(length) > maximum)) throw new Error('oversized response');
+      if (length !== null && (!/^\d+$/.test(length) || Number(length) > maximum)) {
+        await this.cancel(response);
+        throw new Error('oversized response');
+      }
       const reader = response.body?.getReader();
       if (reader === undefined) throw new Error('missing response body');
       const chunks: Uint8Array[] = [];
@@ -256,6 +269,16 @@ export class RealGithubAuthorizationAdapter implements GithubAuthorizationAdapte
     } catch {
       throw new Error(failure);
     }
+  }
+
+  private async requireOk(response: Response, failure: string): Promise<void> {
+    if (response.ok) return;
+    await this.cancel(response);
+    throw new Error(failure);
+  }
+
+  private async cancel(response: Response): Promise<void> {
+    await response.body?.cancel().catch(() => undefined);
   }
 
   private boundedString(value: unknown, maximum: number): value is string {

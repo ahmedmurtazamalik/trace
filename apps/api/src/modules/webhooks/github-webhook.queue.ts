@@ -27,9 +27,15 @@ export class GithubWebhookQueue implements OnModuleDestroy {
   }
 
   async enqueue(deliveryId: string): Promise<void> {
-    await this.queue.add(PROCESS_GITHUB_WEBHOOK_JOB, { deliveryId }, {
-      jobId: `github-webhook-${deliveryId}`,
-    });
+    const jobId = `github-webhook-${deliveryId}`;
+    const existing = await this.queue.getJob(jobId);
+    if (existing !== undefined) {
+      if (await existing.getState() === 'failed') {
+        await existing.retry('failed', { resetAttemptsMade: true, resetAttemptsStarted: true });
+      }
+      return;
+    }
+    await this.queue.add(PROCESS_GITHUB_WEBHOOK_JOB, { deliveryId }, { jobId });
   }
 
   async onModuleDestroy(): Promise<void> {

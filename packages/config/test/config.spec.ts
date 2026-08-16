@@ -87,4 +87,27 @@ describe('loadConfig', () => {
     expect(config.github.installationCallbackUrl).toBe('https://trace.example/api/v1/github/installation/callback');
     expect(config.github.clientSecret).toBeUndefined();
   });
+
+  it('normalizes blank optional environment values from the documented env file to absent', () => {
+    const config = loadConfig({
+      NODE_ENV: 'development',
+      DATABASE_URL: 'postgresql://trace:password@localhost:5432/trace',
+      REDIS_URL: 'redis://localhost:6379',
+      GITHUB_APP_ID: '',
+      GITHUB_APP_SLUG: '',
+      GITHUB_APP_PRIVATE_KEY: '',
+      GITHUB_APP_CLIENT_ID: '',
+      GITHUB_APP_CLIENT_SECRET: '',
+      GITHUB_WEBHOOK_SECRET: '',
+      LLM_API_KEY: '',
+      STORAGE_BUCKET: '',
+      STORAGE_ENDPOINT: '',
+      STORAGE_ACCESS_KEY: '',
+      STORAGE_SECRET_KEY: '',
+    });
+
+    expect(config.github).toEqual({});
+    expect(config.llmApiKey).toBeUndefined();
+    expect(config.storage).toEqual({});
+  });
 });

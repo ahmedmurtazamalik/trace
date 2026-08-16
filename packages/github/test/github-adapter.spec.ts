@@ -1,4 +1,8 @@
+import { generateKeyPairSync } from 'node:crypto';
 import { FakeGithubAuthorizationAdapter, RealGithubAuthorizationAdapter, UnavailableGithubAuthorizationAdapter } from '../src';
+
+const { privateKey } = generateKeyPairSync('rsa', { modulusLength: 2048 });
+const appPrivateKey = privateKey.export({ type: 'pkcs8', format: 'pem' }).toString();
 
 describe('GitHub authorization adapters', () => {
   it('keeps account identity and installation authorization as separate operations', async () => {
@@ -77,6 +81,77 @@ describe('GitHub authorization adapters', () => {
         .mockResolvedValueOnce(new Response(oversized, { status: 200 })) as typeof fetch;
       await expect(adapter.authorize('code')).rejects.toThrow('GitHub user lookup failed');
       expect(cancel).toHaveBeenCalled();
+    } finally {
+      global.fetch = originalFetch;
+    }
+  });
+
+  it('cancels every unused early-rejected response, including parallel verification siblings', async () => {
+    const adapter = new RealGithubAuthorizationAdapter({
+      clientId: 'client-id', clientSecret: 'client-secret', appId: '123', privateKey: 'invalid-test-key',
+    });
+    const originalFetch = global.fetch;
+    const streaming = (status: number, headers: Record<string, string> = {}): { response: Response; cancel: jest.Mock } => {
+      const cancel = jest.fn().mockResolvedValue(undefined);
+      const body = new ReadableStream<Uint8Array>({
+        start(controller) { controller.enqueue(new TextEncoder().encode('{}')); },
+        cancel,
+      });
+      return { response: new Response(body, { status, headers }), cancel };
+    };
+    try {
+      const failed = streaming(500);
+      global.fetch = jest.fn().mockResolvedValueOnce(failed.response) as typeof fetch;
+      await expect(adapter.authorize('code')).rejects.toThrow('GitHub token exchange failed');
+      expect(failed.cancel).toHaveBeenCalledTimes(1);
+
+      const userFailure = streaming(500);
+      global.fetch = jest.fn()
+        .mockResolvedValueOnce(new Response(JSON.stringify({ access_token: 'token' }), { status: 200 }))
+        .mockResolvedValueOnce(userFailure.response) as typeof fetch;
+      await expect(adapter.authorize('code')).rejects.toThrow('GitHub user lookup failed');
+      expect(userFailure.cancel).toHaveBeenCalledTimes(1);
+
+      const signedAdapter = new RealGithubAuthorizationAdapter({
+        clientId: 'client-id', clientSecret: 'client-secret', appId: '123', privateKey: appPrivateKey,
+      });
+      const installationFailure = streaming(500);
+      global.fetch = jest.fn().mockResolvedValueOnce(installationFailure.response) as typeof fetch;
+      await expect(signedAdapter.installation(91n)).rejects.toThrow('GitHub installation lookup failed');
+      expect(installationFailure.cancel).toHaveBeenCalledTimes(1);
+
+      const repositoryTokenFailure = streaming(500);
+      global.fetch = jest.fn().mockResolvedValueOnce(repositoryTokenFailure.response) as typeof fetch;
+      await expect(signedAdapter.repositories(91n)).rejects.toThrow('GitHub repository synchronization failed');
+      expect(repositoryTokenFailure.cancel).toHaveBeenCalledTimes(1);
+
+      const repositoryPageFailure = streaming(500);
+      global.fetch = jest.fn()
+        .mockResolvedValueOnce(new Response(JSON.stringify({ token: 'token' }), { status: 200 }))
+        .mockResolvedValueOnce(repositoryPageFailure.response) as typeof fetch;
+      await expect(signedAdapter.repositories(91n)).rejects.toThrow('GitHub repository synchronization failed');
+      expect(repositoryPageFailure.cancel).toHaveBeenCalledTimes(1);
+
+      const verificationTokenFailure = streaming(500);
+      global.fetch = jest.fn().mockResolvedValueOnce(verificationTokenFailure.response) as typeof fetch;
+      await expect(adapter.verifyInstallation('code', 91n)).rejects.toThrow('GitHub token exchange failed');
+      expect(verificationTokenFailure.cancel).toHaveBeenCalledTimes(1);
+
+      const oversized = streaming(200, { 'content-length': '65537' });
+      global.fetch = jest.fn().mockResolvedValueOnce(oversized.response) as typeof fetch;
+      await expect(adapter.authorize('code')).rejects.toThrow('GitHub token exchange failed');
+      expect(oversized.cancel).toHaveBeenCalledTimes(1);
+
+      const token = new Response(JSON.stringify({ access_token: 'token' }), { status: 200 });
+      const verificationUserFailure = streaming(500);
+      const installationSibling = streaming(200);
+      global.fetch = jest.fn()
+        .mockResolvedValueOnce(token)
+        .mockResolvedValueOnce(verificationUserFailure.response)
+        .mockResolvedValueOnce(installationSibling.response) as typeof fetch;
+      await expect(adapter.verifyInstallation('code', 91n)).rejects.toThrow('GitHub installation verification failed');
+      expect(verificationUserFailure.cancel).toHaveBeenCalledTimes(1);
+      expect(installationSibling.cancel).toHaveBeenCalledTimes(1);
     } finally {
       global.fetch = originalFetch;
     }
