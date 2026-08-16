@@ -2,7 +2,7 @@
 
 const { randomUUID } = require('node:crypto');
 const { constants } = require('node:fs');
-const { chmod, link, mkdir, open, rm } = require('node:fs/promises');
+const { link, mkdir, open, rm } = require('node:fs/promises');
 
 const KEY_PATTERN = /^users\/[A-Za-z0-9_-]{1,128}\/reports\/[A-Za-z0-9_-]{1,128}\/revisions\/[1-9][0-9]{0,8}\/(?:generations\/[1-9][0-9]{0,8}\/attempts\/[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\/)?report\.(?:pdf|tex)$/;
 const MAX_ARTIFACT_BYTES = 100_000_000;
@@ -43,11 +43,11 @@ async function readAnchored(path, maximumBytes) {
 
 async function openParent(root, key) {
   await mkdir(root, { recursive: true, mode: 0o700 });
-  await chmod(root, 0o700);
   let current = await open(root, DIRECTORY_FLAGS);
   try {
     const rootMetadata = await current.stat();
     if (!rootMetadata.isDirectory() || rootMetadata.isSymbolicLink()) throw failed();
+    await current.chmod(0o700);
     const parts = key.split('/');
     const name = parts.pop();
     if (name === undefined) throw failed();

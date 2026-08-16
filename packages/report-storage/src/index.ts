@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process';
 import { constants, existsSync } from 'node:fs';
-import { chmod, mkdir, open } from 'node:fs/promises';
+import { mkdir, open } from 'node:fs/promises';
 import type { FileHandle } from 'node:fs/promises';
 import { isAbsolute, join, resolve } from 'node:path';
 
@@ -111,11 +111,11 @@ export class FileSystemArtifactStorage implements ArtifactStorage {
    */
   private async openParent(key: string, create: boolean): Promise<{ parent: FileHandle; name: string }> {
     await mkdir(this.root, { recursive: true, mode: 0o700 });
-    await chmod(this.root, 0o700);
     let current = await open(this.root, DIRECTORY_FLAGS);
     try {
       const rootMetadata = await current.stat();
       if (!rootMetadata.isDirectory() || rootMetadata.isSymbolicLink()) throw new Error(STORAGE_FAILED);
+      await current.chmod(0o700);
       const parts = key.split('/');
       const name = parts.pop();
       if (name === undefined) throw new Error(STORAGE_FAILED);

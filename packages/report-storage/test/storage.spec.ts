@@ -13,7 +13,7 @@ describe('report artifact storage', () => {
   beforeEach(async () => { root = await mkdtemp(join(tmpdir(), 'trace-storage-test-')); });
   afterEach(async () => { await rm(root, { recursive: true, force: true }); });
 
-  it('writes and reads a restrictive generation-scoped artifact key idempotently', async () => {
+  it('writes and reads a restrictive generation-and-attempt-scoped artifact key idempotently', async () => {
     const storage = new FileSystemArtifactStorage(root);
     const key = 'users/user_1/reports/report_1/revisions/2/generations/3/attempts/11111111-2222-4333-8444-555555555555/report.pdf';
     const bytes = Buffer.from('%PDF-1.7 trace');
@@ -75,6 +75,20 @@ describe('report artifact storage', () => {
     await symlink(redirected, join(root, 'users'));
     await expect(storage.put('users/victim/reports/a/revisions/1/report.pdf', Buffer.from('x')))
       .rejects.toThrow('REPORT_STORAGE_FAILED');
+  });
+
+  it('rejects a symlinked storage root without changing its target permissions', async () => {
+    const target = join(root, 'root-target');
+    const symlinkRoot = join(root, 'storage-root');
+    await mkdir(target, { mode: 0o755 });
+    await symlink(target, symlinkRoot);
+    const before = (await stat(target)).mode & 0o777;
+    const storage = new FileSystemArtifactStorage(symlinkRoot);
+    const key = 'users/user_1/reports/report_1/revisions/2/generations/3/attempts/11111111-2222-4333-8444-555555555555/report.pdf';
+
+    await expect(storage.put(key, Buffer.from('%PDF-1.7 trace'))).rejects.toThrow('REPORT_STORAGE_FAILED');
+    await expect(storage.getOptional(key, 100)).rejects.toThrow('REPORT_STORAGE_FAILED');
+    expect((await stat(target)).mode & 0o777).toBe(before);
   });
 
   it('defaults storage settings only in explicit non-production modes', () => {
