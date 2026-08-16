@@ -9,6 +9,8 @@ interface PushIdentity {
 
 interface PushCommit {
   id: string;
+  tree_id: string;
+  distinct: boolean;
   message: string;
   timestamp: string;
   url: string;
@@ -359,9 +361,11 @@ export class GithubPushProcessor {
     const value = commit as PushCommit;
     return typeof value === 'object' && value !== null
       && this.sha(value.id)
+      && this.sha(value.tree_id)
+      && typeof value.distinct === 'boolean'
       && this.boundedString(value.message, 0, 65_536)
       && this.boundedString(value.timestamp, 1, 128) && Number.isFinite(Date.parse(value.timestamp))
-      && this.boundedString(value.url, 1, 2_048)
+      && this.httpUrl(value.url)
       && this.pushIdentity(value.author)
       && this.pushIdentity(value.committer)
       && this.pathArray(value.added)
@@ -388,6 +392,16 @@ export class GithubPushProcessor {
 
   private sha(value: unknown): value is string {
     return typeof value === 'string' && /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/i.test(value);
+  }
+
+  private httpUrl(value: unknown): value is string {
+    if (!this.boundedString(value, 1, 2_048)) return false;
+    try {
+      const parsed = new URL(value);
+      return parsed.protocol === 'https:' || parsed.protocol === 'http:';
+    } catch {
+      return false;
+    }
   }
 
   private positiveSafeInteger(value: unknown): value is number {

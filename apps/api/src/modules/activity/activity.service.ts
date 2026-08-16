@@ -3,7 +3,7 @@ import { createHmac, timingSafeEqual } from 'node:crypto';
 import type { TraceConfig } from '@trace/config';
 import { Prisma, PrismaService } from '@trace/database';
 import type { ActivityListQuery, ActivityListResponse, ActivitySummary, DashboardQuery, DashboardResponse } from '@trace/shared';
-import { activityListQuerySchema, dashboardQuerySchema } from '@trace/shared';
+import { activityListQuerySchema, dashboardQuerySchema, gitObjectIdSchema } from '@trace/shared';
 import { TRACE_CONFIG } from '../../common/config/config.token';
 
 type ActivityRow = {
@@ -373,7 +373,8 @@ export class ActivityService {
   }
 
   private sha(value: unknown): string | null {
-    return typeof value === 'string' && value.length >= 7 && value.length <= 64 ? value : null;
+    const parsed = gitObjectIdSchema.safeParse(value);
+    return parsed.success ? parsed.data : null;
   }
 
   private url(value: unknown, allowedHost?: string): string | null {

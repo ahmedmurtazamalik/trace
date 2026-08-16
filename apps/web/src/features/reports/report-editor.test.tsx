@@ -83,6 +83,15 @@ describe("Day 9 structured report editor", () => {
     expect(screen.getByRole("button", { name: "Reload latest revision" })).toBeInTheDocument();
   });
 
+  it("preserves the draft and tells users to wait when revision saving is rate limited", async () => {
+    const save = vi.fn().mockRejectedValue({ code: "RATE_LIMITED" });
+    render(<ReportEditor report={report} saveRevision={save} />);
+    fireEvent.change(screen.getByLabelText("Executive summary"), { target: { value: "Retained rate-limited draft." } });
+    fireEvent.click(screen.getByRole("button", { name: "Save revision" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("Wait before trying again");
+    expect(screen.getByLabelText("Executive summary")).toHaveValue("Retained rate-limited draft.");
+  });
+
   it("rebases a retained conflict draft onto the latest revision before retrying", async () => {
     const save = vi.fn().mockRejectedValueOnce({ code: "REPORT_REVISION_CONFLICT" }).mockImplementation(async (_id, request) => savedResponse(request));
     const reload = vi.fn();

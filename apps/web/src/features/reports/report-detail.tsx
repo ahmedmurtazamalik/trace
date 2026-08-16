@@ -145,7 +145,7 @@ export function ReportDetailView({ reportId, loadReport, saveRevision, regenerat
     } catch (cause) {
       if (actionController.signal.aborted || pollingGeneration.current !== generation) return;
       const code = typeof cause === "object" && cause !== null && "code" in cause ? String(cause.code) : "";
-      setActionError(code === "REPORT_REVISION_CONFLICT" ? "A newer revision exists. Reload the latest report before regenerating." : code === "UNAUTHENTICATED" ? "Your session expired. Sign in again before regenerating." : code === "REPORT_NOT_EDITABLE" ? "This report can no longer be regenerated in its current state." : code === "REPORT_GENERATION_UNAVAILABLE" ? "Report regeneration is temporarily unavailable. Try again later." : code === "REPORT_NOT_FOUND" ? "This report is no longer available." : "Trace could not regenerate this report. Your current revision is unchanged.");
+      setActionError(code === "REPORT_REVISION_CONFLICT" ? "A newer revision exists. Reload the latest report before regenerating." : code === "RATE_LIMITED" ? "Too many regeneration requests. Wait before trying again; your current revision is unchanged." : code === "UNAUTHENTICATED" ? "Your session expired. Sign in again before regenerating." : code === "REPORT_NOT_EDITABLE" ? "This report can no longer be regenerated in its current state." : code === "REPORT_GENERATION_UNAVAILABLE" ? "Report regeneration is temporarily unavailable. Try again later." : code === "REPORT_NOT_FOUND" ? "This report is no longer available." : "Trace could not regenerate this report. Your current revision is unchanged.");
     } finally {
       if (!actionController.signal.aborted && pollingGeneration.current === generation) setRegenerating(false);
     }

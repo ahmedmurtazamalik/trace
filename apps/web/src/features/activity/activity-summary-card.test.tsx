@@ -16,7 +16,7 @@ const activity: ActivitySummary = {
   type: "commit",
   occurredAt: "2026-08-13T07:52:45.000Z",
   facts: {
-    sha: "dc69147c",
+    sha: "dc69147c".padEnd(40, "0"),
     message: "copy: refresh homepage hero message",
     branch: "main",
     filesChanged: 1,

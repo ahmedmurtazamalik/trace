@@ -210,12 +210,20 @@ export class ReportArtifactProcessor {
     const storageController = new AbortController();
     const storageTimer = setTimeout(() => storageController.abort(), this.storageWriteTimeoutMs);
     storageTimer.unref();
+    let writeFailure: unknown;
+    const writes = artifacts.map(async (artifact) => {
+      try {
+        await this.storage.put(artifact.key, artifact.bytes, storageController.signal);
+      } catch (error) {
+        writeFailure ??= error;
+        storageController.abort();
+        throw error;
+      }
+    });
     try {
-      await Promise.all(artifacts.map((artifact) => this.storage.put(
-        artifact.key,
-        artifact.bytes,
-        storageController.signal,
-      )));
+      const outcomes = await Promise.allSettled(writes);
+      const rejected = outcomes.find((outcome): outcome is PromiseRejectedResult => outcome.status === 'rejected');
+      if (rejected !== undefined) throw writeFailure ?? rejected.reason;
     } finally {
       clearTimeout(storageTimer);
     }

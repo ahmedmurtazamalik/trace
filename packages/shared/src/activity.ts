@@ -21,6 +21,8 @@ export const activityTypeSchema = z.enum([
   'local_commit',
 ]);
 
+export const gitObjectIdSchema = z.string().regex(/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/i);
+
 const activityTypesBySource = {
   github: new Set(['commit', 'push', 'pull_request']),
   cli: new Set(['working_tree_snapshot', 'staged_change', 'untracked_file', 'local_commit']),
@@ -44,7 +46,7 @@ export const activityContributorSchema = z.object({
 }).strict();
 
 export const activityFactsSchema = z.object({
-  sha: z.string().min(7).max(64).nullable(),
+  sha: gitObjectIdSchema.nullable(),
   message: z.string().min(1).max(10_000).nullable(),
   branch: z.string().min(1).max(1_024).nullable(),
   filesChanged: z.number().int().nonnegative().nullable(),

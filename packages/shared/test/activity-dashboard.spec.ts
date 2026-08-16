@@ -55,6 +55,21 @@ describe('Frozen Day 5-7 activity and dashboard contract', () => {
     expect(dashboardResponseSchema.safeParse({ ...dashboardFixture, productivityScore: 99 }).success).toBe(false);
   });
 
+  it('accepts only exact SHA-1 or SHA-256 Git object IDs in projected activity', () => {
+    for (const length of [40, 64]) {
+      expect(activitySummarySchema.safeParse({
+        ...activityListFixture.items[0],
+        facts: { ...activityListFixture.items[0]!.facts, sha: 'a'.repeat(length) },
+      }).success).toBe(true);
+    }
+    for (const sha of ['a'.repeat(41), 'a'.repeat(42), 'a'.repeat(63), 'g'.repeat(40)]) {
+      expect(activitySummarySchema.safeParse({
+        ...activityListFixture.items[0],
+        facts: { ...activityListFixture.items[0]!.facts, sha },
+      }).success).toBe(false);
+    }
+  });
+
   it('bounds activity identifiers and projected display strings', () => {
     expect(activityListQuerySchema.safeParse({ repositoryId: 'r'.repeat(257) }).success).toBe(false);
     expect(activityListQuerySchema.safeParse({ contributorId: 'c'.repeat(257) }).success).toBe(false);

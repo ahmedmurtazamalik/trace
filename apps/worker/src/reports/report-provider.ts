@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { reportContentSchema, reportFactsSchema, type ReportContent, type ReportFacts } from '@trace/shared';
+import { gitObjectIdSchema, reportContentSchema, reportFactsSchema, type ReportContent, type ReportFacts } from '@trace/shared';
 
 const snapshotContributorSchema = z.object({
   id: z.string().min(1).max(256),
@@ -12,7 +12,7 @@ const snapshotEvidenceSchema = z.object({
   activityId: z.string().min(1).max(256),
   occurredAt: z.iso.datetime(),
   type: z.literal('commit'),
-  sha: z.string().regex(/^[a-f0-9]{7,64}$/i),
+  sha: gitObjectIdSchema,
   message: z.string().min(1).max(10_000),
 }).strict();
 

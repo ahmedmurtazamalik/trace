@@ -4,6 +4,7 @@ import type { ArtifactStorage } from '@trace/report-storage';
 import type { TraceConfig } from '@trace/config';
 import { Prisma, PrismaService } from '@trace/database';
 import {
+  gitObjectIdSchema,
   reportContentSchema,
   reportCreateRequestSchema,
   reportDetailSchema,
@@ -546,7 +547,8 @@ export class ReportsService {
   }
 
   private sha(value: unknown): string | null {
-    return typeof value === 'string' && /^[a-f0-9]{7,64}$/i.test(value) ? value : null;
+    const parsed = gitObjectIdSchema.safeParse(value);
+    return parsed.success ? parsed.data : null;
   }
 
   private string(value: unknown, maximum: number): string | null {

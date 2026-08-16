@@ -144,6 +144,15 @@ describe('Reports API', () => {
           metadata: { ref: 'refs/heads/main' },
         },
         {
+          sourceKey: `day8:invalid-oid:${repository.id}`,
+          repositoryId: repository.id,
+          contributorId: contributor.id,
+          source: 'github',
+          type: 'commit',
+          occurredAt: new Date('2026-08-12T20:32:00.000Z'),
+          metadata: { sha: 'a'.repeat(41), message: 'Impossible object ID', branch: 'main', changedFiles: 90, additions: 90, deletions: 90 },
+        },
+        {
           sourceKey: `day8:outside:${repository.id}`,
           repositoryId: repository.id,
           contributorId: contributor.id,

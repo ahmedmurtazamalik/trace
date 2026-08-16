@@ -343,6 +343,23 @@ describe('Activity API', () => {
     expect(dashboardResponseSchema.parse(readyResponse.body as unknown).state).toBe('READY');
   });
 
+  it('normalizes impossible durable Git object IDs out of activity responses', async () => {
+    const fixture = await historicalActivity();
+    const invalid = await prisma.activityEvent.create({
+      data: {
+        sourceKey: `day7:invalid-oid:${fixture.repositoryId}`,
+        repositoryId: fixture.repositoryId,
+        source: 'github',
+        type: 'commit',
+        occurredAt: new Date('2026-08-12T11:59:00.000Z'),
+        metadata: { sha: 'a'.repeat(41), message: 'Impossible object ID' },
+      },
+    });
+    const response = await request(server).get('/api/v1/activity').set('Cookie', fixture.sessionCookie).expect(200);
+    const body = activityListResponseSchema.parse(response.body as unknown);
+    expect(body.items.find((item) => item.id === invalid.id)?.facts.sha).toBeNull();
+  });
+
   it('applies local-day filters and stable filter-bound cursor pagination', async () => {
     const fixture = await historicalActivity();
     await prisma.userRepository.updateMany({

@@ -1,7 +1,7 @@
 import { execFile } from 'node:child_process';
-import { mkdir, mkdtemp, rm, stat, symlink } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, stat, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { promisify } from 'node:util';
 import { FileSystemArtifactStorage, artifactStorageFromEnvironment } from '../src';
 
@@ -25,6 +25,20 @@ describe('report artifact storage', () => {
     const metadata = await stat(join(root, key));
     expect(metadata.mode & 0o777).toBe(0o400);
     await expect(storage.put(key, Buffer.from('different'))).rejects.toThrow('REPORT_STORAGE_FAILED');
+  });
+
+  it('terminates a hung filesystem writer when the storage deadline aborts', async () => {
+    const helper = resolve(root, 'hanging-writer.cjs');
+    await writeFile(helper, "process.stdin.resume(); setInterval(() => undefined, 60_000);\n", { mode: 0o500 });
+    const storage = new FileSystemArtifactStorage(root, helper);
+    const controller = new AbortController();
+    const startedAt = Date.now();
+    const key = 'users/user_1/reports/report_1/revisions/2/generations/3/attempts/11111111-2222-4333-8444-555555555555/report.pdf';
+    const writing = storage.put(key, Buffer.from('%PDF-1.7 trace'), controller.signal);
+    setTimeout(() => controller.abort(), 25);
+
+    await expect(writing).rejects.toThrow('REPORT_STORAGE_FAILED');
+    expect(Date.now() - startedAt).toBeLessThan(1_000);
   });
 
   it('rejects traversal, unexpected names, symlinks, and oversized reads', async () => {

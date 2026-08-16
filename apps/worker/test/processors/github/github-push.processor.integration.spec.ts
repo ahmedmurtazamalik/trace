@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { PrismaClient } from '@trace/database';
+import type { Prisma } from '@trace/database';
 import { Queue } from 'bullmq';
 import { GithubWebhookWorker } from '../../../src/queues/github/github-webhook.worker';
 import { GithubPushProcessor } from '../../../src/processors/github/github-push.processor';
@@ -26,6 +27,7 @@ describeIntegration('GitHub push processor', () => {
   const invalidPathDeliveryId = `worker-invalid-path-${suffix}`;
   const extendedOidDeliveryId = `worker-extended-oid-${suffix}`;
   const intermediateOidDeliveryId = `worker-intermediate-oid-${suffix}`;
+  const malformedNestedDeliveryId = `worker-malformed-nested-${suffix}`;
   const reassignedDeliveryId = `worker-reassigned-${suffix}`;
   const otherInstallationId = `worker-other-installation-${suffix}`;
   const reassignedInstallationId = `worker-reassigned-installation-${suffix}`;
@@ -112,7 +114,7 @@ describeIntegration('GitHub push processor', () => {
     await prisma.pushEvent.deleteMany({ where: { repositoryId } });
     await prisma.commit.deleteMany({ where: { repositoryId } });
     await prisma.contributor.deleteMany({ where: { githubUserId: senderGithubId } });
-    await prisma.githubWebhookDelivery.deleteMany({ where: { id: { in: [deliveryId, overlappingDeliveryId, queuedDeliveryId, malformedDeliveryId, failedDeliveryId, revokedDeliveryId, mismatchedAuthorityDeliveryId, invalidPathDeliveryId, extendedOidDeliveryId, ...[41, 42, 63].map((length) => `${intermediateOidDeliveryId}-${length}`), reassignedDeliveryId] } } });
+    await prisma.githubWebhookDelivery.deleteMany({ where: { id: { in: [deliveryId, overlappingDeliveryId, queuedDeliveryId, malformedDeliveryId, failedDeliveryId, revokedDeliveryId, mismatchedAuthorityDeliveryId, invalidPathDeliveryId, extendedOidDeliveryId, ...[41, 42, 63].map((length) => `${intermediateOidDeliveryId}-${length}`), malformedNestedDeliveryId, reassignedDeliveryId] } } });
     await prisma.userRepository.deleteMany({ where: { repositoryId } });
     await prisma.repository.deleteMany({ where: { id: repositoryId } });
     await prisma.githubInstallation.deleteMany({ where: { id: otherInstallationId } });
@@ -231,6 +233,41 @@ describeIntegration('GitHub push processor', () => {
     await expect(prisma.pushEvent.count({ where: { githubDeliveryId: githubId } })).resolves.toBe(0);
   });
 
+  it('rejects malformed nested commit fields after durable storage', async () => {
+    const source = await prisma.githubWebhookDelivery.findUniqueOrThrow({ where: { id: deliveryId } });
+    const cases: Array<Record<string, unknown>> = [
+      { tree_id: 'a'.repeat(41) },
+      { tree_id: 'a'.repeat(42) },
+      { tree_id: 'a'.repeat(63) },
+      { distinct: 'true' },
+      { url: 'javascript:alert(1)' },
+      { url: 'not-a-url' },
+    ];
+    for (const mutation of cases) {
+      const payload = structuredClone(source.payload) as { commits: Array<Record<string, unknown>> };
+      Object.assign(payload.commits[0]!, mutation);
+      const githubId = randomUUID();
+      await prisma.githubWebhookDelivery.create({
+        data: {
+          id: malformedNestedDeliveryId,
+          githubDeliveryId: githubId,
+          eventName: 'push',
+          githubInstallationId,
+          githubRepositoryId,
+          installationId,
+          repositoryId,
+          payloadHash: '8'.repeat(64),
+          publishedAt: new Date(),
+          payload: payload as Prisma.InputJsonValue,
+        },
+      });
+      await expect(new GithubPushProcessor(prisma).process(malformedNestedDeliveryId))
+        .rejects.toThrow('Webhook delivery payload is unavailable for processing.');
+      await expect(prisma.pushEvent.count({ where: { githubDeliveryId: githubId } })).resolves.toBe(0);
+      await prisma.githubWebhookDelivery.delete({ where: { id: malformedNestedDeliveryId } });
+    }
+  });
+
   it('reuses canonical commit activity across overlapping deliveries and enriches only once', async () => {
     const secondGithubDeliveryId = randomUUID();
     const first = await prisma.githubWebhookDelivery.findUniqueOrThrow({ where: { id: deliveryId } });
@@ -334,6 +371,8 @@ describeIntegration('GitHub push processor', () => {
           sender: { id: Number(senderGithubId), login: 'stable-sender' },
           commits: [{
             id: queuedSha,
+            tree_id: 'e'.repeat(40),
+            distinct: true,
             message: 'Process through BullMQ',
             timestamp: '2026-08-12T13:00:00.000Z',
             url: `https://github.com/trace-test/processor/commit/${queuedSha}`,

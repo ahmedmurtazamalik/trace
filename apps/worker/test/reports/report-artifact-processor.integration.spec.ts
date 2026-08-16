@@ -78,6 +78,23 @@ class BlockingPutStorage extends MemoryStorage {
   }
 }
 
+class MixedFailureStorage extends MemoryStorage {
+  siblingAborted = false;
+
+  override put(key: string, bytes: Buffer, signal?: AbortSignal): Promise<void> {
+    void bytes;
+    if (key.endsWith('/report.tex')) return Promise.reject(new Error('fast storage failure'));
+    return new Promise<void>((_resolve, reject) => {
+      const abort = (): void => {
+        this.siblingAborted = true;
+        reject(new Error('aborted'));
+      };
+      if (signal?.aborted === true) abort();
+      else signal?.addEventListener('abort', abort, { once: true });
+    });
+  }
+}
+
 function compiler(implementation: (source: string) => Promise<Buffer> = () => Promise.resolve(pdf)): LatexCompiler {
   return { compile: jest.fn(implementation) };
 }
@@ -184,6 +201,24 @@ describe('report artifact processor', () => {
     expect(Date.now() - startedAt).toBeLessThan(1_000);
     const report = await prisma.report.findUniqueOrThrow({ where: { id: reportId } });
     expect(report).toMatchObject({ status: 'processing', processingToken: null });
+    await expect(prisma.reportArtifact.count({ where: { reportId } })).resolves.toBe(0);
+  });
+
+  it('aborts and settles a hanging sibling when another artifact write fails quickly', async () => {
+    const storage = new MixedFailureStorage();
+    const processor = new ReportArtifactProcessor(
+      prisma,
+      new ReportProcessor(prisma, new DeterministicReportProvider()),
+      compiler(),
+      storage,
+    );
+
+    await expect(processor.process(reportId)).rejects.toThrow('REPORT_RENDER_RETRY');
+
+    expect(storage.siblingAborted).toBe(true);
+    await expect(prisma.report.findUniqueOrThrow({ where: { id: reportId } })).resolves.toMatchObject({
+      status: 'processing', processingToken: null, processingExpiresAt: null,
+    });
     await expect(prisma.reportArtifact.count({ where: { reportId } })).resolves.toBe(0);
   });
 

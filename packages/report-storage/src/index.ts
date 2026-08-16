@@ -1,6 +1,6 @@
-import { randomUUID } from 'node:crypto';
-import { constants } from 'node:fs';
-import { chmod, link, mkdir, open, rm } from 'node:fs/promises';
+import { spawn } from 'node:child_process';
+import { constants, existsSync } from 'node:fs';
+import { chmod, mkdir, open } from 'node:fs/promises';
 import type { FileHandle } from 'node:fs/promises';
 import { isAbsolute, join, resolve } from 'node:path';
 
@@ -8,6 +8,16 @@ const KEY_PATTERN = /^users\/[A-Za-z0-9_-]{1,128}\/reports\/[A-Za-z0-9_-]{1,128}
 const STORAGE_FAILED = 'REPORT_STORAGE_FAILED';
 const MAX_ARTIFACT_BYTES = 100_000_000;
 const DIRECTORY_FLAGS = constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW;
+
+function artifactWriterPath(): string {
+  const candidates = [
+    resolve(__dirname, '../scripts/artifact-storage-write.cjs'),
+    resolve(__dirname, '../../scripts/artifact-storage-write.cjs'),
+  ];
+  const found = candidates.find((candidate) => existsSync(candidate));
+  if (found === undefined) throw new Error('REPORT_STORAGE_CONFIG');
+  return found;
+}
 
 export interface ArtifactStorage {
   put(key: string, bytes: Buffer, signal?: AbortSignal): Promise<void>;
@@ -18,7 +28,7 @@ export interface ArtifactStorage {
 export class FileSystemArtifactStorage implements ArtifactStorage {
   private readonly root: string;
 
-  constructor(root: string) {
+  constructor(root: string, private readonly writerPath = artifactWriterPath()) {
     if (!isAbsolute(root) || process.platform !== 'linux') throw new Error('REPORT_STORAGE_CONFIG');
     this.root = resolve(root);
   }
@@ -27,46 +37,43 @@ export class FileSystemArtifactStorage implements ArtifactStorage {
     signal?.throwIfAborted();
     this.validateKey(key);
     if (bytes.length < 1 || bytes.length > MAX_ARTIFACT_BYTES) throw new Error(STORAGE_FAILED);
-    let parent: FileHandle | undefined;
-    let temporary: string | undefined;
-    try {
-      const opened = await this.openParent(key, true);
-      signal?.throwIfAborted();
-      parent = opened.parent;
-      const destination = this.at(parent, opened.name);
-      temporary = this.at(parent, `.${randomUUID()}.tmp`);
-      const handle = await open(
-        temporary,
-        constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW,
-        0o600,
-      );
-      try {
-        await handle.writeFile(bytes, { signal });
-        signal?.throwIfAborted();
-        await handle.sync();
-        signal?.throwIfAborted();
-        await handle.chmod(0o400);
-        const metadata = await handle.stat();
-        if (!metadata.isFile() || metadata.isSymbolicLink() || metadata.size !== bytes.length) {
-          throw new Error(STORAGE_FAILED);
-        }
-      } finally {
-        await handle.close();
-      }
-      try {
-        signal?.throwIfAborted();
-        await link(temporary, destination);
-      } catch (error) {
-        if (!isNodeError(error, 'EEXIST')) throw error;
-        const existing = await this.readAnchored(destination, MAX_ARTIFACT_BYTES);
-        if (!existing.equals(bytes)) throw new Error(STORAGE_FAILED);
-      }
-    } catch {
-      throw new Error(STORAGE_FAILED);
-    } finally {
-      if (temporary !== undefined) await rm(temporary, { force: true }).catch(() => undefined);
-      await parent?.close().catch(() => undefined);
-    }
+    const writer = spawn(process.execPath, [this.writerPath, this.root, key], {
+      stdio: ['pipe', 'ignore', 'ignore'],
+    });
+    await new Promise<void>((resolveWrite, rejectWrite) => {
+      let settled = false;
+      const finish = (error?: Error): void => {
+        if (settled) return;
+        settled = true;
+        signal?.removeEventListener('abort', abort);
+        if (error === undefined) resolveWrite();
+        else rejectWrite(error);
+      };
+      const terminate = (): void => {
+        writer.kill('SIGKILL');
+        writer.stdin.destroy();
+        writer.unref();
+      };
+      const abort = (): void => {
+        terminate();
+        finish(new Error(STORAGE_FAILED));
+      };
+      signal?.addEventListener('abort', abort, { once: true });
+      writer.once('error', () => {
+        terminate();
+        finish(new Error(STORAGE_FAILED));
+      });
+      writer.stdin.once('error', () => {
+        terminate();
+        finish(new Error(STORAGE_FAILED));
+      });
+      writer.once('close', (code) => {
+        if (code === 0 && signal?.aborted !== true) finish();
+        else finish(new Error(STORAGE_FAILED));
+      });
+      if (signal?.aborted === true) abort();
+      else writer.stdin.end(bytes);
+    });
   }
 
   async get(key: string, maximumBytes: number): Promise<Buffer> {
