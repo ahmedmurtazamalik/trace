@@ -152,7 +152,12 @@ describe('GitHub webhook publisher fairness', () => {
     let retried = false;
     const enqueue = jest.fn(async (_id: string, signal?: AbortSignal) => {
       queueStarted();
-      await release;
+      await Promise.race([
+        release,
+        new Promise<never>((_resolve, reject) => {
+          signal?.addEventListener('abort', () => reject(new Error('publication aborted')), { once: true });
+        }),
+      ]);
       if (signal?.aborted !== true) retried = true;
     });
     const publisher = new GithubWebhookPublisher(prisma as unknown as PrismaService, { enqueue } as never);

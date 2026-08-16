@@ -111,6 +111,14 @@ describe("Day 8 report detail", () => {
     expect(screen.getByRole("alert")).toHaveTextContent("current revision is unchanged");
   });
 
+  it("requires page refresh when regeneration has a permanent CSRF failure", async () => {
+    const regenerateReport = vi.fn().mockRejectedValue({ code: "CSRF_INVALID" });
+    render(<ReportDetailView reportId="report-completed" loadReport={vi.fn().mockResolvedValue(completed)} regenerateReport={regenerateReport} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Regenerate report" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("security session expired");
+    expect(screen.getByRole("alert")).toHaveTextContent("Refresh the page");
+  });
+
   it("clears a stale regeneration conflict when refresh recovery starts", async () => {
     const refreshed: ReportDetailResponse = { report: { ...completed.report, revision: 2 } };
     const loadReport = vi.fn().mockResolvedValueOnce(completed).mockResolvedValueOnce(refreshed);

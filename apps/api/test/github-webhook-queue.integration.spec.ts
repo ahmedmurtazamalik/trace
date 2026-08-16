@@ -1,6 +1,9 @@
 import type { TraceConfig } from '@trace/config';
 import { Queue, Worker } from 'bullmq';
 import { randomUUID } from 'node:crypto';
+import { access, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { GITHUB_WEBHOOK_QUEUE, GithubWebhookQueue } from '../src/modules/webhooks/github-webhook.queue';
 
 const redisUrl = process.env.REDIS_URL;
@@ -54,4 +57,25 @@ describeIntegration('GitHub webhook queue recovery', () => {
       await rawQueue.close();
     }
   }, 10_000);
+
+  it('kills and reaps an aborted mutation helper before it can produce a late side effect', async () => {
+    const queue = new GithubWebhookQueue({ redisUrl } as TraceConfig);
+    const marker = join(tmpdir(), `trace-queue-helper-${randomUUID()}`);
+    jest.spyOn(queue as unknown as { helperSource: () => string }, 'helperSource').mockReturnValue(
+      `setTimeout(() => require('node:fs').writeFileSync(${JSON.stringify(marker)}, 'late'), 250);`,
+    );
+    const controller = new AbortController();
+
+    try {
+      const publication = queue.enqueue(`aborted-${randomUUID()}`, controller.signal);
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      controller.abort();
+      await expect(publication).rejects.toThrow('Webhook queue publication failed.');
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      await expect(access(marker)).rejects.toBeDefined();
+    } finally {
+      await queue.onModuleDestroy();
+      await rm(marker, { force: true });
+    }
+  });
 });

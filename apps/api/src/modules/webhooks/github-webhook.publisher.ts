@@ -90,7 +90,7 @@ export class GithubWebhookPublisher implements OnApplicationBootstrap, OnModuleD
       return this.prisma.$transaction(async (transaction) => {
         if (!await this.lockCurrentAuthority(transaction, deliveryId)) return;
         signal.throwIfAborted();
-        await this.untilAbort(this.queue.enqueue(deliveryId, signal), signal);
+        await this.queue.enqueue(deliveryId, signal);
       }, {
         maxWait: REQUEST_PUBLISH_TIMEOUT_MS,
         timeout: PUBLICATION_TRANSACTION_TIMEOUT_MS,
@@ -161,19 +161,4 @@ export class GithubWebhookPublisher implements OnApplicationBootstrap, OnModuleD
     }
   }
 
-  private async untilAbort(operation: Promise<void>, signal: AbortSignal): Promise<void> {
-    signal.throwIfAborted();
-    let rejectAborted: ((reason: unknown) => void) | undefined;
-    const aborted = new Promise<never>((_resolve, reject) => {
-      rejectAborted = reject;
-    });
-    const onAbort = (): void => rejectAborted?.(signal.reason);
-    signal.addEventListener('abort', onAbort, { once: true });
-    if (signal.aborted) onAbort();
-    try {
-      await Promise.race([operation, aborted]);
-    } finally {
-      signal.removeEventListener('abort', onAbort);
-    }
-  }
 }

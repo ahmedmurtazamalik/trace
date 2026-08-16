@@ -54,6 +54,20 @@ describe("report API status polling seam", () => {
     });
   });
 
+  it("preserves permanent CSRF failures for report mutations", async () => {
+    server.use(http.post("http://localhost:3001/api/v1/reports", () => HttpResponse.json(
+      { code: "CSRF_INVALID", message: "raw guard detail", requestId: "req-csrf" },
+      { status: 403 },
+    )));
+
+    await expect(createReport({ reportDate: "2026-08-13", timezone: "UTC" }, "stale-csrf")).rejects.toMatchObject({
+      code: "CSRF_INVALID",
+      message: "Your security session has expired. Refresh the page and sign in again if needed.",
+      status: 403,
+      requestId: "req-csrf",
+    });
+  });
+
   it("requires CSRF, validates the structured patch, and preserves revision conflict codes", async () => {
     let csrf: string | null = null;
     let body: unknown;

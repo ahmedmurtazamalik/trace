@@ -158,10 +158,18 @@ export class GithubWebhookWorker {
           this.attempt(() => worker?.disconnect()),
           this.attempt(() => queue?.disconnect()),
           this.runPromise?.catch(() => undefined) ?? Promise.resolve(),
-        ]).then(() => undefined);
-        await this.beforeDeadline(forcedCleanup, forcedDeadline).catch(() => undefined);
+        ]);
+        let forcedFailure: Error | undefined;
+        try {
+          const outcomes = await this.beforeDeadline(forcedCleanup, forcedDeadline);
+          if (outcomes.some((outcome) => outcome.status === 'rejected')) {
+            forcedFailure = new Error('Webhook worker forced cleanup failed.');
+          }
+        } catch {
+          forcedFailure = new Error('Webhook worker forced cleanup timed out.');
+        }
         this.runPromise = undefined;
-        throw new Error('Webhook worker shutdown failed.', { cause: error });
+        throw new Error('Webhook worker shutdown failed.', { cause: forcedFailure ?? error });
       }
       this.runPromise = undefined;
     })();

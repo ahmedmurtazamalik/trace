@@ -205,6 +205,16 @@ describe("Day 9 structured report editor", () => {
     expect(save).toHaveBeenCalledTimes(3);
   });
 
+  it("retains prose and requires refresh after a permanent CSRF failure", async () => {
+    const save = vi.fn().mockRejectedValue({ code: "CSRF_INVALID" });
+    render(<ReportEditor report={report} saveRevision={save} />);
+    fireEvent.change(screen.getByLabelText("Executive summary"), { target: { value: "CSRF-safe draft." } });
+    fireEvent.click(screen.getByRole("button", { name: "Save revision" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("security session expired");
+    expect(screen.getByRole("alert")).toHaveTextContent("Refresh the page");
+    expect(screen.getByLabelText("Executive summary")).toHaveValue("CSRF-safe draft.");
+  });
+
   it("rejects overlong structured prose before calling the save adapter", () => {
     const save = vi.fn();
     render(<ReportEditor report={report} saveRevision={save} />);

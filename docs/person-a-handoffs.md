@@ -380,10 +380,10 @@ Final recorded results:
 - Completed the backend endpoint authorization/CSRF/authenticity/rate-limit matrix in `docs/backend-security.md`; no endpoint treats frontend visibility as authority.
 - Hardened HTTP handling with Helmet, JSON-only general API parsing, conservative caller request-ID validation, generic 5xx responses, and redacted infrastructure/provider logging.
 - Required explicit `NODE_ENV=development|test|production`; missing and unknown deployment modes fail closed.
-- Added composed Redis-backed per-user, trusted direct-address, and deployment-wide hourly budgets for report creation, revision, regeneration, and repository synchronization. Report create, revision-save, and regeneration UIs preserve the closed `RATE_LIMITED` outcome with explicit wait guidance rather than encouraging immediate retry.
+- Added composed Redis-backed per-user, trusted direct-address, and deployment-wide hourly budgets for report creation, revision, regeneration, and repository synchronization. Report create, revision-save, and regeneration UIs preserve `RATE_LIMITED` with explicit wait guidance and preserve permanent `CSRF_INVALID` failures with page-refresh/session-recovery guidance.
 - Bound repository/dashboard query inputs, signed repository cursors to caller and query context, and made inaccessible repository filters indistinguishable `404` responses.
 - Bounded GitHub response bodies, repository page counts, tokens, and projected identity/repository fields.
-- Revalidated live GitHub installation, repository, account, user, access, tracking authority, exact 40- or 64-character object IDs, and every nested commit field before webhook publication and again during worker persistence. Activity contracts and frozen report evidence enforce the same exact object-ID formats. Every pending PostgreSQL row remains an owed deterministic publication so Redis loss is repaired. Fenced attempt clocks rotate rejecting or hanging poison rows fairly before a second delivery/authority lock and revalidation around a bounded queue wait in an expiring transaction; revoked work becomes terminal, and canonical activity cannot be created after revocation.
+- Revalidated live GitHub installation, repository, account, user, access, tracking authority, exact 40- or 64-character object IDs, and every nested commit field before webhook publication and again during worker persistence. Activity contracts and frozen report evidence enforce the same exact object-ID formats. Every pending PostgreSQL row remains an owed deterministic publication so Redis loss is repaired. Fenced attempt clocks rotate rejecting or hanging poison rows fairly before a second delivery/authority lock and revalidation around a bounded queue mutation in an expiring transaction. Queue add/retry mutations run in concurrency-capped helper processes that are killed and reaped before abort settlement, preventing mutation code from surviving lock release; revoked work becomes terminal and canonical activity cannot be created after revocation.
 - Moved immutable report-object writes outside database transactions onto report/revision/generation/token-scoped attempt keys under an abort deadline shorter than the lease. Sibling writes share cancellation, are all settled after any failure, and filesystem mutation runs in killable child-process boundaries rather than relying on partial syscall cancellation. Final activation reacquires the report lock and requires the exact live token/revision/generation lease; expired work may leave only unreachable staged objects and cannot create active artifact rows or complete a report.
 - Bounded report-detail artifact reads to the current revision and serialized the detail snapshot with report lifecycle mutation.
 - Added durable audit rows for GitHub connection/install/disconnect, repository synchronization/tracking, and report create/revision/regeneration mutations.
@@ -392,10 +392,10 @@ Final recorded results:
 
 ### Verification
 
-- Workspace package tests passed sequentially; web: 148/148, worker: 91 passed with two intentional Docker-only skips, shared: 25/25, report storage: 5/5.
+- Workspace package tests passed sequentially; web: 152/152, worker: 92 passed with two intentional Docker-only skips, shared: 25/25, report storage: 5/5.
 - PostgreSQL database integration and the complete monorepo test command passed against disposable databases.
-- API integration on isolated Redis DB 13: 11 suites, 80/80 passed, including retained failed webhook-job recovery with reset BullMQ counters and publisher-timeout abort fencing against concurrent revocation.
-- Focused worker authority/artifact integration is included in the passing 91-test worker gate.
+- API integration on isolated Redis: 11 suites, 81/81 passed, including retained failed webhook-job recovery with reset BullMQ counters and hard helper-process termination before lock release.
+- Focused worker authority/artifact integration is included in the passing 92-test worker gate.
 - Workspace lint, strict TypeScript, and production build passed.
 - Real Docker XeLaTeX acceptance: 2/2 passed.
 - Integrated desktop/mobile Playwright: 62/62 passed.

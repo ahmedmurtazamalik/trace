@@ -79,6 +79,7 @@ describe("Day 8 report lifecycle", () => {
     ["REPORT_GENERATION_UNAVAILABLE", "Report generation is temporarily unavailable"],
     ["RATE_LIMITED", "Wait before trying again"],
     ["UNAUTHENTICATED", "Your session has expired"],
+    ["CSRF_INVALID", "Your security session has expired"],
   ])("maps %s to safe actionable copy", async (code, expected) => {
     setup({ createReport: vi.fn().mockRejectedValue({ code, message: "unsafe internal queue detail" }) });
     await screen.findByRole("heading", { name: "Report history" });
