@@ -1,10 +1,11 @@
 import { apiErrorSchema, dashboardQuerySchema, dashboardResponseSchema, type DashboardQuery, type DashboardResponse } from "@trace/shared";
 
 const API_ORIGIN = (process.env.NEXT_PUBLIC_API_ORIGIN ?? "http://localhost:3001").replace(/\/$/, "");
-export type DashboardClientCode = "UNAUTHENTICATED" | "FORBIDDEN" | "VALIDATION_ERROR" | "SERVICE_UNAVAILABLE" | "INVALID_RESPONSE" | "NETWORK_ERROR" | "UNEXPECTED_ERROR";
+export type DashboardClientCode = "UNAUTHENTICATED" | "FORBIDDEN" | "REPOSITORY_NOT_FOUND" | "VALIDATION_ERROR" | "SERVICE_UNAVAILABLE" | "INVALID_RESPONSE" | "NETWORK_ERROR" | "UNEXPECTED_ERROR";
 const messages: Record<DashboardClientCode, string> = {
   UNAUTHENTICATED: "Your session has expired. Please sign in again.",
   FORBIDDEN: "You do not have permission to view this dashboard.",
+  REPOSITORY_NOT_FOUND: "The selected repository is no longer available. Show all repositories to continue.",
   VALIDATION_ERROR: "The dashboard filters are invalid. Clear them and try again.",
   SERVICE_UNAVAILABLE: "The dashboard is temporarily unavailable. Please try again.",
   INVALID_RESPONSE: "Trace received an invalid dashboard response. Please try again.",

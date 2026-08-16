@@ -8,10 +8,15 @@ function response(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
 }
 
+function repository(id = 7_001, owner = 'trace-fixture-org', name = 'web'): Response {
+  return response({ id, owner: { login: owner }, name });
+}
+
 describe('GitHub commit API enricher', () => {
   it('returns stable contributor and numeric file facts through bounded requests', async () => {
     const request = jest.fn<ReturnType<typeof fetch>, Parameters<typeof fetch>>()
       .mockResolvedValueOnce(response({ token: 'installation-token' }))
+      .mockResolvedValueOnce(repository())
       .mockResolvedValueOnce(response({
         sha: 'a'.repeat(40),
         commit: {
@@ -31,8 +36,6 @@ describe('GitHub commit API enricher', () => {
     const facts = await enricher.commit({
       githubInstallationId: 91n,
       githubRepositoryId: 7_001n,
-      owner: 'trace-fixture-org',
-      name: 'web',
       sha: 'a'.repeat(40),
     });
 
@@ -48,15 +51,59 @@ describe('GitHub commit API enricher', () => {
         { path: 'src/old.ts', status: 'removed', additions: 0, deletions: 2, previousPath: null },
       ],
     });
-    expect(request).toHaveBeenCalledTimes(2);
+    expect(request).toHaveBeenCalledTimes(3);
     expect(request.mock.calls[0]?.[0]).toBe('https://api.github.com/app/installations/91/access_tokens');
-    expect(request.mock.calls[1]?.[0]).toBe(`https://api.github.com/repos/trace-fixture-org/web/commits/${'a'.repeat(40)}?per_page=100&page=1`);
+    expect(request.mock.calls[1]?.[0]).toBe('https://api.github.com/repositories/7001');
+    expect(request.mock.calls[2]?.[0]).toBe(`https://api.github.com/repos/trace-fixture-org/web/commits/${'a'.repeat(40)}?per_page=100&page=1`);
     expect(request.mock.calls.every(([, init]) => init?.signal instanceof AbortSignal)).toBe(true);
+  });
+
+  it('rejects a provider repository ID mismatch before requesting commit facts', async () => {
+    const request = jest.fn<ReturnType<typeof fetch>, Parameters<typeof fetch>>()
+      .mockResolvedValueOnce(response({ token: 'installation-token' }))
+      .mockResolvedValueOnce(repository(7_002, 'unrelated-org', 'unrelated-repository'));
+    const enricher = new GithubCommitApiEnricher({ appId: '123', privateKey: appPrivateKey, request });
+
+    await expect(enricher.commit({
+      githubInstallationId: 91n,
+      githubRepositoryId: 7_001n,
+      sha: 'a'.repeat(40),
+    })).rejects.toThrow('GitHub commit enrichment failed.');
+
+    expect(request).toHaveBeenCalledTimes(2);
+    expect(request.mock.calls[1]?.[0]).toBe('https://api.github.com/repositories/7001');
+  });
+
+  it('cancels unused GitHub error and declared-oversize response bodies', async () => {
+    const cases: Array<{ status: number; headers: Record<string, string> }> = [
+      { status: 500, headers: {} },
+      { status: 200, headers: { 'content-length': '65537' } },
+    ];
+    for (const item of cases) {
+      const cancel = jest.fn().mockResolvedValue(undefined);
+      const body = new ReadableStream<Uint8Array>({
+        start(stream) {
+          stream.enqueue(new TextEncoder().encode('{"token":"unused"}'));
+        },
+        cancel,
+      });
+      const request = jest.fn<ReturnType<typeof fetch>, Parameters<typeof fetch>>()
+        .mockResolvedValueOnce(new Response(body, { status: item.status, headers: item.headers }));
+      const enricher = new GithubCommitApiEnricher({ appId: '123', privateKey: appPrivateKey, request });
+
+      await expect(enricher.commit({
+        githubInstallationId: 91n,
+        githubRepositoryId: 7_001n,
+        sha: 'a'.repeat(40),
+      })).rejects.toThrow('GitHub commit enrichment failed.');
+      expect(cancel).toHaveBeenCalledTimes(1);
+    }
   });
 
   it('fails closed when GitHub omits stable or bounded commit facts', async () => {
     const request = jest.fn<ReturnType<typeof fetch>, Parameters<typeof fetch>>()
       .mockResolvedValueOnce(response({ token: 'installation-token' }))
+      .mockResolvedValueOnce(repository())
       .mockResolvedValueOnce(response({
         sha: 'a'.repeat(40),
         commit: { author: { date: 'invalid' }, committer: { date: '2026-08-12T12:00:00.000Z' } },
@@ -70,8 +117,6 @@ describe('GitHub commit API enricher', () => {
     await expect(enricher.commit({
       githubInstallationId: 91n,
       githubRepositoryId: 7_001n,
-      owner: 'trace-fixture-org',
-      name: 'web',
       sha: 'a'.repeat(40),
     })).rejects.toThrow('GitHub commit enrichment failed.');
   });
@@ -79,6 +124,7 @@ describe('GitHub commit API enricher', () => {
   it('normalizes omitted top-level GitHub user objects to absent contributors', async () => {
     const request = jest.fn<ReturnType<typeof fetch>, Parameters<typeof fetch>>()
       .mockResolvedValueOnce(response({ token: 'installation-token' }))
+      .mockResolvedValueOnce(repository())
       .mockResolvedValueOnce(response({
         sha: 'a'.repeat(40),
         commit: {
@@ -92,8 +138,6 @@ describe('GitHub commit API enricher', () => {
     const facts = await new GithubCommitApiEnricher({ appId: '123', privateKey: appPrivateKey, request }).commit({
       githubInstallationId: 91n,
       githubRepositoryId: 7_001n,
-      owner: 'trace-fixture-org',
-      name: 'web',
       sha: 'a'.repeat(40),
     });
 
@@ -104,6 +148,7 @@ describe('GitHub commit API enricher', () => {
   it('rejects a present GitHub user object without a valid stable identity', async () => {
     const request = jest.fn<ReturnType<typeof fetch>, Parameters<typeof fetch>>()
       .mockResolvedValueOnce(response({ token: 'installation-token' }))
+      .mockResolvedValueOnce(repository())
       .mockResolvedValueOnce(response({
         sha: 'a'.repeat(40),
         commit: {
@@ -119,8 +164,6 @@ describe('GitHub commit API enricher', () => {
     await expect(new GithubCommitApiEnricher({ appId: '123', privateKey: appPrivateKey, request }).commit({
       githubInstallationId: 91n,
       githubRepositoryId: 7_001n,
-      owner: 'trace-fixture-org',
-      name: 'web',
       sha: 'a'.repeat(40),
     })).rejects.toThrow('GitHub commit enrichment failed.');
   });
@@ -131,6 +174,7 @@ describe('GitHub commit API enricher', () => {
     }));
     const request = jest.fn<ReturnType<typeof fetch>, Parameters<typeof fetch>>()
       .mockResolvedValueOnce(response({ token: 'installation-token' }))
+      .mockResolvedValueOnce(repository())
       .mockResolvedValueOnce(response({
         sha: 'a'.repeat(40),
         commit: {
@@ -147,11 +191,9 @@ describe('GitHub commit API enricher', () => {
     await expect(enricher.commit({
       githubInstallationId: 91n,
       githubRepositoryId: 7_001n,
-      owner: 'trace-fixture-org',
-      name: 'web',
       sha: 'a'.repeat(40),
     })).rejects.toThrow('GitHub commit enrichment failed.');
-    expect(request).toHaveBeenCalledTimes(2);
+    expect(request).toHaveBeenCalledTimes(3);
   });
 
   it.each(['/absolute.ts', '../escape.ts', 'src/../escape.ts', 'src\\windows.ts', 'src//empty.ts'])(
@@ -159,6 +201,7 @@ describe('GitHub commit API enricher', () => {
     async (path) => {
       const request = jest.fn<ReturnType<typeof fetch>, Parameters<typeof fetch>>()
         .mockResolvedValueOnce(response({ token: 'installation-token' }))
+        .mockResolvedValueOnce(repository())
         .mockResolvedValueOnce(response({
           sha: 'a'.repeat(40),
           commit: {
@@ -174,8 +217,6 @@ describe('GitHub commit API enricher', () => {
       await expect(new GithubCommitApiEnricher({ appId: '123', privateKey: appPrivateKey, request }).commit({
         githubInstallationId: 91n,
         githubRepositoryId: 7_001n,
-        owner: 'trace-fixture-org',
-        name: 'web',
         sha: 'a'.repeat(40),
       })).rejects.toThrow('GitHub commit enrichment failed.');
     },

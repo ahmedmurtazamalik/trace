@@ -144,7 +144,7 @@ No Person A-owned backend/shared-contract source, root workspace configuration, 
 ### Contract and boundary
 - Source: `packages/shared/src/github.ts`, frozen at Person A's Day 2 gate.
 - Fixtures: `packages/shared/test/fixtures/github/*.json`.
-- Endpoints: `/api/v1/github/connect`, `/callback`, `/status`, `/connection`.
+- Endpoints: `/api/v1/github/connect`, `/callback`, `/status`, `/connection`; Day 11 later changed the state-creating `/connect` operation from `GET` to CSRF-protected `POST`.
 - Person A-owned backend/shared files changed: NONE.
 - Mock-backed: all GitHub Day 3 browser flows; Person A's same-day GitHub backend is not required.
 - Real GitHub credentials, OAuth exchange, installation tokens, repository synchronization, and tracking behavior are not implemented or claimed.
@@ -170,7 +170,7 @@ No Person A-owned backend/shared-contract source, root workspace configuration, 
 ## Day 3 integration repair — Person B
 
 ### Done
-- Added the shared-contract-validated `GET /api/v1/github/installation` frontend adapter.
+- Added the shared-contract-validated GitHub installation frontend adapter; Day 11 later changed the state-creating backend operation from `GET` to CSRF-protected `POST`.
 - Added **Install GitHub App** for connected accounts without an installation.
 - Added **Update GitHub App installation** for connected accounts with a suspended installation.
 - Kept account reconnection ahead of installation repair when account authorization is `RECONNECT_REQUIRED`.

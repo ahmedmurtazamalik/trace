@@ -28,7 +28,7 @@ function activity(id: string, username: string | null, displayName: string | nul
       source: "github",
       type: "commit",
       occurredAt: "2026-08-14T08:00:00.000Z",
-      facts: { sha: "abcdef1", message: "Ship", branch: "main", filesChanged: 1, additions: 2, deletions: 0, url: null },
+      facts: { sha: "abcdef1".padEnd(40, "0"), message: "Ship", branch: "main", filesChanged: 1, additions: 2, deletions: 0, url: null },
     }],
     pageInfo: { nextCursor: null, hasNextPage: false },
   };

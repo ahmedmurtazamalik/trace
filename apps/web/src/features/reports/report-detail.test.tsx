@@ -102,6 +102,23 @@ describe("Day 8 report detail", () => {
     expect(screen.getByText("Building your report")).toBeInTheDocument();
   });
 
+  it("tells users to wait when regeneration is rate limited", async () => {
+    const regenerateReport = vi.fn().mockRejectedValue({ code: "RATE_LIMITED" });
+    const loadReport = vi.fn().mockResolvedValue(completed);
+    render(<ReportDetailView reportId="report-completed" loadReport={loadReport} regenerateReport={regenerateReport} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Regenerate report" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("Wait before trying again");
+    expect(screen.getByRole("alert")).toHaveTextContent("current revision is unchanged");
+  });
+
+  it("requires page refresh when regeneration has a permanent CSRF failure", async () => {
+    const regenerateReport = vi.fn().mockRejectedValue({ code: "CSRF_INVALID" });
+    render(<ReportDetailView reportId="report-completed" loadReport={vi.fn().mockResolvedValue(completed)} regenerateReport={regenerateReport} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Regenerate report" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("security session expired");
+    expect(screen.getByRole("alert")).toHaveTextContent("Refresh the page");
+  });
+
   it("clears a stale regeneration conflict when refresh recovery starts", async () => {
     const refreshed: ReportDetailResponse = { report: { ...completed.report, revision: 2 } };
     const loadReport = vi.fn().mockResolvedValueOnce(completed).mockResolvedValueOnce(refreshed);

@@ -45,7 +45,7 @@ const snapshot: ReportInputSnapshot = {
       activityId: 'activity-1',
       occurredAt: '2026-08-13T10:00:00.000Z',
       type: 'commit',
-      sha: 'abcdef1234567',
+      sha: 'a'.repeat(40),
       message: 'Add report worker contract',
     }],
   }],
@@ -68,6 +68,19 @@ describe('structured report providers', () => {
     ]);
     expect(JSON.stringify(first)).toContain('trace/example recorded 1 commit');
     expect(validateGroundedReportContent(first, snapshot)).toEqual(first);
+  });
+
+  it('rejects impossible and non-hex Git object IDs in frozen report evidence', () => {
+    for (const sha of ['a'.repeat(41), 'a'.repeat(42), 'a'.repeat(63), 'g'.repeat(40)]) {
+      const invalid = {
+        ...snapshot,
+        repositories: [{
+          ...snapshot.repositories[0]!,
+          evidence: [{ ...snapshot.repositories[0]!.evidence[0]!, sha }],
+        }],
+      };
+      expect(() => new DeterministicReportProvider().generate(invalid)).toThrow();
+    }
   });
 
   it('rejects unknown, duplicate, missing, and cross-repository identifiers', () => {
@@ -109,7 +122,7 @@ describe('structured report providers', () => {
         facts: { ...snapshot.repositories[0]!.facts, commitCount: 2 },
         evidence: [
           { ...snapshot.repositories[0]!.evidence[0]!, message: 'x'.repeat(10_000) },
-          { ...snapshot.repositories[0]!.evidence[0]!, activityId: 'activity-2', sha: 'bcdefa1234567', message: 'y'.repeat(10_000) },
+          { ...snapshot.repositories[0]!.evidence[0]!, activityId: 'activity-2', sha: 'b'.repeat(40), message: 'y'.repeat(10_000) },
         ],
       }],
     };

@@ -89,8 +89,9 @@ describe('GitHub webhook worker lifecycle', () => {
       await new Promise((resolve) => setTimeout(resolve, 10));
     }
 
-    await expect(worker.close()).resolves.toBeUndefined();
+    await expect(worker.close()).rejects.toThrow('Webhook worker shutdown failed.');
     await processorFinished;
+    worker = undefined;
   });
 
   it.each(['pause', 'count', 'close'] as const)(
@@ -134,7 +135,7 @@ describe('GitHub webhook worker lifecycle', () => {
       await worker.start();
 
       const startedAt = Date.now();
-      await worker.close();
+      await expect(worker.close()).rejects.toThrow('Webhook worker shutdown failed.');
 
       expect(Date.now() - startedAt).toBeLessThan(200);
       expect(workerDisconnect).toHaveBeenCalledTimes(1);
@@ -142,6 +143,47 @@ describe('GitHub webhook worker lifecycle', () => {
       worker = undefined;
     },
   );
+
+  it('evaluates and preserves a forced-cleanup rejection as the generic shutdown cause', async () => {
+    const queueResource: WebhookQueueResource = {
+      on: jest.fn(),
+      waitUntilReady: jest.fn().mockResolvedValue(undefined),
+      getJobCounts: jest.fn().mockResolvedValue({ active: 0 }),
+      close: jest.fn().mockResolvedValue(undefined),
+      disconnect: jest.fn().mockResolvedValue(undefined),
+    };
+    const workerResource: WebhookWorkerResource = {
+      on: jest.fn(),
+      run: jest.fn().mockResolvedValue(undefined),
+      waitUntilReady: jest.fn().mockResolvedValue(undefined),
+      pause: jest.fn().mockRejectedValue(new Error('secret graceful failure')),
+      close: jest.fn().mockImplementation((force?: boolean) => force
+        ? Promise.reject(new Error('secret forced failure'))
+        : Promise.resolve()),
+      disconnect: jest.fn().mockResolvedValue(undefined),
+    };
+    worker = new GithubWebhookWorker({
+      redisUrl,
+      queueName,
+      shutdownTimeoutMs: 50,
+      processDelivery: jest.fn().mockResolvedValue(undefined),
+      recordTerminalFailure: jest.fn().mockResolvedValue(undefined),
+      createQueue: () => queueResource,
+      createWorker: () => workerResource,
+    });
+    await worker.start();
+
+    let failure: Error | undefined;
+    try {
+      await worker.close();
+    } catch (error) {
+      failure = error as Error;
+    }
+    expect(failure?.message).toBe('Webhook worker shutdown failed.');
+    expect((failure?.cause as Error).message).toBe('Webhook worker forced cleanup failed.');
+    expect((failure?.cause as Error).message).not.toContain('secret');
+    worker = undefined;
+  });
 
   it('bounds failed-start cleanup when every resource cleanup operation stalls', async () => {
     const never = new Promise<never>(() => undefined);

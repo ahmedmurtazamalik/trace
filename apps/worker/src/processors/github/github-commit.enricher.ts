@@ -27,8 +27,6 @@ export interface GithubCommitEnricher {
   commit(input: {
     githubInstallationId: bigint;
     githubRepositoryId: bigint;
-    owner: string;
-    name: string;
     sha: string;
   }): Promise<GithubCommitFacts>;
 }

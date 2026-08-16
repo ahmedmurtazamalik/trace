@@ -36,7 +36,7 @@ describe('GitHub connection API', () => {
   beforeAll(async () => {
     process.env.NODE_ENV = 'test';
     process.env.DATABASE_URL = 'postgresql://trace:trace_dev_password@localhost:5432/trace?schema=public';
-    process.env.REDIS_URL = 'redis://localhost:6379';
+    process.env.REDIS_URL ??= 'redis://localhost:6379';
     process.env.SESSION_SECRET = 'test-only-session-secret-at-least-32-characters';
     process.env.GITHUB_APP_CLIENT_ID = 'test-client-id';
     process.env.GITHUB_APP_SLUG = 'trace-test-app';
@@ -67,8 +67,8 @@ describe('GitHub connection API', () => {
     return { cookie: cookie(response), csrfToken: (response.body as { csrfToken: string }).csrfToken };
   }
 
-  async function connectState(sessionCookie: string): Promise<string> {
-    const response = await request(server).get('/api/v1/github/connect').set('Cookie', sessionCookie).expect(200);
+  async function connectState(sessionCookie: string, csrfToken: string): Promise<string> {
+    const response = await request(server).post('/api/v1/github/connect').set('Cookie', sessionCookie).set('X-CSRF-Token', csrfToken).expect(200);
     const state = new URL((response.body as { authorizationUrl: string }).authorizationUrl).searchParams.get('state');
     if (state === null) throw new Error('Expected GitHub OAuth state');
     return state;
@@ -79,7 +79,9 @@ describe('GitHub connection API', () => {
     const sessionCookie = cookie(registered);
     const csrfToken = (registered.body as { csrfToken: string }).csrfToken;
 
-    const connect = await request(server).get('/api/v1/github/connect').set('Cookie', sessionCookie).expect(200);
+    await request(server).get('/api/v1/github/connect').set('Cookie', sessionCookie).expect(404);
+    await request(server).post('/api/v1/github/connect').set('Cookie', sessionCookie).expect(403);
+    const connect = await request(server).post('/api/v1/github/connect').set('Cookie', sessionCookie).set('X-CSRF-Token', csrfToken).expect(200);
     const connectBody = githubConnectResponseSchema.parse(connect.body as unknown);
     const state = new URL(connectBody.authorizationUrl).searchParams.get('state');
     expect(state).toMatch(/^[A-Za-z0-9_-]{40,}$/);
@@ -114,12 +116,16 @@ describe('GitHub connection API', () => {
 
     const disconnected = await request(server).get('/api/v1/github/status').set('Cookie', sessionCookie).expect(200);
     expect(disconnected.body).toMatchObject({ accountConnection: { status: 'RECONNECT_REQUIRED', account: { username: 'fake-octocat' } } });
+    const actorUserId = (registered.body as { user: { id: string } }).user.id;
+    const actions = (await prisma.auditLog.findMany({ where: { actorUserId }, select: { action: true } })).map((entry) => entry.action);
+    expect(actions).toEqual(expect.arrayContaining(['github.connected', 'github.disconnected']));
   });
 
   it('binds single-use state to the originating live Trace session and closes provider failures', async () => {
     const first = await request(server).post('/api/v1/auth/register').send({ username, email, password }).expect(201);
     const firstCookie = cookie(first);
-    const connect = await request(server).get('/api/v1/github/connect').set('Cookie', firstCookie).expect(200);
+    const firstCsrf = (first.body as { csrfToken: string }).csrfToken;
+    const connect = await request(server).post('/api/v1/github/connect').set('Cookie', firstCookie).set('X-CSRF-Token', firstCsrf).expect(200);
     const state = new URL((connect.body as { authorizationUrl: string }).authorizationUrl).searchParams.get('state');
 
     const withoutSession = await request(server).get('/api/v1/github/callback').query({ code: 'fake-success-code', state }).expect(302);
@@ -144,7 +150,7 @@ describe('GitHub connection API', () => {
       .expect(302);
     expect(wrongSession.headers.location).toBe('http://localhost:3000/github?result=error&reason=state_invalid');
 
-    const invalidCode = await request(server).get('/api/v1/github/connect').set('Cookie', firstCookie).expect(200);
+    const invalidCode = await request(server).post('/api/v1/github/connect').set('Cookie', firstCookie).set('X-CSRF-Token', firstCsrf).expect(200);
     const invalidState = new URL((invalidCode.body as { authorizationUrl: string }).authorizationUrl).searchParams.get('state');
     const failed = await request(server)
       .get('/api/v1/github/callback')
@@ -153,7 +159,7 @@ describe('GitHub connection API', () => {
       .expect(302);
     expect(failed.headers.location).toBe('http://localhost:3000/github?result=error&reason=callback_failed');
 
-    const deniedConnect = await request(server).get('/api/v1/github/connect').set('Cookie', firstCookie).expect(200);
+    const deniedConnect = await request(server).post('/api/v1/github/connect').set('Cookie', firstCookie).set('X-CSRF-Token', firstCsrf).expect(200);
     const deniedState = new URL((deniedConnect.body as { authorizationUrl: string }).authorizationUrl).searchParams.get('state');
     const denied = await request(server)
       .get('/api/v1/github/callback')
@@ -166,14 +172,16 @@ describe('GitHub connection API', () => {
   it('reports GitHub App installation authorization independently from account connection', async () => {
     const registered = await request(server).post('/api/v1/auth/register').send({ username, email, password }).expect(201);
     const sessionCookie = cookie(registered);
-    const connect = await request(server).get('/api/v1/github/connect').set('Cookie', sessionCookie).expect(200);
+    const csrfToken = (registered.body as { csrfToken: string }).csrfToken;
+    const connect = await request(server).post('/api/v1/github/connect').set('Cookie', sessionCookie).set('X-CSRF-Token', csrfToken).expect(200);
     const state = new URL((connect.body as { authorizationUrl: string }).authorizationUrl).searchParams.get('state');
     await request(server)
       .get('/api/v1/github/callback')
       .query({ code: 'fake-success-code', state })
       .set('Cookie', sessionCookie)
       .expect(302);
-    const installationStart = await request(server).get('/api/v1/github/installation').set('Cookie', sessionCookie).expect(200);
+    await request(server).post('/api/v1/github/installation').set('Cookie', sessionCookie).expect(403);
+    const installationStart = await request(server).post('/api/v1/github/installation').set('Cookie', sessionCookie).set('X-CSRF-Token', csrfToken).expect(200);
     const installationState = new URL((installationStart.body as { installationUrl: string }).installationUrl).searchParams.get('state');
     const setupCallback = await request(server)
       .get('/api/v1/github/installation/callback')
@@ -197,9 +205,9 @@ describe('GitHub connection API', () => {
 
   it('rejects a substituted installation id unless the linked GitHub user can access it', async () => {
     const identity = await registerIdentity({ username, email });
-    const oauthState = await connectState(identity.cookie);
+    const oauthState = await connectState(identity.cookie, identity.csrfToken);
     await request(server).get('/api/v1/github/callback').query({ code: 'fake-success-code', state: oauthState }).set('Cookie', identity.cookie).expect(302);
-    const start = await request(server).get('/api/v1/github/installation').set('Cookie', identity.cookie).expect(200);
+    const start = await request(server).post('/api/v1/github/installation').set('Cookie', identity.cookie).set('X-CSRF-Token', identity.csrfToken).expect(200);
     const setupState = new URL((start.body as { installationUrl: string }).installationUrl).searchParams.get('state');
     const setup = await request(server).get('/api/v1/github/installation/callback')
       .query({ installation_id: '999', setup_action: 'install', state: setupState }).set('Cookie', identity.cookie).expect(302);
@@ -213,12 +221,12 @@ describe('GitHub connection API', () => {
 
   it('reports reconnect required after disconnect and connected after a successful reconnect', async () => {
     const identity = await registerIdentity({ username, email });
-    const firstState = await connectState(identity.cookie);
+    const firstState = await connectState(identity.cookie, identity.csrfToken);
     await request(server).get('/api/v1/github/callback').query({ code: 'fake-success-code', state: firstState }).set('Cookie', identity.cookie).expect(302);
     await request(server).delete('/api/v1/github/connection').set('Cookie', identity.cookie).set('X-CSRF-Token', identity.csrfToken).expect(200);
     const disconnected = await request(server).get('/api/v1/github/status').set('Cookie', identity.cookie).expect(200);
     expect(disconnected.body).toMatchObject({ accountConnection: { status: 'RECONNECT_REQUIRED', account: { username: 'fake-octocat' } } });
-    const reconnectState = await connectState(identity.cookie);
+    const reconnectState = await connectState(identity.cookie, identity.csrfToken);
     const reconnected = await request(server).get('/api/v1/github/callback').query({ code: 'fake-success-code', state: reconnectState }).set('Cookie', identity.cookie).expect(302);
     expect(reconnected.headers.location).toBe('http://localhost:3000/github?result=connected');
     const status = await request(server).get('/api/v1/github/status').set('Cookie', identity.cookie).expect(200);
@@ -228,18 +236,18 @@ describe('GitHub connection API', () => {
   it('rate limits GitHub linking by direct address and user', async () => {
     const identity = await registerIdentity({ username, email });
     for (let attempt = 0; attempt < 10; attempt += 1) {
-      await request(server).get('/api/v1/github/connect').set('Cookie', identity.cookie).expect(200);
+      await request(server).post('/api/v1/github/connect').set('Cookie', identity.cookie).set('X-CSRF-Token', identity.csrfToken).expect(200);
     }
-    await request(server).get('/api/v1/github/connect').set('Cookie', identity.cookie).expect(429);
+    await request(server).post('/api/v1/github/connect').set('Cookie', identity.cookie).set('X-CSRF-Token', identity.csrfToken).expect(429);
   });
 
   it('does not let another Trace user claim an already linked GitHub account', async () => {
     const first = await registerIdentity({ username, email });
-    const firstState = await connectState(first.cookie);
+    const firstState = await connectState(first.cookie, first.csrfToken);
     await request(server).get('/api/v1/github/callback').query({ code: 'fake-success-code', state: firstState }).set('Cookie', first.cookie).expect(302);
 
     const second = await registerIdentity({ username: `${username}.other`, email: `other.${email}` });
-    const secondState = await connectState(second.cookie);
+    const secondState = await connectState(second.cookie, second.csrfToken);
     const conflict = await request(server)
       .get('/api/v1/github/callback')
       .query({ code: 'fake-success-code', state: secondState })

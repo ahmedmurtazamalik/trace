@@ -1,39 +1,59 @@
 import { z } from 'zod';
 
+const optionalEnvironmentValue = <T extends z.ZodType>(schema: T) =>
+  z.preprocess((value) => value === '' ? undefined : value, schema.optional());
+
 const rawEnvironmentSchema = z
   .object({
-    NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
+    NODE_ENV: z.enum(['development', 'test', 'production']),
     PORT: z.coerce.number().int().min(1).max(65_535).default(3001),
     DATABASE_URL: z.url().startsWith('postgresql://'),
     REDIS_URL: z.url().refine((value) => value.startsWith('redis://') || value.startsWith('rediss://'), {
       message: 'REDIS_URL must use redis:// or rediss://',
     }),
-    SESSION_SECRET: z.string().min(32).optional(),
+    SESSION_SECRET: optionalEnvironmentValue(z.string().min(32)),
     LOG_LEVEL: z.enum(['error', 'warn', 'info', 'debug']).default('info'),
     FRONTEND_ORIGIN: z.url().default('http://localhost:3000'),
-    GITHUB_APP_ID: z.string().min(1).optional(),
-    GITHUB_APP_SLUG: z.string().regex(/^[a-z0-9-]+$/).optional(),
-    GITHUB_APP_PRIVATE_KEY: z.string().min(1).optional(),
-    GITHUB_APP_CLIENT_ID: z.string().min(1).optional(),
-    GITHUB_APP_CLIENT_SECRET: z.string().min(1).optional(),
-    GITHUB_CALLBACK_URL: z.url().optional(),
-    GITHUB_INSTALLATION_CALLBACK_URL: z.url().optional(),
-    GITHUB_WEBHOOK_SECRET: z.string().min(1).optional(),
-    LLM_API_KEY: z.string().min(1).optional(),
-    STORAGE_BUCKET: z.string().min(1).optional(),
-    STORAGE_ENDPOINT: z.url().optional(),
-    STORAGE_ACCESS_KEY: z.string().min(1).optional(),
-    STORAGE_SECRET_KEY: z.string().min(1).optional(),
+    GITHUB_APP_ID: optionalEnvironmentValue(z.string().min(1)),
+    GITHUB_APP_SLUG: optionalEnvironmentValue(z.string().regex(/^[a-z0-9-]+$/)),
+    GITHUB_APP_PRIVATE_KEY: optionalEnvironmentValue(z.string().min(1)),
+    GITHUB_APP_CLIENT_ID: optionalEnvironmentValue(z.string().min(1)),
+    GITHUB_APP_CLIENT_SECRET: optionalEnvironmentValue(z.string().min(1)),
+    GITHUB_CALLBACK_URL: optionalEnvironmentValue(z.url()),
+    GITHUB_INSTALLATION_CALLBACK_URL: optionalEnvironmentValue(z.url()),
+    GITHUB_WEBHOOK_SECRET: optionalEnvironmentValue(z.string().min(1)),
+    LLM_API_KEY: optionalEnvironmentValue(z.string().min(1)),
+    STORAGE_BUCKET: optionalEnvironmentValue(z.string().min(1)),
+    STORAGE_ENDPOINT: optionalEnvironmentValue(z.url()),
+    STORAGE_ACCESS_KEY: optionalEnvironmentValue(z.string().min(1)),
+    STORAGE_SECRET_KEY: optionalEnvironmentValue(z.string().min(1)),
   })
   .superRefine((environment, context) => {
-    if (
-      environment.NODE_ENV === 'production' &&
-      (environment.SESSION_SECRET === undefined || /^(replace|change-?me)/i.test(environment.SESSION_SECRET))
-    ) {
+    if (environment.NODE_ENV !== 'production') return;
+    if (environment.SESSION_SECRET === undefined || /^(replace|change-?me)/i.test(environment.SESSION_SECRET)) {
       context.addIssue({
         code: 'custom',
         path: ['SESSION_SECRET'],
         message: 'SESSION_SECRET is required in production, must contain at least 32 characters, and cannot be a placeholder',
+      });
+    }
+    for (const [field, value] of [
+      ['FRONTEND_ORIGIN', environment.FRONTEND_ORIGIN],
+      ['GITHUB_CALLBACK_URL', environment.GITHUB_CALLBACK_URL],
+      ['GITHUB_INSTALLATION_CALLBACK_URL', environment.GITHUB_INSTALLATION_CALLBACK_URL],
+    ] as const) {
+      if (value !== undefined && new URL(value).protocol !== 'https:') {
+        context.addIssue({ code: 'custom', path: [field], message: `${field} must use HTTPS in production` });
+      }
+    }
+    if (
+      environment.GITHUB_WEBHOOK_SECRET !== undefined &&
+      (environment.GITHUB_WEBHOOK_SECRET.length < 32 || /^(replace|change-?me|secret)/i.test(environment.GITHUB_WEBHOOK_SECRET))
+    ) {
+      context.addIssue({
+        code: 'custom',
+        path: ['GITHUB_WEBHOOK_SECRET'],
+        message: 'GITHUB_WEBHOOK_SECRET must contain at least 32 non-placeholder characters in production',
       });
     }
   });

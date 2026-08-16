@@ -1,9 +1,10 @@
 import { Injectable, type OnApplicationBootstrap, type OnModuleDestroy } from '@nestjs/common';
-import { PrismaService } from '@trace/database';
+import { PrismaService, type Prisma } from '@trace/database';
 import { GithubWebhookQueue } from './github-webhook.queue';
 
 const PUBLISH_INTERVAL_MS = 5_000;
 const REQUEST_PUBLISH_TIMEOUT_MS = 1_000;
+const PUBLICATION_TRANSACTION_TIMEOUT_MS = REQUEST_PUBLISH_TIMEOUT_MS + 500;
 const PUBLISH_BATCH_SIZE = 100;
 
 @Injectable()
@@ -25,7 +26,10 @@ export class GithubWebhookPublisher implements OnApplicationBootstrap, OnModuleD
   }
 
   async publishOneBounded(deliveryId: string): Promise<void> {
-    await this.withTimeout(this.publishOne(deliveryId), REQUEST_PUBLISH_TIMEOUT_MS).catch(() => undefined);
+    await this.withTimeout(
+      (signal) => this.publishOne(deliveryId, signal),
+      REQUEST_PUBLISH_TIMEOUT_MS,
+    ).catch(() => undefined);
   }
 
   async publishOwed(): Promise<void> {
@@ -40,45 +44,122 @@ export class GithubWebhookPublisher implements OnApplicationBootstrap, OnModuleD
 
   private async reconcile(): Promise<void> {
     const deliveries = await this.prisma.githubWebhookDelivery.findMany({
-      where: { status: 'pending', publishedAt: null },
-      orderBy: { receivedAt: 'asc' },
+      where: { status: 'pending' },
+      orderBy: [
+        { publishedAt: { sort: 'asc', nulls: 'first' } },
+        { receivedAt: 'asc' },
+      ],
       take: PUBLISH_BATCH_SIZE,
       select: { id: true },
     });
+    const attempted: string[] = [];
     for (const delivery of deliveries) {
-      await this.publishOne(delivery.id).catch(() => undefined);
+      if (await this.markAttempt(delivery.id).catch(() => false)) attempted.push(delivery.id);
     }
+    const [oldest, ...remaining] = attempted;
+    if (oldest !== undefined) await this.publishAttempt(oldest).catch(() => undefined);
+    await Promise.all(remaining.map(async (deliveryId) => {
+      await this.publishAttempt(deliveryId).catch(() => undefined);
+    }));
   }
 
-  onModuleDestroy(): void {
+  async onModuleDestroy(): Promise<void> {
     if (this.interval !== undefined) clearInterval(this.interval);
     this.interval = undefined;
+    await this.reconciliation?.catch(() => undefined);
   }
 
-  private async publishOne(deliveryId: string): Promise<void> {
-    const delivery = await this.prisma.githubWebhookDelivery.findFirst({
-      where: { id: deliveryId, status: 'pending', publishedAt: null },
-      select: { id: true },
-    });
-    if (delivery === null) return;
-    await this.queue.enqueue(delivery.id);
-    await this.prisma.githubWebhookDelivery.updateMany({
-      where: { id: delivery.id, status: 'pending', publishedAt: null },
-      data: { publishedAt: new Date() },
+  private async publishOne(deliveryId: string, signal: AbortSignal): Promise<void> {
+    if (!await this.markAttempt(deliveryId)) return;
+    await this.publishAttempt(deliveryId, signal);
+  }
+
+  private async markAttempt(deliveryId: string): Promise<boolean> {
+    return this.prisma.$transaction(async (transaction) => {
+      if (!await this.lockCurrentAuthority(transaction, deliveryId)) return false;
+      await transaction.githubWebhookDelivery.update({
+        where: { id: deliveryId },
+        data: { publishedAt: new Date() },
+      });
+      return true;
     });
   }
 
-  private async withTimeout(operation: Promise<void>, timeoutMs: number): Promise<void> {
+  private async publishAttempt(deliveryId: string, parentSignal?: AbortSignal): Promise<void> {
+    const operation = (signal: AbortSignal) => {
+      signal.throwIfAborted();
+      return this.prisma.$transaction(async (transaction) => {
+        if (!await this.lockCurrentAuthority(transaction, deliveryId)) return;
+        signal.throwIfAborted();
+        await this.queue.enqueue(deliveryId, signal);
+      }, {
+        maxWait: REQUEST_PUBLISH_TIMEOUT_MS,
+        timeout: PUBLICATION_TRANSACTION_TIMEOUT_MS,
+      });
+    };
+    if (parentSignal !== undefined) {
+      await operation(parentSignal);
+      return;
+    }
+    await this.withTimeout(operation, REQUEST_PUBLISH_TIMEOUT_MS);
+  }
+
+  private async lockCurrentAuthority(transaction: Prisma.TransactionClient, deliveryId: string): Promise<boolean> {
+    await transaction.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${deliveryId}, 0))`;
+    await transaction.$queryRaw`SELECT id FROM github_webhook_deliveries WHERE id = ${deliveryId} FOR UPDATE`;
+    const delivery = await transaction.githubWebhookDelivery.findFirst({
+      where: { id: deliveryId, status: 'pending' },
+      select: { id: true, installationId: true, repositoryId: true },
+    });
+    if (delivery === null) return false;
+    if (delivery.installationId === null || delivery.repositoryId === null) {
+      await transaction.githubWebhookDelivery.update({
+        where: { id: delivery.id },
+        data: { status: 'failed', processedAt: new Date(), processingError: 'Webhook authority is unavailable.' },
+      });
+      return false;
+    }
+    const authority = await transaction.$queryRaw<Array<{ id: string }>>`
+      SELECT ur.id
+      FROM github_installations gi
+      JOIN github_accounts ga ON ga.id = gi.github_account_id
+      JOIN users u ON u.id = ga.user_id
+      JOIN repositories r ON r.github_installation_id = gi.id
+      JOIN user_repositories ur ON ur.repository_id = r.id AND ur.user_id = u.id
+      WHERE gi.id = ${delivery.installationId}
+        AND r.id = ${delivery.repositoryId}
+        AND gi.suspended_at IS NULL
+        AND ga.unlinked_at IS NULL
+        AND u.disabled_at IS NULL
+        AND r.access_removed_at IS NULL
+        AND ur.access_removed_at IS NULL
+        AND ur.tracking_enabled = TRUE
+      FOR UPDATE OF gi, ga, u, r, ur
+    `;
+    if (authority.length > 0) return true;
+    await transaction.githubWebhookDelivery.update({
+      where: { id: delivery.id },
+      data: { status: 'failed', processedAt: new Date(), processingError: 'Webhook authority is unavailable.' },
+    });
+    return false;
+  }
+
+  private async withTimeout(operation: (signal: AbortSignal) => Promise<void>, timeoutMs: number): Promise<void> {
+    const controller = new AbortController();
     let timer: NodeJS.Timeout | undefined;
     try {
       await Promise.race([
-        operation,
+        operation(controller.signal),
         new Promise<never>((_resolve, reject) => {
-          timer = setTimeout(() => reject(new Error('Webhook queue publication timed out.')), timeoutMs);
+          timer = setTimeout(() => {
+            controller.abort();
+            reject(new Error('Webhook queue publication timed out.'));
+          }, timeoutMs);
         }),
       ]);
     } finally {
       if (timer !== undefined) clearTimeout(timer);
     }
   }
+
 }

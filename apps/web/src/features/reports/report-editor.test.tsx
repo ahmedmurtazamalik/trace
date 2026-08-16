@@ -83,6 +83,15 @@ describe("Day 9 structured report editor", () => {
     expect(screen.getByRole("button", { name: "Reload latest revision" })).toBeInTheDocument();
   });
 
+  it("preserves the draft and tells users to wait when revision saving is rate limited", async () => {
+    const save = vi.fn().mockRejectedValue({ code: "RATE_LIMITED" });
+    render(<ReportEditor report={report} saveRevision={save} />);
+    fireEvent.change(screen.getByLabelText("Executive summary"), { target: { value: "Retained rate-limited draft." } });
+    fireEvent.click(screen.getByRole("button", { name: "Save revision" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("Wait before trying again");
+    expect(screen.getByLabelText("Executive summary")).toHaveValue("Retained rate-limited draft.");
+  });
+
   it("rebases a retained conflict draft onto the latest revision before retrying", async () => {
     const save = vi.fn().mockRejectedValueOnce({ code: "REPORT_REVISION_CONFLICT" }).mockImplementation(async (_id, request) => savedResponse(request));
     const reload = vi.fn();
@@ -194,6 +203,16 @@ describe("Day 9 structured report editor", () => {
     fireEvent.click(screen.getByRole("button", { name: "Save revision" }));
     expect(await screen.findByText("Revision 2 · Manually edited")).toBeInTheDocument();
     expect(save).toHaveBeenCalledTimes(3);
+  });
+
+  it("retains prose and requires refresh after a permanent CSRF failure", async () => {
+    const save = vi.fn().mockRejectedValue({ code: "CSRF_INVALID" });
+    render(<ReportEditor report={report} saveRevision={save} />);
+    fireEvent.change(screen.getByLabelText("Executive summary"), { target: { value: "CSRF-safe draft." } });
+    fireEvent.click(screen.getByRole("button", { name: "Save revision" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("security session expired");
+    expect(screen.getByRole("alert")).toHaveTextContent("Refresh the page");
+    expect(screen.getByLabelText("Executive summary")).toHaveValue("CSRF-safe draft.");
   });
 
   it("rejects overlong structured prose before calling the save adapter", () => {

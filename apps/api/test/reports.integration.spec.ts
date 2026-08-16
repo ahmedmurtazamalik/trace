@@ -33,7 +33,7 @@ describe('Reports API', () => {
 
   beforeAll(async () => {
     process.env.NODE_ENV = 'test';
-    process.env.REDIS_URL = 'redis://localhost:6379';
+    process.env.REDIS_URL ??= 'redis://localhost:6379';
     process.env.SESSION_SECRET = 'test-only-session-secret-at-least-32-characters';
     process.env.GITHUB_APP_CLIENT_ID = 'test-client-id';
     process.env.GITHUB_APP_SLUG = 'trace-test-app';
@@ -142,6 +142,15 @@ describe('Reports API', () => {
           type: 'push',
           occurredAt: new Date('2026-08-12T20:31:00.000Z'),
           metadata: { ref: 'refs/heads/main' },
+        },
+        {
+          sourceKey: `day8:invalid-oid:${repository.id}`,
+          repositoryId: repository.id,
+          contributorId: contributor.id,
+          source: 'github',
+          type: 'commit',
+          occurredAt: new Date('2026-08-12T20:32:00.000Z'),
+          metadata: { sha: 'a'.repeat(41), message: 'Impossible object ID', branch: 'main', changedFiles: 90, additions: 90, deletions: 90 },
         },
         {
           sourceKey: `day8:outside:${repository.id}`,

@@ -41,6 +41,8 @@ describe('Frozen Day 5-7 activity and dashboard contract', () => {
 
   it('rejects secret-like, invalid-timezone, and unbounded fields', () => {
     expect(activityListQuerySchema.safeParse({ limit: 101 }).success).toBe(false);
+    expect(activityListQuerySchema.safeParse({ cursor: 'c'.repeat(2_049) }).success).toBe(false);
+    expect(dashboardQuerySchema.safeParse({ date: '2026-08-12', repositoryId: 'r'.repeat(257) }).success).toBe(false);
     expect(activityListQuerySchema.safeParse({ timezone: 'not/a-zone' }).success).toBe(false);
     expect(activityListQuerySchema.safeParse({ source: 'github', type: 'untracked_file' }).success).toBe(false);
     expect(activityListResponseSchema.safeParse({
@@ -51,6 +53,21 @@ describe('Frozen Day 5-7 activity and dashboard contract', () => {
     expect(dashboardResponseSchema.safeParse({ ...dashboardFixture, timezone: 'not/a-zone' }).success).toBe(false);
     expect(activityListResponseSchema.safeParse({ ...activityListFixture, installationToken: 'secret' }).success).toBe(false);
     expect(dashboardResponseSchema.safeParse({ ...dashboardFixture, productivityScore: 99 }).success).toBe(false);
+  });
+
+  it('accepts only exact SHA-1 or SHA-256 Git object IDs in projected activity', () => {
+    for (const length of [40, 64]) {
+      expect(activitySummarySchema.safeParse({
+        ...activityListFixture.items[0],
+        facts: { ...activityListFixture.items[0]!.facts, sha: 'a'.repeat(length) },
+      }).success).toBe(true);
+    }
+    for (const sha of ['a'.repeat(41), 'a'.repeat(42), 'a'.repeat(63), 'g'.repeat(40)]) {
+      expect(activitySummarySchema.safeParse({
+        ...activityListFixture.items[0],
+        facts: { ...activityListFixture.items[0]!.facts, sha },
+      }).success).toBe(false);
+    }
   });
 
   it('bounds activity identifiers and projected display strings', () => {

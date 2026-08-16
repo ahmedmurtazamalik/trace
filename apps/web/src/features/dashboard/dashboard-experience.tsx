@@ -32,7 +32,7 @@ export function DashboardExperience({ loadDashboard, loadRepositories, initialDa
   const [filters, setFilters] = useState<DashboardFilters>({ date: initialDate, repositoryId: initialRepositoryId });
   const [repositories, setRepositories] = useState<RepositoryListResponse["items"]>([]);
   const [data, setData] = useState<DashboardResponse>();
-  const [error, setError] = useState<string>();
+  const [error, setError] = useState<{ code: string; message: string }>();
   const [loading, setLoading] = useState(true);
   const generation = useRef(0);
   const activeRequest = useRef<AbortController>();
@@ -46,7 +46,16 @@ export function DashboardExperience({ loadDashboard, loadRepositories, initialDa
     const request = ++generation.current;
     setLoading(true); setError(undefined); setData(undefined);
     return loadDashboard(query, { signal: controller.signal }).then((response) => { if (request === generation.current) setData(response); })
-      .catch((cause: unknown) => { if (!(cause instanceof DOMException && cause.name === "AbortError") && request === generation.current) setError(typeof cause === "object" && cause !== null && "code" in cause && cause.code === "UNAUTHENTICATED" ? "Your session has expired. Please sign in again." : "Trace could not load the dashboard. Try again."); })
+      .catch((cause: unknown) => {
+        if (cause instanceof DOMException && cause.name === "AbortError" || request !== generation.current) return;
+        const code = typeof cause === "object" && cause !== null && "code" in cause && typeof cause.code === "string" ? cause.code : "UNEXPECTED_ERROR";
+        const message = code === "UNAUTHENTICATED"
+          ? "Your session has expired. Please sign in again."
+          : code === "REPOSITORY_NOT_FOUND"
+            ? "The selected repository is no longer available."
+            : "Trace could not load the dashboard. Try again.";
+        setError({ code, message });
+      })
       .finally(() => { if (request === generation.current) setLoading(false); });
   }, [loadDashboard, query]);
   useEffect(() => { void reload(); return () => { activeRequest.current?.abort(); generation.current += 1; }; }, [reload]);
@@ -66,7 +75,7 @@ export function DashboardExperience({ loadDashboard, loadRepositories, initialDa
   function change(next: DashboardFilters) { generation.current += 1; setFilters(next); onFiltersChange?.(next); }
 
   if (loading && data === undefined) return <Card className="dashboard-state" role="status">Loading dashboard…</Card>;
-  if (error !== undefined && data === undefined) return <Card className="dashboard-state dashboard-state-error" role="alert"><p>{error}</p>{error.startsWith("Your session has expired") ? <Link className="trace-button trace-button-primary" href="/login">Sign in again</Link> : <Button className="trace-button-secondary" onClick={() => void reload()}>Retry</Button>}</Card>;
+  if (error !== undefined && data === undefined) return <Card className="dashboard-state dashboard-state-error" role="alert"><p>{error.message}</p>{error.code === "UNAUTHENTICATED" ? <Link className="trace-button trace-button-primary" href="/login">Sign in again</Link> : error.code === "REPOSITORY_NOT_FOUND" ? <Button className="trace-button-secondary" onClick={() => change({ date: filters.date })}>Show all repositories</Button> : <Button className="trace-button-secondary" onClick={() => void reload()}>Retry</Button>}</Card>;
   if (data === undefined) return null;
   const action = stateActions[data.state];
   const selectedDate = new Date(`${data.date}T12:00:00.000Z`).toLocaleDateString("en-US", { dateStyle: "long", timeZone: "UTC" });

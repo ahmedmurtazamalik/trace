@@ -16,7 +16,9 @@ function dateLabel(value: string) {
 function createError(cause: unknown) {
   const code = typeof cause === "object" && cause !== null && "code" in cause ? cause.code : undefined;
   if (code === "REPORT_ALREADY_EXISTS") return "A report already exists for this date. Open it from report history.";
+  if (code === "RATE_LIMITED") return "Too many report requests. Wait before trying again.";
   if (code === "REPORT_GENERATION_UNAVAILABLE") return "Report generation is temporarily unavailable. Try again later.";
+  if (code === "CSRF_INVALID") return "Your security session has expired. Refresh the page and sign in again if needed.";
   if (code === "UNAUTHENTICATED" || code === "UNAUTHORIZED") return "Your session has expired. Please sign in again.";
   return "Trace could not create this report. Try again.";
 }

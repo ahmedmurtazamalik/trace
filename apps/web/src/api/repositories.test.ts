@@ -77,4 +77,15 @@ describe("repository API client", () => {
       status: 409,
     }));
   });
+
+  it("preserves safe repository synchronization rate-limit outcomes", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse({ code: "RATE_LIMITED", message: "raw limiter detail", requestId: "request-limit" }, 429)));
+
+    await expect(synchronizeRepositories("csrf-live")).rejects.toEqual(expect.objectContaining<Partial<RepositoryApiError>>({
+      code: "RATE_LIMITED",
+      message: "Too many repository synchronization requests. Please wait and try again.",
+      status: 429,
+      requestId: "request-limit",
+    }));
+  });
 });

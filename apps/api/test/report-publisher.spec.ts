@@ -1,8 +1,24 @@
+import { Logger } from '@nestjs/common';
 import type { PrismaService } from '@trace/database';
 import { ReportPublisher } from '../src/modules/reports/report.publisher';
 import type { ReportQueue } from '../src/modules/reports/report.queue';
 
 describe('report publication reconciliation', () => {
+  it('does not log queue or database exception details', async () => {
+    const secret = 'redis://user:password@private-host:6379?token=opaque';
+    const logger = jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+    const prisma = {
+      report: { findFirst: jest.fn().mockRejectedValue(new Error(secret)) },
+    } as unknown as PrismaService;
+    const publisher = new ReportPublisher(prisma, { enqueue: jest.fn() } as unknown as ReportQueue);
+
+    await publisher.publishOneBounded('report-id');
+
+    expect(logger).toHaveBeenCalledWith('Failed report report-id (type=Error)');
+    expect(JSON.stringify(logger.mock.calls)).not.toContain(secret);
+    logger.mockRestore();
+  });
+
   it('uses independent fair batches for render and initial obligations', async () => {
     const findMany = jest.fn().mockResolvedValue([]);
     const prisma = { report: { findMany } } as unknown as PrismaService;
@@ -83,6 +99,34 @@ describe('report publication reconciliation', () => {
     expect(enqueue).toHaveBeenCalledWith('later-render');
     expect(enqueue).toHaveBeenCalledWith('later-initial');
   });
+
+  it('commits every selected attempt clock before queue I/O and bounds a fully hanging cohort', async () => {
+    const reports = Array.from({ length: 100 }, (_, index) => ({ id: `hanging-${index}` }));
+    const findMany = jest.fn()
+      .mockResolvedValueOnce(reports.slice(0, 50))
+      .mockResolvedValueOnce(reports.slice(50));
+    const findFirst = jest.fn().mockImplementation(({ where }: { where: { id: string } }) => Promise.resolve({
+      id: where.id,
+      renderRevision: where.id === 'hanging-0' ? 1 : null,
+      renderGeneration: 1,
+    }));
+    const updateMany = jest.fn().mockResolvedValue({ count: 1 });
+    let attemptedBeforeFirstQueueCall = 0;
+    const enqueue = jest.fn().mockImplementation(() => {
+      if (enqueue.mock.calls.length === 1) attemptedBeforeFirstQueueCall = updateMany.mock.calls.length;
+      return new Promise<void>(() => undefined);
+    });
+    const prisma = { report: { findMany, findFirst, updateMany } } as unknown as PrismaService;
+    const publisher = new ReportPublisher(prisma, { enqueue } as unknown as ReportQueue);
+    const startedAt = Date.now();
+
+    await publisher.publishOwed();
+
+    expect(attemptedBeforeFirstQueueCall).toBe(100);
+    expect(updateMany).toHaveBeenCalledTimes(100);
+    expect(enqueue).toHaveBeenCalledTimes(100);
+    expect(Date.now() - startedAt).toBeLessThan(3_000);
+  }, 5_000);
 
   it('publishes render work even when more than 100 initial reports are outstanding', async () => {
     const renderReports = Array.from({ length: 50 }, (_, index) => ({ id: `render-${index}` }));

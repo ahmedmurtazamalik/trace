@@ -28,8 +28,13 @@ export class ReportPublisher implements OnApplicationBootstrap, OnModuleDestroy 
   }
 
   async publishOneBounded(reportId: string): Promise<void> {
-    await this.withTimeout(this.publishOne(reportId), REQUEST_PUBLISH_TIMEOUT_MS)
-      .catch((error: unknown) => this.logFailure(`report ${reportId}`, error));
+    try {
+      if (!await this.prepareOne(reportId)) return;
+    } catch (error) {
+      this.logFailure(`report ${reportId}`, error);
+      return;
+    }
+    await this.enqueueOneBounded(reportId);
   }
 
   async publishOwed(): Promise<void> {
@@ -73,13 +78,21 @@ export class ReportPublisher implements OnApplicationBootstrap, OnModuleDestroy 
         select: { id: true },
       }),
     ]);
-    for (const report of [...renderReports, ...initialReports]) {
-      await this.withTimeout(this.publishOne(report.id), REQUEST_PUBLISH_TIMEOUT_MS)
-        .catch((error: unknown) => this.logFailure(`report ${report.id}`, error));
-    }
+    const selected = [...renderReports, ...initialReports];
+    const prepared = await Promise.all(selected.map(async ({ id }) => {
+      try {
+        return await this.prepareOne(id) ? id : null;
+      } catch (error) {
+        this.logFailure(`report ${id}`, error);
+        return null;
+      }
+    }));
+    await Promise.all(prepared
+      .filter((id): id is string => id !== null)
+      .map((id) => this.enqueueOneBounded(id)));
   }
 
-  private async publishOne(reportId: string): Promise<void> {
+  private async prepareOne(reportId: string): Promise<boolean> {
     const report = await this.prisma.report.findFirst({
       where: {
         id: reportId,
@@ -88,7 +101,7 @@ export class ReportPublisher implements OnApplicationBootstrap, OnModuleDestroy 
       },
       select: { id: true, renderRevision: true, renderGeneration: true },
     });
-    if (report === null) return;
+    if (report === null) return false;
     const observedAt = new Date();
     if (report.renderRevision !== null) {
       const attempted = await this.prisma.report.updateMany({
@@ -100,9 +113,7 @@ export class ReportPublisher implements OnApplicationBootstrap, OnModuleDestroy 
         },
         data: { renderPublishedAt: observedAt },
       });
-      if (attempted.count !== 1) return;
-      await this.queue.enqueue(report.id);
-      return;
+      return attempted.count === 1;
     }
     const attempted = await this.prisma.report.updateMany({
       where: {
@@ -113,8 +124,12 @@ export class ReportPublisher implements OnApplicationBootstrap, OnModuleDestroy 
       },
       data: { publishedAt: observedAt },
     });
-    if (attempted.count !== 1) return;
-    await this.queue.enqueue(report.id);
+    return attempted.count === 1;
+  }
+
+  private async enqueueOneBounded(reportId: string): Promise<void> {
+    await this.withTimeout(this.queue.enqueue(reportId), REQUEST_PUBLISH_TIMEOUT_MS)
+      .catch((error: unknown) => this.logFailure(`report ${reportId}`, error));
   }
 
   private async withTimeout(operation: Promise<void>, timeoutMs: number): Promise<void> {
@@ -132,7 +147,7 @@ export class ReportPublisher implements OnApplicationBootstrap, OnModuleDestroy 
   }
 
   private logFailure(operation: string, error: unknown): void {
-    const message = error instanceof Error ? error.message : 'Unknown report publication failure.';
-    this.logger.error(`Failed ${operation}: ${message}`);
+    const type = error instanceof Error ? error.name : 'UnknownError';
+    this.logger.error(`Failed ${operation} (type=${type})`);
   }
 }

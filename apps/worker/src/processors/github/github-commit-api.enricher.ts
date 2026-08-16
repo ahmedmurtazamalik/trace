@@ -28,21 +28,20 @@ export class GithubCommitApiEnricher implements GithubCommitEnricher {
   async commit(input: {
     githubInstallationId: bigint;
     githubRepositoryId: bigint;
-    owner: string;
-    name: string;
     sha: string;
   }): Promise<GithubCommitFacts> {
     try {
       const token = await this.installationToken(input.githubInstallationId);
+      const repository = await this.repository(token, input.githubRepositoryId);
       const files: GithubCommitFileFacts[] = [];
       let result: GithubCommitFacts | undefined;
       for (let page = 1; page <= 3; page += 1) {
-        const url = `https://api.github.com/repos/${encodeURIComponent(input.owner)}/${encodeURIComponent(input.name)}/commits/${input.sha}?per_page=100&page=${page}`;
+        const url = `https://api.github.com/repos/${encodeURIComponent(repository.owner)}/${encodeURIComponent(repository.name)}/commits/${input.sha}?per_page=100&page=${page}`;
         const response = await this.request(url, {
           headers: this.headers(`Bearer ${token}`),
           signal: AbortSignal.timeout(this.timeoutMs),
         });
-        if (!response.ok) throw new Error('provider response');
+        await this.ensureOk(response);
         const value = await this.json(response, 1_048_576);
         const parsed = this.page(value, input.sha);
         if (result === undefined) result = parsed.facts;
@@ -61,10 +60,31 @@ export class GithubCommitApiEnricher implements GithubCommitEnricher {
       headers: this.headers(`Bearer ${this.appJwt()}`),
       signal: AbortSignal.timeout(this.timeoutMs),
     });
-    if (!response.ok) throw new Error('provider response');
+    await this.ensureOk(response);
     const value = await this.json(response, 65_536) as { token?: unknown };
     if (typeof value.token !== 'string' || value.token.length === 0 || value.token.length > 4_096) throw new Error('token response');
     return value.token;
+  }
+
+  private async repository(token: string, expectedRepositoryId: bigint): Promise<{ owner: string; name: string }> {
+    const response = await this.request(`https://api.github.com/repositories/${expectedRepositoryId.toString()}`, {
+      headers: this.headers(`Bearer ${token}`),
+      signal: AbortSignal.timeout(this.timeoutMs),
+    });
+    await this.ensureOk(response);
+    const value = await this.json(response, 65_536) as {
+      id?: unknown;
+      owner?: { login?: unknown };
+      name?: unknown;
+    };
+    if (
+      !Number.isSafeInteger(value.id) || BigInt(value.id as number) !== expectedRepositoryId
+      || typeof value.owner?.login !== 'string' || value.owner.login.length === 0 || value.owner.login.length > 100
+      || typeof value.name !== 'string' || value.name.length === 0 || value.name.length > 100
+    ) {
+      throw new Error('repository response');
+    }
+    return { owner: value.owner.login, name: value.name };
   }
 
   private page(value: unknown, expectedSha: string): { facts: GithubCommitFacts; files: GithubCommitFileFacts[] } {
@@ -170,7 +190,10 @@ export class GithubCommitApiEnricher implements GithubCommitEnricher {
     const declaredLength = response.headers.get('content-length');
     if (declaredLength !== null) {
       const parsedLength = Number(declaredLength);
-      if (!Number.isSafeInteger(parsedLength) || parsedLength < 0 || parsedLength > maximumBytes) throw new Error('provider response size');
+      if (!Number.isSafeInteger(parsedLength) || parsedLength < 0 || parsedLength > maximumBytes) {
+        await response.body?.cancel().catch(() => undefined);
+        throw new Error('provider response size');
+      }
     }
     if (response.body === null) throw new Error('provider response body');
     const reader: ReadableStreamDefaultReader<Uint8Array> = response.body.getReader();
@@ -193,6 +216,12 @@ export class GithubCommitApiEnricher implements GithubCommitEnricher {
       offset += chunk.byteLength;
     }
     return JSON.parse(new TextDecoder().decode(body)) as unknown;
+  }
+
+  private async ensureOk(response: Response): Promise<void> {
+    if (response.ok) return;
+    await response.body?.cancel().catch(() => undefined);
+    throw new Error('provider response');
   }
 
   private headers(authorization: string): Record<string, string> {

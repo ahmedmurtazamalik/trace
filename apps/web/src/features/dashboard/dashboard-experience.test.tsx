@@ -112,6 +112,20 @@ describe("Day 6 dashboard experience", () => {
     expect(await screen.findByRole("link", { name: "Sign in again" })).toHaveAttribute("href", "/login");
   });
 
+  it("clears a stale or inaccessible repository filter instead of retrying a permanent 404", async () => {
+    const loadDashboard = vi.fn()
+      .mockRejectedValueOnce({ code: "REPOSITORY_NOT_FOUND", status: 404 })
+      .mockResolvedValueOnce(dashboardFixtures.ready);
+    const onFiltersChange = vi.fn();
+    render(<DashboardExperience loadDashboard={loadDashboard} initialDate="2026-08-12" initialRepositoryId="stale-repository" onFiltersChange={onFiltersChange} />);
+    expect(await screen.findByRole("alert")).toHaveTextContent("The selected repository is no longer available.");
+    expect(screen.queryByRole("button", { name: "Retry" })).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Show all repositories" }));
+    await screen.findByLabelText("Development activity metrics");
+    expect(loadDashboard).toHaveBeenLastCalledWith({ date: "2026-08-12", timezone: "UTC" }, expect.objectContaining({ signal: expect.any(AbortSignal) }));
+    expect(onFiltersChange).toHaveBeenCalledWith({ date: "2026-08-12" });
+  });
+
   it("clears old facts and surfaces a safe error when a changed filter fails", async () => {
     const loadDashboard = vi.fn().mockResolvedValueOnce(dashboardFixtures.ready).mockRejectedValue(new Error("internal database detail"));
     const { rerender } = render(<DashboardExperience loadDashboard={loadDashboard} initialDate="2026-08-12" />);

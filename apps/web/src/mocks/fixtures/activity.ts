@@ -7,7 +7,7 @@ const commit: ActivitySummary = {
   source: "github",
   type: "commit",
   occurredAt: "2026-08-12T09:42:00.000Z",
-  facts: { sha: "a1b2c3d4", message: "Refine activity timeline", branch: "day5", filesChanged: 8, additions: 248, deletions: 31, url: "https://github.com/trace-fixture-org/trace/commit/a1b2c3d4" },
+  facts: { sha: "a1b2c3d4".padEnd(40, "0"), message: "Refine activity timeline", branch: "day5", filesChanged: 8, additions: 248, deletions: 31, url: "https://github.com/trace-fixture-org/trace/commit/a1b2c3d4" },
 };
 
 const push: ActivitySummary = {
@@ -17,7 +17,7 @@ const push: ActivitySummary = {
   source: "github",
   type: "push",
   occurredAt: "2026-08-12T08:18:00.000Z",
-  facts: { sha: "b2c3d4e5", message: "Publish webhook acceptance", branch: "main", filesChanged: 3, additions: 74, deletions: 6, url: null },
+  facts: { sha: "b2c3d4e5".padEnd(40, "0"), message: "Publish webhook acceptance", branch: "main", filesChanged: 3, additions: 74, deletions: 6, url: null },
 };
 
 const localCommit: ActivitySummary = {
@@ -27,7 +27,7 @@ const localCommit: ActivitySummary = {
   source: "cli",
   type: "local_commit",
   occurredAt: "2026-08-11T16:05:00.000Z",
-  facts: { sha: "c3d4e5f6", message: "Draft activity filters", branch: "day5", filesChanged: 2, additions: 31, deletions: 4, url: null },
+  facts: { sha: "c3d4e5f6".padEnd(40, "0"), message: "Draft activity filters", branch: "day5", filesChanged: 2, additions: 31, deletions: 4, url: null },
 };
 
 const firstPage: ActivityListResponse = {

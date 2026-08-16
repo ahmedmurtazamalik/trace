@@ -12,7 +12,7 @@ export const dashboardStateSchema = z.enum([
 export const dashboardQuerySchema = z.object({
   date: z.iso.date(),
   timezone: timezoneSchema.default('UTC'),
-  repositoryId: z.string().min(1).optional(),
+  repositoryId: z.string().min(1).max(256).optional(),
 }).strict();
 
 export const dashboardMetricsSchema = z.object({

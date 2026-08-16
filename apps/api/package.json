@@ -5,11 +5,11 @@
   "main": "dist/src/main.js",
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
-    "start": "node dist/src/main.js",
-    "dev": "tsx watch src/main.ts",
+    "start": "node --env-file-if-exists=../../.env dist/src/main.js",
+    "dev": "node --env-file-if-exists=../../.env --import tsx --watch src/main.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "eslint src test",
-    "test": "jest --runInBand test/api-exception.filter.spec.ts test/dependency-health.service.spec.ts test/password-reset-delivery.spec.ts test/report-publisher.spec.ts",
+    "test": "jest --runInBand test/api-exception.filter.spec.ts test/dependency-health.service.spec.ts test/operation-rate-limits.spec.ts test/password-reset-delivery.spec.ts test/report-publisher.spec.ts",
     "test:integration": "jest --runInBand --testPathPattern=integration.spec.ts"
   },
   "dependencies": {
@@ -26,6 +26,7 @@
     "class-transformer": "0.5.1",
     "class-validator": "0.14.2",
     "express": "5.1.0",
+    "helmet": "8.3.0",
     "ioredis": "5.7.0",
     "reflect-metadata": "0.2.2",
     "rxjs": "7.8.2"

@@ -124,7 +124,7 @@ Published in:
 
 Frozen operations:
 
-- `GET /api/v1/github/connect` (also used to reconnect)
+- `POST /api/v1/github/connect` with `X-CSRF-Token` (also used to reconnect; hardened on Day 11)
 - `GET /api/v1/github/callback`
 - `GET /api/v1/github/status`
 - `DELETE /api/v1/github/connection`
@@ -223,7 +223,7 @@ Final recorded results:
 - Redis jobs contain `{ deliveryId }` only. Day 6 reads the durable row and processes its validated `payload`.
 - Worker terminal-failure callbacks receive only the delivery row ID and stable code `WEBHOOK_PROCESSING_FAILED`; raw exception or payload text is neither passed to observability nor retained in BullMQ failure fields.
 - The queue and API both default to `github-webhook-deliveries`. Worker concurrency must remain within 1–32.
-- Webhook retries revalidate current installation, repository, user, membership, and tracking authority. Already accepted pending rows retain an independent durable publication obligation, so later revocation cannot strand them.
+- Webhook retries retain an independent durable publication obligation while authority remains valid. Day 11 supersedes the original acceptance semantics: every publication and worker attempt revalidates current installation, repository, user, membership, and tracking authority, and later revocation terminally rejects pending work rather than processing it.
 
 ### Deferred by plan
 
@@ -237,7 +237,7 @@ Final recorded results:
 ### Done
 
 - Composed the real GitHub activity processor into the existing `github-webhook-deliveries` worker; the executable now validates PostgreSQL, Redis, and GitHub App configuration and closes Prisma with BullMQ on signals or fatal run-loop failure.
-- Reads only the durable internal delivery-row ID from Redis, revalidates the complete delivery → installation → repository authority chain against stable external IDs before provider I/O and again transactionally under delivery-advisory → installation-row → repository-row → delivery-row locks, and moves the delivery through `processing` to `completed`. Later revocation does not strand already accepted historical work, while concurrent repository reassignment cannot race canonical persistence.
+- Reads only the durable internal delivery-row ID from Redis and validates the complete delivery → installation → repository authority chain against stable external IDs. Day 11 supersedes the original post-acceptance behavior: later revocation terminally rejects pending work, while concurrent repository reassignment cannot race canonical persistence.
 - Stores one push per GitHub delivery UUID and one commit per repository+SHA, with repository-relative file paths/statuses and generic push/commit activity rows.
 - Assigns contributor foreign keys only from stable GitHub numeric user IDs. Webhook author/committer name, email, and optional username are retained as raw facts and are never used to guess identity.
 - Uses deterministic activity `sourceKey` values for push and commit idempotency. Concurrent overlapping deliveries in one worker process coalesce the same repository+SHA enrichment request through transaction completion; all processes converge through database uniqueness on one commit and one commit activity.
@@ -349,7 +349,7 @@ Final recorded results:
 
 - Added deterministic fixed-template LaTeX rendering of frozen structured report revisions with exact snapshot repository/contributor correspondence, complete TeX metacharacter escaping, control-character rejection, and a 2 MiB expanded UTF-8 source bound. The exact first-render source is frozen on the revision and reused with any already persisted immutable objects, so same-revision regeneration remains stable across renderer/compiler deployments.
 - Added a pinned XeLaTeX image and direct-argv Docker compiler boundary with no network or shell escape, read-only root, dropped capabilities, no-new-privileges, non-root execution, fixed entrypoint/paths, bounded CPU/memory/PIDs/time, 32 MiB intermediate and 64 MiB temporary `tmpfs` mounts, a fixed reproducible build epoch, bounded structural PDF parsing, orphan-container termination, and deterministic host-temp cleanup.
-- Added shared filesystem artifact storage with restrictive owner/report/revision keys, traversal and intermediate/final symlink rejection, no-follow file handles with pre/post `fstat` verification, bounded reads, atomic idempotent immutable writes, and explicit production persistent-volume configuration.
+- Added shared filesystem artifact storage with restrictive owner/report/revision/generation/attempt keys, traversal and intermediate/final symlink rejection, no-follow file handles with pre/post `fstat` verification, bounded reads, killable child-process write boundaries, atomic idempotent immutable objects, and explicit production persistent-volume configuration. Generation/attempt-scoped objects are staged outside database transactions; sibling failures trigger shared cancellation and full settlement before only a still-current revision/generation/lease may atomically activate artifacts.
 - Added authoritative `currentRevisionId`, monotonic render generations, durable render obligations, independent bounded initial/render publication batches with pre-I/O attempt-clock rotation, database-clock processing leases longer than the maximum compiler timeout, and exact current-revision/generation/lease fences. Failed publication cohorts cannot starve later obligations, and stale or expired workers cannot activate artifacts or silently consume failed jobs.
 - Backfilled pre-Day-10 structured processing reports into render obligations and enforced current-revision ownership while preserving ordinary report/revision deletion cascades.
 - Enforced non-null artifact revision ownership, one artifact per report/revision/kind, positive bounded sizes, and lowercase SHA-256 checksums at the database layer.
@@ -370,3 +370,41 @@ Final recorded results:
 
 - Renderer, compiler-boundary, real Docker PDF compilation, storage, worker lifecycle/fencing, revision concurrency, regeneration, CSRF, owner isolation, and checksum-verified download tests cover the Day 10 behavior.
 - Production never falls back to fake rendering, fake storage, or the deterministic report provider.
+
+---
+
+## Day 11 — Person A
+
+### Done
+
+- Completed the backend endpoint authorization/CSRF/authenticity/rate-limit matrix in `docs/backend-security.md`; no endpoint treats frontend visibility as authority.
+- Hardened HTTP handling with Helmet, JSON-only general API parsing, conservative caller request-ID validation, generic 5xx responses, and redacted infrastructure/provider logging.
+- Required explicit `NODE_ENV=development|test|production`; missing and unknown deployment modes fail closed.
+- Added composed Redis-backed per-user, trusted direct-address, and deployment-wide hourly budgets for report creation, revision, regeneration, and repository synchronization. Report create, revision-save, and regeneration UIs preserve `RATE_LIMITED` with explicit wait guidance and preserve permanent `CSRF_INVALID` failures with page-refresh/session-recovery guidance.
+- Bound repository/dashboard query inputs, signed repository cursors to caller and query context, and made inaccessible repository filters indistinguishable `404` responses.
+- Bounded GitHub response bodies, repository page counts, tokens, and projected identity/repository fields.
+- Revalidated live GitHub installation, repository, account, user, access, tracking authority, exact 40- or 64-character object IDs, and every nested commit field before webhook publication and again during worker persistence. Activity contracts and frozen report evidence enforce the same exact object-ID formats. Every pending PostgreSQL row remains an owed deterministic publication so Redis loss is repaired. Fenced attempt clocks rotate rejecting or hanging poison rows fairly before a second delivery/authority lock and revalidation around a bounded queue mutation in an expiring transaction. Queue add/retry mutations run in concurrency-capped helper processes that resolve BullMQ from the API package, are killed and reaped before abort settlement, and are all settled with publisher reconciliation during shutdown; revoked work becomes terminal and canonical activity cannot be created after revocation.
+- Moved immutable report-object writes outside database transactions onto report/revision/generation/token-scoped attempt keys under an abort deadline shorter than the lease. Sibling writes share cancellation, are all settled after any failure, and filesystem mutation runs in killable child-process boundaries rather than relying on partial syscall cancellation. Final activation reacquires the report lock and requires the exact live token/revision/generation lease; expired work may leave only unreachable staged objects and cannot create active artifact rows or complete a report.
+- Bounded report-detail artifact reads to the current revision and serialized the detail snapshot with report lifecycle mutation.
+- Added durable audit rows for GitHub connection/install/disconnect, repository synchronization/tracking, and report create/revision/regeneration mutations.
+- Minimized configured-provider disclosure by replacing database IDs, activity IDs, and commit SHAs with request-local aliases. Private repository names, contributor identities, timestamps, activity types, aggregate facts, and commit messages remain explicit provider prose inputs.
+- Upgraded both Vitest consumers and pinned patched Vite `6.4.3`; full and production lockfile audits report no known vulnerabilities.
+
+### Verification
+
+- Workspace package tests passed sequentially; web: 152/152, worker: 92 passed with two intentional Docker-only skips, shared: 25/25, report storage: 5/5.
+- PostgreSQL database integration and the complete monorepo test command passed against disposable databases.
+- API integration on isolated Redis: 11 suites, 84/84 passed, including retained failed webhook-job recovery, hard helper-process termination, shutdown settlement, and cwd-independent built publication.
+- Focused worker authority/artifact integration is included in the passing 92-test worker gate.
+- Workspace lint, strict TypeScript, and production build passed.
+- Real Docker XeLaTeX acceptance: 2/2 passed.
+- Integrated desktop/mobile Playwright: 62/62 passed.
+- Full and production `pnpm audit --audit-level=low`: no known vulnerabilities.
+
+### Residual risks
+
+- Configured LLM use is an operator opt-in and intentionally discloses the documented prose inputs to the selected provider; provider contractual retention, region, and deletion guarantees are operational responsibilities.
+- Burst rate limits are not lifetime storage quotas. Retention, account quotas, audit retention, and operational alerting remain production policy work.
+- Live GitHub/LLM credentials were not used during acceptance; controlled adapters cover their bounded and fail-closed contracts.
+- Filesystem report storage requires a persistent shared production volume; multi-host object storage is not claimed.
+- Password-reset delivery remains fail-closed until an approved bounded delivery provider is configured.

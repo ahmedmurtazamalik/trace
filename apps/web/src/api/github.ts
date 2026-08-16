@@ -46,7 +46,7 @@ interface Schema<T> {
 
 interface RequestOptions { signal?: AbortSignal }
 
-async function request<T>(path: string, method: "GET" | "DELETE", schema: Schema<T>, options: RequestOptions = {}, headers?: Record<string, string>): Promise<T> {
+async function request<T>(path: string, method: "GET" | "POST" | "DELETE", schema: Schema<T>, options: RequestOptions = {}, headers?: Record<string, string>): Promise<T> {
   let response: Response;
   try {
     response = await fetch(`${API_ORIGIN}${path}`, { method, credentials: "include", headers, body: undefined, signal: options.signal });
@@ -80,13 +80,13 @@ export function getGithubStatus(options: RequestOptions = {}): Promise<GithubCon
 }
 
 /** Requests a backend-generated, contract-validated github.com authorization URL. */
-export function connectGithub(options: RequestOptions = {}): Promise<GithubConnectResponse> {
-  return request("/api/v1/github/connect", "GET", githubConnectResponseSchema, options);
+export function connectGithub(csrfToken: string, options: RequestOptions = {}): Promise<GithubConnectResponse> {
+  return request("/api/v1/github/connect", "POST", githubConnectResponseSchema, options, { [csrfHeaderName]: csrfToken });
 }
 
 /** Requests the backend-generated GitHub App installation URL. */
-export function getGithubInstallation(options: RequestOptions = {}): Promise<GithubInstallationStartResponse> {
-  return request("/api/v1/github/installation", "GET", githubInstallationStartResponseSchema, options);
+export function getGithubInstallation(csrfToken: string, options: RequestOptions = {}): Promise<GithubInstallationStartResponse> {
+  return request("/api/v1/github/installation", "POST", githubInstallationStartResponseSchema, options, { [csrfHeaderName]: csrfToken });
 }
 
 /** Disconnects GitHub without deleting retained Trace activity. */

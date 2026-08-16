@@ -21,10 +21,11 @@ describe("dashboard API client", () => {
     );
   });
 
-  it("rejects invalid responses and maps authorization errors safely", async () => {
+  it("rejects invalid responses and maps authorization and inaccessible-filter errors safely", async () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(jsonResponse({ state: "READY" }))
-      .mockResolvedValueOnce(jsonResponse({ code: "UNAUTHENTICATED", message: "raw detail", requestId: "request-2" }, 401));
+      .mockResolvedValueOnce(jsonResponse({ code: "UNAUTHENTICATED", message: "raw detail", requestId: "request-2" }, 401))
+      .mockResolvedValueOnce(jsonResponse({ code: "REPOSITORY_NOT_FOUND", message: "raw detail", requestId: "request-3" }, 404));
     vi.stubGlobal("fetch", fetchMock);
 
     await expect(getDashboard({ date: "2026-08-12", timezone: "UTC" })).rejects.toMatchObject({ code: "INVALID_RESPONSE" });
@@ -32,6 +33,11 @@ describe("dashboard API client", () => {
       code: "UNAUTHENTICATED",
       message: "Your session has expired. Please sign in again.",
       status: 401,
+    }));
+    await expect(getDashboard({ date: "2026-08-12", timezone: "UTC", repositoryId: "stale-repository" })).rejects.toEqual(expect.objectContaining<Partial<DashboardApiError>>({
+      code: "REPOSITORY_NOT_FOUND",
+      message: "The selected repository is no longer available. Show all repositories to continue.",
+      status: 404,
     }));
   });
 });

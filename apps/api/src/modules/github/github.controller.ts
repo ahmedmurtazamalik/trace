@@ -1,4 +1,4 @@
-import { Controller, Delete, Get, Query, Redirect, Req, UseGuards } from '@nestjs/common';
+import { Controller, Delete, Get, HttpCode, Post, Query, Redirect, Req, UseGuards } from '@nestjs/common';
 import type {
   GithubConnectionStatus,
   GithubConnectResponse,
@@ -18,8 +18,9 @@ import { GithubService } from './github.service';
 export class GithubController {
   constructor(private readonly github: GithubService, private readonly auth: AuthService) {}
 
-  @Get('connect')
-  @UseGuards(SessionAuthGuard)
+  @Post('connect')
+  @HttpCode(200)
+  @UseGuards(SessionAuthGuard, CsrfGuard)
   connect(@CurrentSession() session: AuthenticatedSession, @Req() request: Request): Promise<GithubConnectResponse> {
     return this.github.connect(session.user.id, session.session.id, this.directAddress(request));
   }
@@ -34,8 +35,9 @@ export class GithubController {
     };
   }
 
-  @Get('installation')
-  @UseGuards(SessionAuthGuard)
+  @Post('installation')
+  @HttpCode(200)
+  @UseGuards(SessionAuthGuard, CsrfGuard)
   startInstallation(@CurrentSession() session: AuthenticatedSession, @Req() request: Request): Promise<GithubInstallationStartResponse> {
     return this.github.startInstallation(session.user.id, session.session.id, this.directAddress(request));
   }

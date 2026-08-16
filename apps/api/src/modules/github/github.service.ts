@@ -68,10 +68,13 @@ export class GithubService {
         if (conflict !== null) return false;
         const existing = await transaction.githubAccount.findUnique({ where: { userId: state.userId } });
         if (existing !== null && existing.githubUserId !== authorized.id) return false;
-        await transaction.githubAccount.upsert({
+        const linkedAccount = await transaction.githubAccount.upsert({
           where: { userId: state.userId },
           create: { userId: state.userId, githubUserId: authorized.id, githubUsername: authorized.username, displayName: authorized.displayName, avatarUrl: authorized.avatarUrl },
           update: { githubUsername: authorized.username, displayName: authorized.displayName, avatarUrl: authorized.avatarUrl, unlinkedAt: null },
+        });
+        await transaction.auditLog.create({
+          data: { actorUserId: state.userId, action: 'github.connected', targetType: 'github_account', targetId: linkedAccount.id },
         });
         return true;
       });
@@ -142,6 +145,12 @@ export class GithubService {
     const disconnected = await this.prisma.$transaction(async (transaction) => {
       await transaction.$queryRaw`SELECT id FROM users WHERE id = ${userId} FOR UPDATE`;
       const result = await transaction.githubAccount.updateMany({ where: { userId, unlinkedAt: null }, data: { unlinkedAt: new Date() } });
+      if (result.count === 1) {
+        const account = await transaction.githubAccount.findUniqueOrThrow({ where: { userId }, select: { id: true } });
+        await transaction.auditLog.create({
+          data: { actorUserId: userId, action: 'github.disconnected', targetType: 'github_account', targetId: account.id },
+        });
+      }
       return result.count === 1;
     });
     if (!disconnected) throw new HttpException({ code: 'GITHUB_NOT_CONNECTED', message: 'GitHub is not connected.' }, HttpStatus.CONFLICT);
@@ -154,10 +163,13 @@ export class GithubService {
       if (account === null || account.unlinkedAt !== null) return false;
       const owner = await transaction.githubInstallation.findUnique({ where: { githubInstallationId: installation.id }, select: { githubAccountId: true } });
       if (owner !== null && owner.githubAccountId !== account.id) return false;
-      await transaction.githubInstallation.upsert({
+      const persisted = await transaction.githubInstallation.upsert({
         where: { githubInstallationId: installation.id },
         create: { githubInstallationId: installation.id, githubAccountId: account.id, accountType: installation.accountType, accountLogin: installation.accountLogin, suspendedAt: installation.suspended ? new Date() : null },
         update: { accountType: installation.accountType, accountLogin: installation.accountLogin, suspendedAt: installation.suspended ? new Date() : null },
+      });
+      await transaction.auditLog.create({
+        data: { actorUserId: userId, action: 'github.installation_linked', targetType: 'github_installation', targetId: persisted.id },
       });
       return true;
     });

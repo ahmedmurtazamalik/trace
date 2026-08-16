@@ -24,7 +24,7 @@ async function interceptEditableReport(page: Page) {
   const saveBodies: unknown[] = [];
   const regenerationBodies: unknown[] = [];
   await page.route("**/api/v1/auth/me", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(session) }));
-  await page.route("**/api/v1/activity**", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ items: [{ id: "evt-contributor", source: "github", type: "commit", repository: { id: "repo_1", fullName: "trace/web", url: "https://github.com/trace/web" }, contributor: { id: "contributor_1", username: "alice.dev", displayName: "Alice Developer", avatarUrl: null }, occurredAt: "2026-08-12T08:00:00.000Z", facts: { sha: "abcdef1", message: "Ship report lifecycle", branch: "main", filesChanged: 1, additions: 2, deletions: 0, url: null } }], pageInfo: { nextCursor: null, hasNextPage: false } }) }));
+  await page.route("**/api/v1/activity**", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ items: [{ id: "evt-contributor", source: "github", type: "commit", repository: { id: "repo_1", fullName: "trace/web", url: "https://github.com/trace/web" }, contributor: { id: "contributor_1", username: "alice.dev", displayName: "Alice Developer", avatarUrl: null }, occurredAt: "2026-08-12T08:00:00.000Z", facts: { sha: "abcdef1".padEnd(40, "0"), message: "Ship report lifecycle", branch: "main", filesChanged: 1, additions: 2, deletions: 0, url: null } }], pageInfo: { nextCursor: null, hasNextPage: false } }) }));
   await page.route("**/api/v1/reports/**", (route) => {
     const request = route.request();
     const url = new URL(request.url());

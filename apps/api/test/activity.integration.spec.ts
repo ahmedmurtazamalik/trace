@@ -24,7 +24,7 @@ describe('Activity API', () => {
 
   beforeAll(async () => {
     process.env.NODE_ENV = 'test';
-    process.env.REDIS_URL = 'redis://localhost:6379';
+    process.env.REDIS_URL ??= 'redis://localhost:6379';
     process.env.SESSION_SECRET = 'test-only-session-secret-at-least-32-characters';
     process.env.GITHUB_APP_CLIENT_ID = 'test-client-id';
     process.env.GITHUB_APP_SLUG = 'trace-test-app';
@@ -237,8 +237,8 @@ describe('Activity API', () => {
       .query({ date: '2026-08-12', timezone: 'UTC' }).set('Cookie', sessionCookie).expect(200);
     expect(dashboardResponseSchema.parse(noActivityResponse.body as unknown).state).toBe('NO_ACTIVITY');
     const hiddenResponse = await request(server).get('/api/v1/dashboard')
-      .query({ date: '2026-08-12', timezone: 'UTC', repositoryId: 'inaccessible-repository' }).set('Cookie', sessionCookie).expect(200);
-    expect(dashboardResponseSchema.parse(hiddenResponse.body as unknown)).toMatchObject({ state: 'NO_ACTIVITY', metrics: { activityCount: 0 }, recentActivity: [] });
+      .query({ date: '2026-08-12', timezone: 'UTC', repositoryId: 'inaccessible-repository' }).set('Cookie', sessionCookie).expect(404);
+    expect(hiddenResponse.body).toEqual(expect.objectContaining({ code: 'REPOSITORY_NOT_FOUND' }));
     await request(server).get('/api/v1/dashboard')
       .query({ date: 'not-a-date', timezone: 'UTC' }).set('Cookie', sessionCookie).expect(400);
 
@@ -267,8 +267,8 @@ describe('Activity API', () => {
       .query({ date: '2026-08-12', timezone: 'UTC', repositoryId: repository.id }).set('Cookie', sessionCookie).expect(200);
     expect(dashboardResponseSchema.parse(processingWithNoActivityResponse.body as unknown).state).toBe('PARTIAL');
     const mismatchedRepositoryResponse = await request(server).get('/api/v1/dashboard')
-      .query({ date: '2026-08-12', timezone: 'UTC', repositoryId: 'inaccessible-repository' }).set('Cookie', sessionCookie).expect(200);
-    expect(dashboardResponseSchema.parse(mismatchedRepositoryResponse.body as unknown).state).toBe('NO_ACTIVITY');
+      .query({ date: '2026-08-12', timezone: 'UTC', repositoryId: 'inaccessible-repository' }).set('Cookie', sessionCookie).expect(404);
+    expect(mismatchedRepositoryResponse.body).toMatchObject({ code: 'REPOSITORY_NOT_FOUND', message: 'Repository not found.' });
     await prisma.githubWebhookDelivery.update({
       where: { id: pendingWithNoActivity.id },
       data: { status: 'completed', processedAt: new Date('2026-08-12T12:00:00.000Z') },
@@ -341,6 +341,23 @@ describe('Activity API', () => {
     const readyResponse = await request(server).get('/api/v1/dashboard')
       .query({ date: '2026-08-12', timezone: 'UTC' }).set('Cookie', sessionCookie).expect(200);
     expect(dashboardResponseSchema.parse(readyResponse.body as unknown).state).toBe('READY');
+  });
+
+  it('normalizes impossible durable Git object IDs out of activity responses', async () => {
+    const fixture = await historicalActivity();
+    const invalid = await prisma.activityEvent.create({
+      data: {
+        sourceKey: `day7:invalid-oid:${fixture.repositoryId}`,
+        repositoryId: fixture.repositoryId,
+        source: 'github',
+        type: 'commit',
+        occurredAt: new Date('2026-08-12T11:59:00.000Z'),
+        metadata: { sha: 'a'.repeat(41), message: 'Impossible object ID' },
+      },
+    });
+    const response = await request(server).get('/api/v1/activity').set('Cookie', fixture.sessionCookie).expect(200);
+    const body = activityListResponseSchema.parse(response.body as unknown);
+    expect(body.items.find((item) => item.id === invalid.id)?.facts.sha).toBeNull();
   });
 
   it('applies local-day filters and stable filter-bound cursor pagination', async () => {
