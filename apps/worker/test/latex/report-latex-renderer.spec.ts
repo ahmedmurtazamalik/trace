@@ -45,6 +45,8 @@ describe('Trace LaTeX report renderer', () => {
     const second = renderReportLatex(snapshot, content, 1);
 
     expect(first).toBe(second);
+    expect(first).toContain('% Trace controlled template adapted from the approved sample theme');
+    expect(first).not.toContain('@@TRACE_');
     expect(first).toContain('\\definecolor{primarycolor}{RGB}{0, 51, 102}');
     expect(first).toContain('\\definecolor{secondarycolor}{RGB}{0, 128, 128}');
     expect(first).toContain('\\usepackage{palatino}');
@@ -53,6 +55,21 @@ describe('Trace LaTeX report renderer', () => {
     expect(first).toContain('Revision 1');
     expect(first).toContain('Repositories & 1');
     expect(first).toContain('Commits & 2');
+  });
+
+  it('omits the accomplishments box when a validated contributor has no accomplishments', () => {
+    const withoutAccomplishments = {
+      ...content,
+      repositories: content.repositories.map((repository) => ({
+        ...repository,
+        contributors: repository.contributors.map((contributor) => ({ ...contributor, accomplishments: [] })),
+      })),
+    };
+
+    const rendered = renderReportLatex(snapshot, withoutAccomplishments, 1);
+
+    expect(rendered).not.toContain('\\begin{itemize}[leftmargin=*]\n\n\\end{itemize}');
+    expect(rendered).not.toContain('title={Accomplishments}');
   });
 
   it('escapes every untrusted LaTeX metacharacter without exposing commands', () => {

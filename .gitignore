@@ -25,5 +25,6 @@ playwright-report/
 # Generated reports and temporary files
 *.pdf
 *.tex
+!apps/worker/src/latex/templates/*.tex
 .tmp/
 tmp/

@@ -1,0 +1,81 @@
+% Trace controlled template adapted from the approved sample theme
+% This file is trusted application code. Only the four fixed markers below
+% may be replaced, and every inserted value is produced by the validated,
+% LaTeX-escaping renderer.
+\documentclass[12pt,a4paper]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage{lmodern}
+\usepackage{booktabs}
+\usepackage[table,xcdraw]{xcolor}
+\usepackage{hyperref}
+\usepackage{fancyhdr}
+\usepackage{titlesec}
+\usepackage{enumitem}
+\usepackage{tcolorbox}
+\usepackage{tabularx}
+\usepackage{palatino}
+
+\definecolor{primarycolor}{RGB}{0, 51, 102}
+\definecolor{secondarycolor}{RGB}{0, 128, 128}
+\definecolor{lightgray}{RGB}{245,245,245}
+\definecolor{tableheadcolor}{RGB}{224, 235, 235}
+\definecolor{boxborder}{RGB}{100, 100, 100}
+
+\hypersetup{
+  colorlinks=true,
+  linkcolor=primarycolor,
+  citecolor=secondarycolor,
+  urlcolor=secondarycolor,
+  bookmarksnumbered=true,
+  pdfborder={0 0 0}
+}
+
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\small\textit{\color{secondarycolor}Trace}}
+\fancyhead[R]{\small\textit{\color{secondarycolor}Engineering Activity Report}}
+\fancyfoot[C]{\thepage}
+\renewcommand{\headrulewidth}{0.5pt}
+\renewcommand{\headrule}{\hbox to\headwidth{\color{primarycolor}\leaders\hrule height \headrulewidth\hfill}}
+
+\titleformat{\section}
+  {\Large\bfseries\color{primarycolor}}
+  {\thesection}{1em}{}[\titlerule]
+\titleformat{\subsection}
+  {\large\bfseries\color{secondarycolor}}
+  {\thesubsection}{1em}{}
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{0.65em}
+
+\begin{document}
+@@TRACE_TITLE_PAGE@@
+
+\newpage
+\thispagestyle{empty}
+\vspace*{2cm}
+\begin{tcolorbox}[
+  colback=white,
+  colframe=lightgray,
+  boxrule=2pt,
+  arc=0mm,
+  width=\textwidth,
+  top=1cm,
+  bottom=1cm,
+  left=1cm,
+  right=1cm
+]
+\begin{center}
+\Large\textbf{\color{primarycolor}Executive Summary}
+\end{center}
+\vspace{0.5cm}
+@@TRACE_EXECUTIVE_SUMMARY@@
+\end{tcolorbox}
+
+\newpage
+\tableofcontents
+\newpage
+\section{Activity Overview}
+@@TRACE_ACTIVITY_FACTS@@
+
+@@TRACE_REPOSITORIES@@
+\end{document}

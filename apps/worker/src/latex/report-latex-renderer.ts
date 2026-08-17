@@ -1,9 +1,19 @@
 import { Buffer } from 'node:buffer';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { reportContentSchema } from '@trace/shared';
 import { reportInputSnapshotSchema, type ReportInputSnapshot } from '../reports/report-provider';
 
 const MAX_LATEX_BYTES = 2 * 1024 * 1024;
+const MAX_TEMPLATE_BYTES = 128 * 1024;
 const LATEX_ERROR = 'REPORT_RENDER_INVALID';
+const TEMPLATE_MARKERS = [
+  '@@TRACE_TITLE_PAGE@@',
+  '@@TRACE_EXECUTIVE_SUMMARY@@',
+  '@@TRACE_ACTIVITY_FACTS@@',
+  '@@TRACE_REPOSITORIES@@',
+] as const;
+const REPORT_TEMPLATE = loadReportTemplate();
 
 const ESCAPES: Readonly<Record<string, string>> = {
   '\\': '\\textbackslash{}',
@@ -62,27 +72,34 @@ ${escapeLatex(repositoryContent.summary)}
 ${contributors}`;
   }).join('\n');
 
-  const latex = `${preamble()}
-\\begin{document}
-${titlePage(snapshot.data, revision)}
-\\newpage
-\\thispagestyle{empty}
-\\vspace*{2cm}
-\\begin{tcolorbox}[colback=white,colframe=lightgray,boxrule=2pt,arc=0mm,width=\\textwidth,top=1cm,bottom=1cm,left=1cm,right=1cm]
-\\begin{center}\\Large\\textbf{\\color{primarycolor}Executive Summary}\\end{center}
-\\vspace{0.5cm}
-${escapeLatex(content.data.executiveSummary)}
-\\end{tcolorbox}
-\\newpage
-\\tableofcontents
-\\newpage
-\\section{Activity Overview}
-${factsTable(snapshot.data.facts)}
-${repositories}
-\\end{document}
-`;
+  const latex = renderTemplate({
+    '@@TRACE_TITLE_PAGE@@': titlePage(snapshot.data, revision),
+    '@@TRACE_EXECUTIVE_SUMMARY@@': escapeLatex(content.data.executiveSummary),
+    '@@TRACE_ACTIVITY_FACTS@@': factsTable(snapshot.data.facts),
+    '@@TRACE_REPOSITORIES@@': repositories,
+  });
   if (Buffer.byteLength(latex, 'utf8') > MAX_LATEX_BYTES) throw new Error(LATEX_ERROR);
   return latex;
+}
+
+function loadReportTemplate(): string {
+  try {
+    const template = readFileSync(join(__dirname, 'templates', 'trace-report-theme.tex'), 'utf8');
+    if (Buffer.byteLength(template, 'utf8') > MAX_TEMPLATE_BYTES) throw new Error(LATEX_ERROR);
+    for (const marker of TEMPLATE_MARKERS) {
+      if (template.split(marker).length !== 2) throw new Error(LATEX_ERROR);
+    }
+    return template;
+  } catch {
+    throw new Error(LATEX_ERROR);
+  }
+}
+
+function renderTemplate(replacements: Record<(typeof TEMPLATE_MARKERS)[number], string>): string {
+  let rendered = REPORT_TEMPLATE;
+  for (const marker of TEMPLATE_MARKERS) rendered = rendered.replace(marker, replacements[marker]);
+  if (rendered.includes('@@TRACE_')) throw new Error(LATEX_ERROR);
+  return rendered;
 }
 
 function matchesSnapshotStructure(snapshot: ReportInputSnapshot, content: { repositories: Array<{
@@ -98,37 +115,6 @@ function matchesSnapshotStructure(snapshot: ReportInputSnapshot, content: { repo
         (item) => item.contributorId === contributor.id,
       ));
   });
-}
-
-function preamble(): string {
-  return `\\documentclass[12pt,a4paper]{article}
-\\usepackage[margin=1in]{geometry}
-\\usepackage{lmodern}
-\\usepackage{booktabs}
-\\usepackage[table,xcdraw]{xcolor}
-\\usepackage{hyperref}
-\\usepackage{fancyhdr}
-\\usepackage{titlesec}
-\\usepackage{enumitem}
-\\usepackage{tcolorbox}
-\\usepackage{tabularx}
-\\usepackage{palatino}
-\\definecolor{primarycolor}{RGB}{0, 51, 102}
-\\definecolor{secondarycolor}{RGB}{0, 128, 128}
-\\definecolor{lightgray}{RGB}{245,245,245}
-\\definecolor{tableheadcolor}{RGB}{224,235,235}
-\\hypersetup{colorlinks=true,linkcolor=primarycolor,urlcolor=secondarycolor,bookmarksnumbered=true,pdfborder={0 0 0}}
-\\pagestyle{fancy}
-\\fancyhf{}
-\\fancyhead[L]{\\small\\textit{\\color{secondarycolor}Trace}}
-\\fancyhead[R]{\\small\\textit{\\color{secondarycolor}Engineering Activity Report}}
-\\fancyfoot[C]{\\thepage}
-\\renewcommand{\\headrulewidth}{0.5pt}
-\\renewcommand{\\headrule}{\\hbox to\\headwidth{\\color{primarycolor}\\leaders\\hrule height \\headrulewidth\\hfill}}
-\\titleformat{\\section}{\\Large\\bfseries\\color{primarycolor}}{\\thesection}{1em}{}[\\titlerule]
-\\titleformat{\\subsection}{\\large\\bfseries\\color{secondarycolor}}{\\thesubsection}{1em}{}
-\\setlength{\\parindent}{0pt}
-\\setlength{\\parskip}{0.65em}`;
 }
 
 function titlePage(snapshot: ReportInputSnapshot, revision: number): string {
@@ -191,15 +177,15 @@ function renderContributor(
   content: { summary: string; accomplishments: string[] },
 ): string {
   const name = contributor.displayName ?? contributor.username ?? contributor.id;
-  const accomplishments = content.accomplishments
-    .map((item) => `\\item ${escapeLatex(item)}`)
-    .join('\n');
-  return `\\subsection{${escapeLatex(name)}}
-${factsTable(contributor.facts)}
-${escapeLatex(content.summary)}
+  const accomplishmentsBox = content.accomplishments.length === 0
+    ? ''
+    : `
 \\begin{tcolorbox}[colback=white,colframe=secondarycolor,fonttitle=\\bfseries,title={Accomplishments}]
 \\begin{itemize}[leftmargin=*]
-${accomplishments}
+${content.accomplishments.map((item) => `\\item ${escapeLatex(item)}`).join('\n')}
 \\end{itemize}
 \\end{tcolorbox}`;
+  return `\\subsection{${escapeLatex(name)}}
+${factsTable(contributor.facts)}
+${escapeLatex(content.summary)}${accomplishmentsBox}`;
 }

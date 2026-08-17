@@ -650,3 +650,13 @@ No Person A-owned backend or shared-contract source was changed.
 ### What's next
 - Review the cross-ownership backend/database/shared-contract changes and CI results.
 - After approval, merge through the repository's normal integration-owner process and repeat the authenticated localhost smoke on the exact merged branch.
+
+## Day 10 joint gate closure — authenticated real-backend acceptance
+
+### Completed on 2026-08-17
+- Closed the previously unfinished joint gate against exact `origin/main` base `329ec3c` using the production web build, a real API, isolated PostgreSQL and Redis, the report queue/worker, the supplied controlled theme, and the sandboxed XeLaTeX image.
+- An authenticated Chromium session created the report through the real UI, saved revision 2 through the real editor, waited for real worker completion, regenerated the saved current revision, and downloaded the real PDF through the checksum-verifying frontend adapter.
+- The downloaded artifact was 20,321 bytes, matched the API's SHA-256 metadata exactly, opened successfully as a four-page PDF, and used the safe filename `report.pdf`.
+- A real stale edit using `expectedRevision: 1` after revision 2 was current returned HTTP `409 REPORT_REVISION_CONFLICT` and did not overwrite current content.
+- Visual evidence showed the completed report detail page, revision-2 `report.tex` and `report.pdf` artifacts, enabled regenerate/download actions, factual metrics, saved structured prose, and no obvious clipping or horizontal overflow.
+- Day 10 is now formally complete for both Person A and Person B. Live two-account GitHub-provider acceptance remains outside this report/PDF gate.

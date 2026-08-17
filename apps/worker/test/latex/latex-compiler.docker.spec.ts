@@ -34,7 +34,7 @@ describe('Docker LaTeX compiler acceptance', () => {
       executiveSummary: 'Safe % summary with \\write18{touch /tmp/pwned}.',
       repositories: [{
         repositoryId: 'repo_1', summary: 'Backend report.',
-        contributors: [{ contributorId: 'person_1', summary: 'Contributed safely.', accomplishments: ['Delivered #1 & documented_2.'] }],
+        contributors: [{ contributorId: 'person_1', summary: 'Contributed safely.', accomplishments: [] }],
       }],
     };
     const source = renderReportLatex(snapshot, content, 1);

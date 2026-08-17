@@ -371,6 +371,15 @@ Final recorded results:
 - Renderer, compiler-boundary, real Docker PDF compilation, storage, worker lifecycle/fencing, revision concurrency, regeneration, CSRF, owner isolation, and checksum-verified download tests cover the Day 10 behavior.
 - Production never falls back to fake rendering, fake storage, or the deterministic report provider.
 
+### Formal joint gate closure — 2026-08-17
+
+- Integrated the supplied approved theme as the tracked controlled template at `apps/worker/src/latex/templates/trace-report-theme.tex`; the renderer now loads four fixed structural markers from that asset, validates each marker appears exactly once, escapes all inserted data, rejects residual markers, and enforces a 128 KiB template bound.
+- Added build-time asset copying and byte-for-byte verification so the compiled worker loads the same reviewed template from `dist/src/latex/templates` rather than falling back to an embedded or runtime-provided template.
+- TDD exposed and fixed a real empty-accomplishments edge case: the deterministic provider may validly return an empty list, while an empty LaTeX `itemize` fails compilation. The renderer now omits that box, with focused and real-Docker regression coverage.
+- Ran the missing authenticated integration smoke on exact `origin/main` base `329ec3c`: browser report creation → API → isolated PostgreSQL/Redis → report queue/worker → controlled template → sandboxed XeLaTeX → browser revision save → regeneration → stale-revision rejection → checksum-verified PDF download/open.
+- Final live result: completed revision 2, real 20,321-byte four-page PDF, exact SHA-256 match, and stale revision rejected with HTTP `409 REPORT_REVISION_CONFLICT`. The browser visibly showed `COMPLETED`, revision-2 `report.tex` and `report.pdf` artifacts, enabled regeneration/download actions, and no clipping or horizontal overflow.
+- Day 10's owner edit/regenerate/real-PDF/download gate and the Person A/Person B joint operational gate are formally complete. Live GitHub-provider acceptance remains a separate later-plan boundary.
+
 ---
 
 ## Day 11 — Person A
