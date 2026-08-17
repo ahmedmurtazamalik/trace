@@ -730,7 +730,7 @@ No Person A-owned backend or shared-contract source was changed.
 - The corrective review then found that `http.all` accepted unsupported repository-tracking methods and mocked GitHub authorization URLs could still open live GitHub. Tracking now has explicit POST/DELETE handlers, GET/PUT/PATCH are proven `501` failures, connect/switch/installation mock handlers were removed, and the corresponding demo controls are disabled with an accessible explanation while safe in-memory disconnect stays enabled.
 - The first mock Playwright assertions guessed combined text/route headings. Captured DOM proved product behavior was correct; selectors were corrected to the exact semantic structure before the gate passed.
 - The dynamic GitHub caption contrast issue was a real product defect and was fixed rather than excluded from axe.
-- Branch `day13` is local-only at this handoff point; no PR, merge, or deployment exists.
+- Ali authorized Day 13 publication after Person A's Day 13 PR #29 merged into `main`; branch `day13` was rebased onto merge commit `2f5e88a468f22d09dfef1b28f4f384be3d765c66`. No Day 13 merge or deployment exists.
 
 ### Verification
 - Mock handler contract/lifecycle suite: PASS, 24/24, including CSRF rejection, unknown-path and unsupported-method/API fail-closed behavior, create/list/detail coherence, revision increment/content persistence, checksum-consistent download, and regeneration transition.
@@ -745,6 +745,7 @@ No Person A-owned backend or shared-contract source was changed.
 - Production dependency audit: PASS, no known vulnerabilities.
 - `git diff --check`, credential-pattern review, and root README scope check: PASS; only the explicit test/demo dummy CSRF fixtures `csrf-value` and `csrf-demo-only` matched the assignment scanner.
 - Final independent exact-tree review `deleg_ebbd6c24`: PASS with no release blockers; the reviewer independently confirmed all gates and made no workspace changes.
+- Post-merge compatibility check against Person A's merged Day 13 tree: PASS. The conflict-free combined tree passed frozen install, 18 migrations plus deterministic seed, 366 workspace tests (2 intentionally skipped), 98 PostgreSQL/Redis integration tests, repository lint/typecheck/build, 68 standard browser tests, 2 credential-free browser/axe tests, 6 deployment-contract tests, production audit, and a real production-web → API → PostgreSQL/Redis registration/dashboard smoke.
 
 ### What's next
-- Commit the approved tree locally. Push/open a PR only when Ali authorizes publication; do not edit the root README.
+- Publish `day13` and open the authorized PR against `main`; wait for both GitHub CI jobs and integration-owner review. Do not merge or deploy without separate authorization; do not edit the root README.
