@@ -660,3 +660,40 @@ No Person A-owned backend or shared-contract source was changed.
 - A real stale edit using `expectedRevision: 1` after revision 2 was current returned HTTP `409 REPORT_REVISION_CONFLICT` and did not overwrite current content.
 - Visual evidence showed the completed report detail page, revision-2 `report.tex` and `report.pdf` artifacts, enabled regenerate/download actions, factual metrics, saved structured prose, and no obvious clipping or horizontal overflow.
 - Day 10 is now formally complete for both Person A and Person B. Live two-account GitHub-provider acceptance remains outside this report/PDF gate.
+
+## Day 12 — Frontend test completion
+
+### What was done
+- Started local `day12` directly from exact merged `origin/main` commit `f2e652760eb588f99903f7dc746b90a79933fc10`, which contains Person A's backend Day 12 test completion.
+- Added MSW HTTP-boundary integration coverage for authentication, GitHub, repositories, Activity, and Dashboard; existing report tests continue to cover report creation/status, revision editing, regeneration, and checksum-verified downloads through MSW.
+- Kept the complete Playwright workflows for register/login/logout, mocked GitHub connection and installation, repository tracking/removal/restoration, Activity filters/pagination, Dashboard filters, report creation/status/edit/regeneration/download, desktop Chrome, and Pixel 5.
+- Fixed the shared Dialog primitive test-first: simultaneous dialogs now have independent accessible names, descriptions have explicit relationships, and Escape closes an open dialog.
+- Added explicit UI test cleanup so rendered DOM cannot leak between test cases.
+- Made GitHub outbound-navigation browser tests deterministic by intercepting the fake `github.com` destination instead of depending on GitHub's live website or external network timing.
+- Added no major feature and changed no backend, worker, database, shared contract, infrastructure, root README, package manifest, or lockfile.
+
+### How to test
+1. Run `NODE_ENV=test pnpm --filter @trace/web test` and expect 167/167.
+2. Run `NODE_ENV=test pnpm --filter @trace/ui test` and expect 4/4.
+3. Run `NODE_ENV=production pnpm --filter @trace/web test:e2e` and expect 68/68 across desktop Chrome and Pixel 5.
+4. Run web lint, web/UI typecheck, and the production web build; all must exit successfully.
+
+### Issues and important notes
+- The initial full Playwright baseline passed 66/68. Two mobile GitHub tests depended on navigating to live GitHub: one stalled externally and one loaded GitHub's live 404. The production redirect was correct; the test boundary was repaired to serve deterministic fake GitHub destinations, and the affected spec then passed 8/8 before the complete suite passed 68/68.
+- The first production build after the Dialog fix correctly rejected a hook-using module without a client boundary. Adding the required `use client` directive repaired the build; focused UI tests/typecheck and the full production build passed afterward.
+- MSW and Playwright responses are deterministic mocks. They prove frontend contracts, error handling, and workflows, not live GitHub-provider or real database/queue/worker execution.
+- Ali's Day 12 work is local on branch `day12`. It is not committed, pushed, in a PR, merged, or deployed.
+
+### Verification
+- Expected Dialog RED: 2 failed / 2 passed, proving duplicate accessible names and missing Escape handling; focused GREEN: 4/4.
+- Day 12 MSW integration suite: PASS, 6/6.
+- Complete web unit/component/API suite: PASS, 167/167 across 29 files.
+- Shared UI primitive suite: PASS, 4/4.
+- Complete Playwright/browser accessibility suite: PASS, 68/68 across desktop Chrome and Pixel 5.
+- Web lint: PASS, no warnings or errors except Next's upstream `next lint` deprecation notice.
+- Web and UI typecheck: PASS.
+- Production web build: PASS, 14/14 routes generated.
+
+### What's next
+- With Ali's separate permission: commit and push local branch `day12`.
+- With separate permission after push: open the Day 12 PR; after integration-owner review/merge, rerun the exact merged-main frontend gate before calling the full team Day 12 complete.

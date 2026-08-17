@@ -23,6 +23,14 @@ async function authenticated(page: Page) {
   await page.route("**/api/v1/auth/me", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(session) }));
 }
 
+async function interceptGithubDestination(page: Page) {
+  await page.route(/^https:\/\/github\.com\//, (route) => route.fulfill({
+    status: 200,
+    contentType: "text/html",
+    body: "<!doctype html><title>Mock GitHub destination</title>",
+  }));
+}
+
 test("connected GitHub status stays separate from installation and disconnect retains history", async ({ page }) => {
   await authenticated(page);
   let disconnected = false;
@@ -59,6 +67,7 @@ test("connected GitHub status stays separate from installation and disconnect re
 
 test("confirmed account switch uses the dedicated intent-bound endpoint", async ({ page }) => {
   await authenticated(page);
+  await interceptGithubDestination(page);
   await page.route("**/api/v1/github/status", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(connected) }));
   let switchCsrf: string | undefined;
   await page.route("**/api/v1/github/switch", async (route) => {
@@ -77,6 +86,7 @@ test("confirmed account switch uses the dedicated intent-bound endpoint", async 
 
 test("connect uses the backend github.com URL and callback errors remain closed", async ({ page }) => {
   await authenticated(page);
+  await interceptGithubDestination(page);
   await page.route("**/api/v1/github/status", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({
     accountConnection: { status: "DISCONNECTED", account: null },
     installationAuthorization: { status: "NOT_INSTALLED", installation: null },
@@ -95,6 +105,7 @@ test("connect uses the backend github.com URL and callback errors remain closed"
 
 test("connected account can start or repair GitHub App installation", async ({ page }) => {
   await authenticated(page);
+  await interceptGithubDestination(page);
   await page.route("**/api/v1/github/status", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({
     ...connected,
     installationAuthorization: { status: "NOT_INSTALLED", installation: null },
