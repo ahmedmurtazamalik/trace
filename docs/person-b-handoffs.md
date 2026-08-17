@@ -583,3 +583,28 @@ No Person A-owned backend or shared-contract source was changed.
 ### What's next
 - With Ali's permission: push `day11`, then separately open the Day 11 PR.
 - After merge, verify the exact integrated main branch before calling the full team Day 11 complete.
+
+## Day 11 follow-up — repository/account requirements and typography
+
+### What was done
+- Increased the global root type scale from 16px to 16.5px and regular body weight to 450 without changing layout, routes, colors, or component hierarchy.
+- Added a focused typography token regression test.
+- Traced repository removal and GitHub identity switching through the frozen frontend/shared/backend contracts rather than adding misleading frontend-only controls.
+
+### Issues / notes
+- Durable repository removal is not in the current contract. `DELETE /repositories/:id/tracking` only disables tracking; synchronized accessible repositories remain listable. A real **Remove repository** action needs backend-persisted dismissal/removal semantics and must atomically stop tracking.
+- Switching GitHub identities is explicitly blocked in `GithubService.callback`: a disconnected Trace account may reconnect the same `githubUserId`, but a different GitHub user ID is rejected. Supporting **Switch GitHub account** requires Person A to safely untrack/detach old repositories/installations, enforce cross-user uniqueness, link the new account, and add integration tests before Person B exposes the control.
+- No backend/shared-contract code was changed in this follow-up.
+
+### Verification
+- Typography RED confirmed the old tokens; focused GREEN: 1/1.
+- Complete web unit/component suite: PASS, 157/157 across 28 files.
+- Web lint and typecheck: PASS.
+- Complete Playwright suite: PASS, 66/66 across desktop and Pixel 5, including all-route horizontal-overflow checks.
+- Final production build after browser tests: PASS, 14/14 routes generated.
+- Live computed styles: root 16.5px, body weight 450, viewport width equals body scroll width.
+- Desktop visual inspection: PASS; no clipping, crowding, or layout breakage.
+
+### What's next
+- Person A must freeze contracts/implementation for durable repository removal and GitHub identity replacement.
+- After those backend contracts merge, Person B can add the accessible confirmation and recovery UX test-first.
