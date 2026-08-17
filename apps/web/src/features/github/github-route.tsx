@@ -14,5 +14,6 @@ function callbackResult(searchParams: URLSearchParams): GithubCallbackResult | u
 
 export function GithubRoute() {
   const searchParams = useSearchParams();
-  return <GithubConnectionPanel callbackResult={callbackResult(searchParams)} />;
+  const demoMode = process.env.NEXT_PUBLIC_MSW_ENABLED === "true";
+  return <GithubConnectionPanel callbackResult={callbackResult(searchParams)} demoMode={demoMode} />;
 }

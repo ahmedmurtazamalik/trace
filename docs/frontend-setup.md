@@ -1,115 +1,169 @@
 # Trace Frontend Setup
 
-## Scope
-
-This document covers the Person B-owned Next.js frontend in `apps/web` and shared visual primitives in `packages/ui`.
-
-Day 2 implements authentication UI against the frozen schemas and fixtures in `packages/shared/src/auth.ts` and `packages/shared/test/fixtures/auth/`. Person B does not edit those contracts.
+This guide covers the Next.js frontend in `apps/web` and shared UI components in `packages/ui`. It does not configure the API, database, Redis, queue worker, GitHub App, report storage, email, LLM, or LaTeX services.
 
 ## Prerequisites
 
 - Node.js 20 or newer
-- pnpm 10 or newer
-- For live API testing: Person A's API, PostgreSQL, and Redis services
+- pnpm 10.15.1 or a compatible pnpm 10 release
+- Chromium installed by Playwright when browser tests are required
+
+Check the local tools:
+
+```bash
+node --version
+pnpm --version
+```
 
 ## Install
 
 From the repository root:
 
 ```bash
-pnpm install --filter @trace/ui --filter @trace/shared --filter @trace/web --lockfile=false
+pnpm install --frozen-lockfile
 ```
 
-The integration owner manages the root lockfile at the daily merge gate.
+For the first browser-test run:
 
-## Configure
+```bash
+pnpm --filter @trace/web exec playwright install chromium
+```
+
+## Fastest start: credential-free demo mode
+
+Demo mode runs the real frontend with a browser Mock Service Worker (MSW). It requires no API, PostgreSQL, Redis, GitHub credentials, email provider, queue worker, report storage, LLM, or LaTeX installation.
+
+```bash
+pnpm --filter @trace/web dev:mock
+```
+
+Open `http://localhost:3000/dashboard`.
+
+The page displays a persistent **Demo data** note. Demo responses are deterministic, in-memory fixtures from `apps/web/src/mocks/`; they are not current GitHub, database, or production data. Reloading or restarting may reset simulated changes. OAuth provider redirects, real email delivery, durable report processing, and real artifact storage are not provided by demo mode.
+
+Use another port when 3000 is busy:
+
+```bash
+pnpm --filter @trace/web dev:mock --hostname 0.0.0.0 --port 3100
+```
+
+Then open `http://localhost:3100/dashboard` on the host computer.
+
+### Verify demo mode automatically
+
+```bash
+NODE_ENV=production pnpm --filter @trace/web test:e2e:mock
+```
+
+This builds and starts Trace on port 3201, uses the real browser MSW worker, and checks the dashboard, repository tracking, activity, reports, and GitHub pages in desktop Chrome and a Pixel 5 viewport. The Playwright test does not intercept the API itself.
+
+The committed worker file is `apps/web/public/mockServiceWorker.js`. Regenerate it only after intentionally upgrading MSW:
+
+```bash
+cd apps/web
+pnpm exec msw init public --save
+```
+
+## Live frontend configuration
+
+Copy the frontend-only example:
 
 ```bash
 cp apps/web/.env.example apps/web/.env.local
 ```
 
-`NEXT_PUBLIC_API_ORIGIN` is the browser-visible API origin. The default example is:
+Supported browser-visible variables:
 
 ```dotenv
 NEXT_PUBLIC_API_ORIGIN=http://localhost:3001
+NEXT_PUBLIC_MSW_ENABLED=false
 ```
 
-Never place backend secrets, session credentials, CSRF secrets, database URLs, or provider tokens in a `NEXT_PUBLIC_*` variable.
+- `NEXT_PUBLIC_API_ORIGIN` is the API origin used by browser requests. Do not include a trailing slash.
+- `NEXT_PUBLIC_MSW_ENABLED=true` enables deterministic browser mocks. Prefer `dev:mock`, which sets this safely for one command.
+- Every `NEXT_PUBLIC_*` value is embedded in browser code and is public.
 
-## Run locally
+Never put session credentials, CSRF secrets, database URLs, Redis URLs, GitHub client secrets, App private keys, provider tokens, email credentials, LLM keys, or storage credentials in the frontend environment.
+
+## Run against the live API
+
+The API and its required services must already be healthy according to the backend operations documentation. Then run:
 
 ```bash
 pnpm --filter @trace/web dev
 ```
 
-Open `http://localhost:3000/login`. If port 3000 is occupied:
+Open `http://localhost:3000/login`.
 
-```bash
-pnpm --filter @trace/web dev --hostname 0.0.0.0 --port 3100
-```
-
-Then open `http://localhost:3100/login` on the host computer.
-
-## Day 2 authentication model
-
-- Registration/login establish an opaque session in the API's HTTP-only `trace_session` cookie.
-- Every auth request uses `credentials: "include"`.
-- Browser code never reads or stores the session token.
-- Public user data and the current CSRF token are held only in React memory.
-- `GET /api/v1/auth/me` bootstraps session state after a reload.
-- Logout sends CSRF only through the canonical `x-csrf-token` header and sends no body.
-- Protected pages do not render until session bootstrap succeeds.
-- Anonymous users return only to validated local paths after login; external/open-redirect values are rejected.
-- Forgot-password always displays the same non-enumerating success message.
+Live mode uses HTTP-only session cookies and in-memory CSRF state. The browser API origin must allow the exact frontend origin with credentialed CORS. `NEXT_PUBLIC_MSW_ENABLED` must be absent or `false`; otherwise the frontend displays fixtures instead of proving backend integration.
 
 ## Routes
 
-Public authentication routes:
+Public routes:
 
 - `/login`
 - `/register`
 - `/forgot-password`
 - `/reset-password?token=<opaque-token>`
 
-Protected workspace routes:
+Protected routes:
 
 - `/dashboard`
 - `/repositories`
+- `/repositories/<id>`
 - `/activity`
 - `/reports`
+- `/reports/<id>`
 - `/github`
 - `/settings`
 
-## Test strategy
+## Tests and quality gates
 
-Unit/component tests use injected deterministic adapters or mocked `fetch`. Browser tests intercept the frozen HTTP endpoints with Playwright route handlers. They do not require live PostgreSQL, Redis, email delivery, or a real user account.
+Run focused frontend gates from the repository root:
 
 ```bash
-pnpm --filter @trace/ui test
-pnpm --filter @trace/ui typecheck
-pnpm --filter @trace/web test
-pnpm --filter @trace/web lint
-pnpm --filter @trace/web typecheck
-pnpm --filter @trace/web build
-pnpm --filter @trace/web test:e2e
+NODE_ENV=test pnpm --filter @trace/ui test
+NODE_ENV=test pnpm --filter @trace/ui typecheck
+NODE_ENV=test pnpm --filter @trace/web test
+NODE_ENV=test pnpm --filter @trace/web lint
+NODE_ENV=test pnpm --filter @trace/web typecheck
+NODE_ENV=production pnpm --filter @trace/web build
+NODE_ENV=production pnpm --filter @trace/web test:e2e
+NODE_ENV=production pnpm --filter @trace/web test:e2e:mock
 ```
 
-Playwright starts a fresh non-reused Trace server on port 3100 and verifies desktop Chrome and Pixel 5 behavior, including authentication success/error paths, recovery privacy, protected return paths, CSRF logout, GitHub connection/disconnect states, responsive route shells, and keyboard skip navigation.
+- Vitest covers components, adapters, safe errors, URL state, and MSW HTTP boundaries.
+- Standard Playwright tests run desktop/mobile workflows with controlled route responses and axe WCAG A/AA scans.
+- Mock-mode Playwright builds the production frontend and verifies its committed MSW worker without external credentials.
+- A green mocked run proves frontend behavior and contract compatibility, not a live GitHub, database, queue, report-generation, or artifact-storage integration.
 
-## GitHub integration
+## Production build and local start
 
-The `/github` route consumes the frozen `@trace/shared` GitHub schemas through `src/api/github.ts`.
+```bash
+NODE_ENV=production pnpm --filter @trace/web build
+NODE_ENV=production pnpm --filter @trace/web start
+```
 
-- Trace identity, GitHub account connection, and GitHub App installation authorization remain separate.
-- Connect uses only the backend-provided, schema-validated HTTPS `github.com` URL.
-- Disconnect sends the in-memory CSRF token in `x-csrf-token` and retains historical activity.
-- Callback UI reads only the closed `result` and `reason` enums; raw provider and state values are ignored.
-- Day 3 tests use contract-shaped responses and do not require Person A's same-day backend or real GitHub credentials.
-- Repository rows on the GitHub page are explicitly illustrative Day 4 previews.
+The default production URL is `http://localhost:3000`. Build public environment values for the intended deployment; changing them after `next build` does not reliably rewrite an already-built client bundle.
 
-## Live-backend limitations
+## Common problems
 
-- The frontend client is wired to the real Day 2 endpoints, but deterministic browser tests use HTTP interception.
-- Live registration/login require the backend's PostgreSQL, Redis, and security configuration.
-- Person A's API documentation states that non-test forgot-password requests return `503 SERVICE_UNAVAILABLE` until a bounded outbound delivery provider is configured. The UI renders that as a safe temporary-unavailability message.
-- A joint live smoke test should be repeated after the integration environment is running.
+### The page remains on “Starting credential-free demo…”
+
+Confirm that `apps/web/public/mockServiceWorker.js` exists, clear the site’s service-worker data, reload, and rerun `pnpm install --frozen-lockfile`. The UI displays an explicit error if worker startup fails.
+
+### Live mode says the network is unavailable
+
+Check that the API is listening at `NEXT_PUBLIC_API_ORIGIN`, the exact frontend origin is allowed by credentialed CORS, and MSW is disabled.
+
+### Port 3000 is already in use
+
+Pass `--port 3100` to `dev` or `dev:mock`, then update backend CORS when using live mode.
+
+### Playwright reports a server collision
+
+Stop the process using ports 3100 or 3201. Both Playwright configurations use `reuseExistingServer: false` so a different app cannot produce false passing evidence.
+
+## CLI status
+
+Trace CLI support is future work. There is no supported CLI installation, local-commit ingestion, background watcher, or CLI-to-API workflow in the current frontend. Do not use illustrative `cli` activity fixtures as evidence that a CLI exists.

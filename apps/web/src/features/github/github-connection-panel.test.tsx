@@ -165,4 +165,21 @@ describe("GitHub connection UX", () => {
     expect(await screen.findByRole("button", { name: "Reconnect GitHub" })).toBeEnabled();
     expect(screen.queryByRole("button", { name: "Disconnect GitHub" })).not.toBeInTheDocument();
   });
+
+  it("keeps external GitHub actions disabled in demo mode while allowing safe disconnect", async () => {
+    const props = renderPanel({ demoMode: true, loadStatus: vi.fn().mockResolvedValue(connected) });
+    expect(await screen.findByRole("note")).toHaveTextContent("External GitHub authorization is unavailable in demo mode");
+    expect(screen.getByRole("button", { name: "Switch GitHub account" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Manage repository access" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Disconnect GitHub" })).toBeEnabled();
+    expect(props.beginSwitch).not.toHaveBeenCalled();
+    expect(props.beginInstallation).not.toHaveBeenCalled();
+  });
+
+  it("disables demo-mode GitHub connection before any provider request", async () => {
+    const props = renderPanel({ demoMode: true });
+    expect(await screen.findByRole("button", { name: "Connect GitHub" })).toBeDisabled();
+    expect(props.beginConnection).not.toHaveBeenCalled();
+    expect(props.navigate).not.toHaveBeenCalled();
+  });
 });
