@@ -615,7 +615,7 @@ No Person A-owned backend or shared-contract source was changed.
 - Implemented GitHub disconnect as one transaction that unlinks the account and disables tracking on its associated repository memberships while retaining history.
 - Added nullable `UserRepository.removedAt` state plus a migration, active/removed list visibility, atomic remove-and-untrack, restore, tracking protection while removed, and synchronization behavior that never silently restores removed memberships.
 - Added the real repository Remove/Restore API contract and frontend flows, including accessible confirmation, pending/error recovery, an explicit removed-repositories view, and restoration.
-- Implemented deliberate GitHub identity switching after OAuth verification: old installations and repository tracking are deactivated, historical activity remains, the new identity is persisted, cross-user identity uniqueness remains enforced, and an audit record is written.
+- Implemented deliberate GitHub identity switching after OAuth verification: connect/reconnect and switch use distinct persisted OAuth purposes bound to the starting GitHub identity; reconnect can only verify the same identity, switch must verify a different identity, successful callbacks invalidate superseded states, old installations and repository tracking are deactivated, historical activity remains, cross-user identity uniqueness remains enforced, and an audit record is written.
 - Added an accessible **Switch GitHub account** confirmation that starts a fresh OAuth authorization only after confirmation.
 - Preserved the completed 16.5px/450 typography adjustment from the Day 11 follow-up.
 
@@ -632,17 +632,18 @@ No Person A-owned backend or shared-contract source was changed.
 - **Live-provider boundary:** switching between two real GitHub identities still requires Ali to complete both GitHub OAuth interactions; automation does not bypass provider login/account selection.
 
 ### Verification
-- Root unit/component suites: PASS; web 159/159, API unit 15/15, worker 92 passed with 2 skipped, and all package suites green.
-- API integration suites: PASS, 11/11 suites and 86/86 tests.
-- Playwright: PASS, 66/66 desktop and Pixel 5 tests, including Remove → Removed view → Restore with real request/response assertions.
+- Root unit/component suites: PASS; web 160/160, API unit 15/15, worker 92 passed with 2 skipped, and all package suites green.
+- API integration suites: PASS, 11/11 suites and 88/88 tests, including reconnect identity-mismatch rejection and stale switch-state invalidation.
+- Playwright: PASS, 68/68 across desktop and Pixel 5, including proof that confirmed account switching calls only the dedicated CSRF-protected `/github/switch` endpoint, plus Remove → Removed view → Restore request/response assertions.
 - Root typecheck: PASS.
 - Root lint: PASS after narrowing BullMQ diagnostic job data from `any` to `unknown`.
 - Production web build: PASS, 14 routes generated.
-- Prisma migration status: 16 migrations applied; schema up to date.
+- Prisma migration status: 18 migrations applied; schema up to date.
 - Live localhost smoke: API health/readiness, PostgreSQL, Redis, worker, `/login`, and `/repositories` verified from `/home/ali/trace-day11-fullstack`.
 
 ### Issues / notes
 - A stale worker from `/home/ali/trace` consumed the shared Redis integration queue and caused false worker timeouts; stopping that old process made the focused real Redis→worker→database test pass. Test diagnostics now include bounded queue state on future timeouts.
+- Independent PR review found that the first implementation reused ordinary connect state for switching, which could let reconnect replace the identity or a stale callback switch it back. The PR now binds state to explicit connect/switch intent and starting identity, invalidates superseded states, and has API/unit/browser regressions for those paths.
 - Playwright write requests previously depended on a live cross-origin API preflight and only asserted request emission. The E2E server now builds with a same-origin mock API, exact mutation routes, and response-status assertions.
 - No merge was performed. This handoff accompanies the isolated `day11-fullstack-followup` PR for Person A/integration-owner review.
 

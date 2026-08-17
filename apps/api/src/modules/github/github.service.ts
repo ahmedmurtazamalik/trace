@@ -19,7 +19,8 @@ const STATE_TTL_MS = 10 * 60 * 1_000;
 const LINK_LIMIT = 10;
 const LINK_WINDOW_MS = 15 * 60 * 1_000;
 const hash = (value: string): string => createHash('sha256').update(value).digest('hex');
-type StatePurpose = 'OAUTH' | 'INSTALLATION' | 'INSTALLATION_VERIFY';
+type StatePurpose = 'OAUTH_CONNECT' | 'OAUTH_SWITCH' | 'INSTALLATION' | 'INSTALLATION_VERIFY';
+const OAUTH_PURPOSES: StatePurpose[] = ['OAUTH_CONNECT', 'OAUTH_SWITCH'];
 
 @Injectable()
 export class GithubService {
@@ -31,7 +32,19 @@ export class GithubService {
   ) {}
 
   async connect(userId: string, sessionId: string, directAddress: string): Promise<GithubConnectResponse> {
-    await this.limit('connect', userId, directAddress);
+    return this.startOauth(userId, sessionId, directAddress, 'OAUTH_CONNECT');
+  }
+
+  async switchAccount(userId: string, sessionId: string, directAddress: string): Promise<GithubConnectResponse> {
+    return this.startOauth(userId, sessionId, directAddress, 'OAUTH_SWITCH');
+  }
+
+  private async startOauth(userId: string, sessionId: string, directAddress: string, purpose: 'OAUTH_CONNECT' | 'OAUTH_SWITCH'): Promise<GithubConnectResponse> {
+    await this.limit(purpose === 'OAUTH_SWITCH' ? 'switch' : 'connect', userId, directAddress);
+    const existing = await this.prisma.githubAccount.findUnique({ where: { userId } });
+    if (purpose === 'OAUTH_SWITCH' && (existing === null || existing.unlinkedAt !== null)) {
+      throw new HttpException({ code: 'GITHUB_NOT_CONNECTED', message: 'Connect GitHub before switching accounts.' }, HttpStatus.CONFLICT);
+    }
     const state = randomBytes(32).toString('base64url');
     let authorizationUrl: string;
     try {
@@ -39,7 +52,7 @@ export class GithubService {
     } catch {
       throw this.unavailable();
     }
-    await this.storeState(userId, sessionId, state, 'OAUTH');
+    await this.storeState(userId, sessionId, state, purpose, undefined, existing?.githubUserId);
     return { authorizationUrl };
   }
 
@@ -47,7 +60,7 @@ export class GithubService {
     const parsed = githubCallbackQuerySchema.safeParse(input);
     if (!parsed.success) return this.redirect({ result: 'error', reason: 'callback_failed' });
     const query: GithubCallbackQuery = parsed.data;
-    const state = await this.consumeState(query.state, session, ['OAUTH', 'INSTALLATION_VERIFY']);
+    const state = await this.consumeState(query.state, session, [...OAUTH_PURPOSES, 'INSTALLATION_VERIFY']);
     if (state === null) return this.redirect({ result: 'error', reason: session === null ? 'session_expired' : 'state_invalid' });
     if ('error' in query) return this.redirect({ result: 'error', reason: 'access_denied' });
     try {
@@ -67,6 +80,10 @@ export class GithubService {
         const conflict = await transaction.githubAccount.findFirst({ where: { githubUserId: authorized.id, userId: { not: state.userId } } });
         if (conflict !== null) return false;
         const existing = await transaction.githubAccount.findUnique({ where: { userId: state.userId } });
+        const currentGithubUserId = existing?.githubUserId ?? null;
+        if (currentGithubUserId !== state.startingGithubUserId) return false;
+        if (state.purpose === 'OAUTH_CONNECT' && state.startingGithubUserId !== null && authorized.id !== state.startingGithubUserId) return false;
+        if (state.purpose === 'OAUTH_SWITCH' && (existing === null || existing.unlinkedAt !== null || state.startingGithubUserId === null || authorized.id === state.startingGithubUserId)) return false;
         const switchingIdentity = existing !== null && existing.githubUserId !== authorized.id;
         const changedAt = new Date();
         let linkedAccount: GithubAccount;
@@ -122,6 +139,10 @@ export class GithubService {
             targetType: 'github_account',
             targetId: linkedAccount.id,
           },
+        });
+        await transaction.githubOauthState.updateMany({
+          where: { userId: state.userId, purpose: { in: OAUTH_PURPOSES }, consumedAt: null },
+          data: { consumedAt: changedAt },
         });
         return true;
       });
@@ -237,11 +258,11 @@ export class GithubService {
     await this.limiter.consume(`github-${scope}-user`, userId, LINK_LIMIT, LINK_WINDOW_MS);
   }
 
-  private async storeState(userId: string, sessionId: string, state: string, purpose: StatePurpose, intendedRedirect?: string): Promise<void> {
-    await this.prisma.githubOauthState.create({ data: { userId, sessionId, purpose, intendedRedirect, stateTokenHash: hash(state), expiresAt: new Date(Date.now() + STATE_TTL_MS) } });
+  private async storeState(userId: string, sessionId: string, state: string, purpose: StatePurpose, intendedRedirect?: string, startingGithubUserId?: bigint): Promise<void> {
+    await this.prisma.githubOauthState.create({ data: { userId, sessionId, purpose, intendedRedirect, startingGithubUserId, stateTokenHash: hash(state), expiresAt: new Date(Date.now() + STATE_TTL_MS) } });
   }
 
-  private async consumeState(state: string, session: { userId: string; sessionId: string } | null, purposes: StatePurpose | StatePurpose[]): Promise<{ userId: string; sessionId: string; purpose: StatePurpose; installationId: bigint | null } | null> {
+  private async consumeState(state: string, session: { userId: string; sessionId: string } | null, purposes: StatePurpose | StatePurpose[]): Promise<{ userId: string; sessionId: string; purpose: StatePurpose; installationId: bigint | null; startingGithubUserId: bigint | null } | null> {
     if (session === null) return null;
     return this.prisma.$transaction(async (transaction) => {
       const record = await transaction.githubOauthState.findUnique({ where: { stateTokenHash: hash(state) } });
@@ -249,7 +270,7 @@ export class GithubService {
       if (record === null || record.userId !== session.userId || record.sessionId !== session.sessionId || !allowed.includes(record.purpose as StatePurpose) || record.consumedAt !== null || record.expiresAt <= new Date()) return null;
       const consumed = await transaction.githubOauthState.updateMany({ where: { id: record.id, consumedAt: null }, data: { consumedAt: new Date() } });
       const installationId = record.purpose === 'INSTALLATION_VERIFY' && record.intendedRedirect !== null ? BigInt(record.intendedRedirect) : null;
-      return consumed.count === 1 ? { userId: record.userId, sessionId: record.sessionId, purpose: record.purpose as StatePurpose, installationId } : null;
+      return consumed.count === 1 ? { userId: record.userId, sessionId: record.sessionId, purpose: record.purpose as StatePurpose, installationId, startingGithubUserId: record.startingGithubUserId } : null;
     });
   }
 

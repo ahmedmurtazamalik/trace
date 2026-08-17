@@ -84,6 +84,11 @@ export function connectGithub(csrfToken: string, options: RequestOptions = {}): 
   return request("/api/v1/github/connect", "POST", githubConnectResponseSchema, options, { [csrfHeaderName]: csrfToken });
 }
 
+/** Starts a state-bound, explicitly confirmed GitHub identity switch. */
+export function switchGithub(csrfToken: string, options: RequestOptions = {}): Promise<GithubConnectResponse> {
+  return request("/api/v1/github/switch", "POST", githubConnectResponseSchema, options, { [csrfHeaderName]: csrfToken });
+}
+
 /** Requests the backend-generated GitHub App installation URL. */
 export function getGithubInstallation(csrfToken: string, options: RequestOptions = {}): Promise<GithubInstallationStartResponse> {
   return request("/api/v1/github/installation", "POST", githubInstallationStartResponseSchema, options, { [csrfHeaderName]: csrfToken });

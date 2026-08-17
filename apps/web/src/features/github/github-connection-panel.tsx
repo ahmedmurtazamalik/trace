@@ -4,18 +4,20 @@ import { useEffect, useRef, useState } from "react";
 import { AlertTriangle, CheckCircle2, Github, History, LockKeyhole, RefreshCw, ShieldCheck } from "lucide-react";
 import { Badge, Button, Card } from "@trace/ui";
 import type { GithubCallbackResult, GithubConnectionStatus } from "@trace/shared";
-import { connectGithub, disconnectGithub, getGithubInstallation, getGithubStatus, GithubApiError } from "@/api/github";
+import { connectGithub, disconnectGithub, getGithubInstallation, getGithubStatus, GithubApiError, switchGithub } from "@/api/github";
 import { useAuthSession } from "@/auth/session-provider";
 import { AccessibleConfirmDialog } from "@/components/accessible-confirm-dialog";
 
 type LoadStatus = typeof getGithubStatus;
 type BeginConnection = typeof connectGithub;
+type BeginSwitch = typeof switchGithub;
 type BeginInstallation = typeof getGithubInstallation;
 type RevokeConnection = typeof disconnectGithub;
 
 interface GithubConnectionPanelProps {
   loadStatus?: LoadStatus;
   beginConnection?: BeginConnection;
+  beginSwitch?: BeginSwitch;
   beginInstallation?: BeginInstallation;
   revokeConnection?: RevokeConnection;
   navigate?: (url: string) => void;
@@ -38,6 +40,7 @@ function errorMessage(error: unknown) {
 export function GithubConnectionPanel({
   loadStatus = getGithubStatus,
   beginConnection = connectGithub,
+  beginSwitch = switchGithub,
   beginInstallation = getGithubInstallation,
   revokeConnection = disconnectGithub,
   navigate = (url) => window.location.assign(url),
@@ -82,6 +85,22 @@ export function GithubConnectionPanel({
     setError(undefined);
     try {
       const result = await beginConnection(csrfToken);
+      navigate(result.authorizationUrl);
+    } catch (reason) {
+      setError(errorMessage(reason));
+      setPending(undefined);
+    }
+  }
+
+  async function startSwitch() {
+    if (!csrfToken) {
+      setError("Your security session is no longer valid. Please sign in again.");
+      return;
+    }
+    setPending("connect");
+    setError(undefined);
+    try {
+      const result = await beginSwitch(csrfToken);
       navigate(result.authorizationUrl);
     } catch (reason) {
       setError(errorMessage(reason));
@@ -228,11 +247,11 @@ export function GithubConnectionPanel({
       pending={pending === "connect"}
       returnFocus={switchTriggerRef.current}
       onCancel={() => setConfirmSwitch(false)}
-      onConfirm={() => { setConfirmSwitch(false); void begin(); }}
+      onConfirm={() => { setConfirmSwitch(false); void startSwitch(); }}
     />}
     {confirmDisconnect && <AccessibleConfirmDialog
       title="Disconnect GitHub?"
-      description={<p>Trace will stop requesting GitHub access. Historical activity remains in Trace and is not deleted.</p>}
+      description={<p>Trace will stop requesting GitHub access and stop tracking all repositories from this account. Historical activity remains in Trace and is not deleted.</p>}
       confirmLabel={pending === "disconnect" ? "Disconnecting…" : "Confirm disconnect"}
       pending={Boolean(pending)}
       returnFocus={disconnectTriggerRef.current}

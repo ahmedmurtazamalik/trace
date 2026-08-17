@@ -25,6 +25,13 @@ export class GithubController {
     return this.github.connect(session.user.id, session.session.id, this.directAddress(request));
   }
 
+  @Post('switch')
+  @HttpCode(200)
+  @UseGuards(SessionAuthGuard, CsrfGuard)
+  switchAccount(@CurrentSession() session: AuthenticatedSession, @Req() request: Request): Promise<GithubConnectResponse> {
+    return this.github.switchAccount(session.user.id, session.session.id, this.directAddress(request));
+  }
+
   @Get('callback')
   @Redirect()
   async callback(@Query() query: unknown, @Req() request: Request): Promise<{ url: string; statusCode: number }> {
