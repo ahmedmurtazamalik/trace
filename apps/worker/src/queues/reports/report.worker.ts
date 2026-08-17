@@ -1,4 +1,5 @@
 import { Queue, UnrecoverableError, Worker, type Job } from 'bullmq';
+import { beforeWorkerDeadline, workerDrainDeadline } from '../../shutdown-budget';
 
 export interface ReportQueueWorkerOptions {
   redisUrl: string;
@@ -71,15 +72,17 @@ export class ReportQueueWorker {
     throw new Error('Timed out waiting for the report queue to become idle.');
   }
 
-  async close(): Promise<void> {
+  async close(requestedDeadline?: number): Promise<void> {
     if (this.closing !== undefined) return this.closing;
     this.closing = (async () => {
       const worker = this.worker;
       const queue = this.queue;
+      const shutdownDeadline = requestedDeadline ?? Date.now() + (this.options.shutdownTimeoutMs ?? 10_000);
+      const drainDeadline = workerDrainDeadline(shutdownDeadline);
       this.worker = undefined;
       this.queue = undefined;
       try {
-        await this.timeout((async () => {
+        await beforeWorkerDeadline((async () => {
           await worker?.pause(true);
           while ((await queue?.getJobCounts('active'))?.active !== 0) {
             await new Promise((resolve) => setTimeout(resolve, 10));
@@ -87,9 +90,12 @@ export class ReportQueueWorker {
           await worker?.close(false);
           await queue?.close();
           await this.runPromise?.catch(() => undefined);
-        })(), this.options.shutdownTimeoutMs ?? 10_000, 'Report worker shutdown timed out.');
+        })(), drainDeadline, 'Report worker shutdown timed out.');
       } catch {
-        await this.boundedCleanup([worker?.close(true), queue?.close(), worker?.disconnect(), queue?.disconnect()]);
+        await this.boundedCleanup(
+          [worker?.close(true), queue?.close(), worker?.disconnect(), queue?.disconnect()],
+          shutdownDeadline,
+        );
         throw new Error('Report worker shutdown failed.');
       } finally {
         this.runPromise = undefined;
@@ -130,10 +136,10 @@ export class ReportQueueWorker {
     }
   }
 
-  private async boundedCleanup(operations: Array<Promise<unknown> | undefined>): Promise<void> {
-    const results = await this.timeout(
+  private async boundedCleanup(operations: Array<Promise<unknown> | undefined>, requestedDeadline?: number): Promise<void> {
+    const results = await beforeWorkerDeadline(
       Promise.allSettled(operations.filter((operation): operation is Promise<unknown> => operation !== undefined)),
-      this.options.shutdownTimeoutMs ?? 10_000,
+      requestedDeadline ?? Date.now() + (this.options.shutdownTimeoutMs ?? 10_000),
       'Report worker cleanup timed out.',
     );
     if (results.some((result) => result.status === 'rejected')) throw new Error('Report worker cleanup failed.');

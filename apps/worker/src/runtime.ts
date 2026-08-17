@@ -1,8 +1,9 @@
 import { GithubWebhookWorker } from './queues/github/github-webhook.worker';
+import { beforeWorkerDeadline, workerShutdownDeadline, workerShutdownTimeoutMs, type WorkerStop } from './shutdown-budget';
 
 export interface WorkerLifecycle {
   start(): Promise<void>;
-  close(): Promise<void>;
+  close(deadline?: number): Promise<void>;
   readonly completion: Promise<void>;
 }
 
@@ -17,12 +18,13 @@ export interface WorkerRuntimeOptions {
   workerFactory?: (options: ConstructorParameters<typeof GithubWebhookWorker>[0]) => WorkerLifecycle;
 }
 
-export async function runGithubWebhookWorker(options: WorkerRuntimeOptions): Promise<() => Promise<void>> {
+export async function runGithubWebhookWorker(options: WorkerRuntimeOptions): Promise<WorkerStop> {
   const redisUrl = options.environment.REDIS_URL;
   if (redisUrl === undefined || !/^rediss?:\/\//.test(redisUrl)) {
     throw new Error('Invalid worker configuration: REDIS_URL is required.');
   }
   const concurrency = integer(options.environment.WEBHOOK_WORKER_CONCURRENCY, 4, 1, 32);
+  const shutdownTimeoutMs = workerShutdownTimeoutMs(options.environment);
   const queueName = options.environment.WEBHOOK_QUEUE_NAME;
   if (queueName !== undefined && !/^[A-Za-z0-9_-]{1,128}$/.test(queueName)) {
     throw new Error('Invalid worker configuration: WEBHOOK_QUEUE_NAME is invalid.');
@@ -31,6 +33,7 @@ export async function runGithubWebhookWorker(options: WorkerRuntimeOptions): Pro
     redisUrl,
     queueName,
     concurrency,
+    shutdownTimeoutMs,
     processDelivery: async (deliveryId) => options.processDelivery(deliveryId),
     recordTerminalFailure: async (deliveryId, code) => options.recordTerminalFailure(deliveryId, code),
   });
@@ -38,16 +41,17 @@ export async function runGithubWebhookWorker(options: WorkerRuntimeOptions): Pro
 
   const signals = options.signals;
   let stopping: Promise<void> | undefined;
-  const stop = async (): Promise<void> => {
+  const stop = async (requestedDeadline?: number): Promise<void> => {
     if (stopping !== undefined) return stopping;
+    const deadline = requestedDeadline ?? workerShutdownDeadline(options.environment);
     stopping = (async () => {
       try {
-        await worker.close();
+        await beforeWorkerDeadline(worker.close(deadline), deadline, 'Webhook worker shutdown timed out.');
       } finally {
         if (options.closeResources !== undefined) {
-          await withTimeout(
+          await beforeWorkerDeadline(
             options.closeResources(),
-            options.resourceCleanupTimeoutMs ?? 10_000,
+            Math.min(deadline, Date.now() + (options.resourceCleanupTimeoutMs ?? shutdownTimeoutMs)),
             'Application resource cleanup timed out.',
           );
         }
@@ -68,17 +72,6 @@ export async function runGithubWebhookWorker(options: WorkerRuntimeOptions): Pro
   return stop;
 }
 
-function withTimeout(operation: Promise<void>, timeoutMs: number, message: string): Promise<void> {
-  let timer: NodeJS.Timeout | undefined;
-  return Promise.race([
-    operation,
-    new Promise<never>((_resolve, reject) => {
-      timer = setTimeout(() => reject(new Error(message)), timeoutMs);
-    }),
-  ]).finally(() => {
-    if (timer !== undefined) clearTimeout(timer);
-  });
-}
 
 function integer(value: string | undefined, fallback: number, minimum: number, maximum: number): number {
   if (value === undefined) return fallback;

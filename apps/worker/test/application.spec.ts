@@ -7,22 +7,38 @@ class SignalProcess extends EventEmitter {
 }
 
 describe('GitHub activity worker application', () => {
-  it('starts both activity and report consumers and closes them in reverse order', async () => {
+  it('stops both consumers concurrently under one absolute shutdown deadline', async () => {
     const events: string[] = [];
-    const stopActivity = jest.fn(() => { events.push('activity-stop'); return Promise.resolve(); });
-    const stopReports = jest.fn(() => { events.push('reports-stop'); return Promise.resolve(); });
+    let releaseActivity: (() => void) | undefined;
+    let releaseReports: (() => void) | undefined;
+    const stopActivity = jest.fn<Promise<void>, [number?]>(() => new Promise<void>((resolve) => {
+      events.push('activity-stop');
+      releaseActivity = resolve;
+    }));
+    const stopReports = jest.fn<Promise<void>, [number?]>(() => new Promise<void>((resolve) => {
+      events.push('reports-stop');
+      releaseReports = resolve;
+    }));
     const startActivity = jest.fn(() => { events.push('activity-start'); return Promise.resolve(stopActivity); });
     const startReports = jest.fn(() => { events.push('reports-start'); return Promise.resolve(stopReports); });
 
     const stop = await startTraceWorkers({
-      environment: {},
+      environment: { WORKER_SHUTDOWN_TIMEOUT_MS: '120000' },
       startActivity: startActivity as never,
       startReports: startReports as never,
     });
-    await stop();
+    const stopping = stop();
+    await Promise.resolve();
 
     expect(events.slice(0, 2).sort()).toEqual(['activity-start', 'reports-start']);
-    expect(events.slice(2)).toEqual(['reports-stop', 'activity-stop']);
+    expect(events.slice(2).sort()).toEqual(['activity-stop', 'reports-stop']);
+    const activityDeadline = stopActivity.mock.calls[0]?.[0];
+    const reportDeadline = stopReports.mock.calls[0]?.[0];
+    expect(activityDeadline).toBe(reportDeadline);
+    expect(activityDeadline).toBeGreaterThan(Date.now());
+    releaseActivity?.();
+    releaseReports?.();
+    await stopping;
   });
 
   it('propagates child runtime failure and cleanup failure to the coordinator', async () => {

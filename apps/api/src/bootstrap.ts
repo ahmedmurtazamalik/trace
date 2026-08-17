@@ -7,13 +7,18 @@ import { ApiExceptionFilter } from './common/errors/api-exception.filter';
 import { TRACE_CONFIG } from './common/config/config.token';
 import type { TraceConfig } from '@trace/config';
 import { establishRequestId, type RequestWithId } from './common/middleware/request-id.middleware';
+import { createRequestCompletionLogger } from './common/middleware/request-logging.middleware';
+import { StructuredLogger } from './common/logging/structured-logger';
 
 export async function createApplication(): Promise<INestApplication> {
-  const app = await NestFactory.create(AppModule, { bodyParser: false });
+  const app = await NestFactory.create(AppModule, { bodyParser: false, bufferLogs: true });
   const config = app.get<TraceConfig>(TRACE_CONFIG);
+  app.useLogger(new StructuredLogger(config.logLevel));
+  app.flushLogs();
 
   app.use(helmet());
   app.use(establishRequestId);
+  app.use(createRequestCompletionLogger());
   app.use('/api/v1/webhooks/github', raw({ type: 'application/json', limit: '256kb' }));
   const payloadLimitHandler: ErrorRequestHandler = (error, request, response, next) => {
     const unknownError: unknown = error;
