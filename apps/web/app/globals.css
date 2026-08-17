@@ -474,7 +474,7 @@ main#main-content { max-width: 1540px; margin: 0 auto; padding: clamp(1.65rem, 4
 .auth-page { min-height: 100vh; display: grid; grid-template-columns: minmax(380px, .86fr) minmax(500px, 1.14fr); background: #f8fbff; }
 .auth-panel { width: min(470px, 100%); margin: auto; padding: 2.6rem; animation: auth-panel-in .55s ease-out both; }
 .auth-brand { width: fit-content; color: var(--ink); padding: 0; margin-bottom: 3rem; }
-.auth-brand .brand-type small { color: #718198; }
+.auth-brand .brand-type small { color: #5d6f86; }
 .auth-copy h1 { margin: .68rem 0 .62rem; font-size: clamp(2.1rem, 4vw, 3.25rem); line-height: 1; letter-spacing: -.06em; }
 .auth-copy p { color: #53647a; line-height: 1.65; }
 .auth-form { display: grid; gap: .15rem; margin-top: 2rem; }

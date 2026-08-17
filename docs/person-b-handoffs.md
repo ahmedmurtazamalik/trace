@@ -665,35 +665,38 @@ No Person A-owned backend or shared-contract source was changed.
 
 ### What was done
 - Started local `day12` directly from exact merged `origin/main` commit `f2e652760eb588f99903f7dc746b90a79933fc10`, which contains Person A's backend Day 12 test completion.
-- Added MSW HTTP-boundary integration coverage for authentication, GitHub, repositories, Activity, and Dashboard; existing report tests continue to cover report creation/status, revision editing, regeneration, and checksum-verified downloads through MSW.
+- Added complete MSW HTTP-boundary integration coverage for authentication lifecycle, GitHub connection/installation/disconnection, repository list/detail/sync/tracking/removal/restoration, global and repository Activity, and Dashboard; existing report tests continue to cover report creation/status, revision editing, regeneration, and checksum-verified downloads through MSW.
 - Kept the complete Playwright workflows for register/login/logout, mocked GitHub connection and installation, repository tracking/removal/restoration, Activity filters/pagination, Dashboard filters, report creation/status/edit/regeneration/download, desktop Chrome, and Pixel 5.
-- Fixed the shared Dialog primitive test-first: simultaneous dialogs now have independent accessible names, descriptions have explicit relationships, and Escape closes an open dialog.
+- Fixed the shared Dialog primitive test-first: simultaneous dialogs now have independent accessible names, descriptions have explicit relationships, opening moves focus into the dialog, and Escape closes only the focused/topmost dialog.
 - Added explicit UI test cleanup so rendered DOM cannot leak between test cases.
 - Made GitHub outbound-navigation browser tests deterministic by intercepting the fake `github.com` destination instead of depending on GitHub's live website or external network timing.
-- Added no major feature and changed no backend, worker, database, shared contract, infrastructure, root README, package manifest, or lockfile.
+- Added official `@axe-core/playwright` WCAG A/AA scans to all ten primary routes on desktop and mobile, and fixed the one stable contrast failure on the auth brand caption.
+- Added no major feature and changed no backend, worker, database, shared contract, infrastructure, or root README. The web dev manifest and lockfile changed only to declare the official axe test adapter.
 
 ### How to test
-1. Run `NODE_ENV=test pnpm --filter @trace/web test` and expect 167/167.
-2. Run `NODE_ENV=test pnpm --filter @trace/ui test` and expect 4/4.
+1. Run `NODE_ENV=test pnpm --filter @trace/web test` and expect 168/168.
+2. Run `NODE_ENV=test pnpm --filter @trace/ui test` and expect 5/5.
 3. Run `NODE_ENV=production pnpm --filter @trace/web test:e2e` and expect 68/68 across desktop Chrome and Pixel 5.
 4. Run web lint, web/UI typecheck, and the production web build; all must exit successfully.
 
 ### Issues and important notes
 - The initial full Playwright baseline passed 66/68. Two mobile GitHub tests depended on navigating to live GitHub: one stalled externally and one loaded GitHub's live 404. The production redirect was correct; the test boundary was repaired to serve deterministic fake GitHub destinations, and the affected spec then passed 8/8 before the complete suite passed 68/68.
 - The first production build after the Dialog fix correctly rejected a hook-using module without a client boundary. Adding the required `use client` directive repaired the build; focused UI tests/typecheck and the full production build passed afterward.
+- A delayed deep review correctly rejected the first PR revision because its MSW matrix was selective, simultaneous dialogs all handled one document-level Escape event, and the accessibility test was handwritten rather than axe-backed. Those three blockers were repaired before requesting merge.
+- Initial axe execution sampled entrance animations and produced transient contrast findings. Stabilizing animation timing reduced the result to one genuine final-state failure: the auth “Workspace” caption at 3.82:1. Its auth-specific token now computes at approximately 4.96:1 and all route scans pass.
 - MSW and Playwright responses are deterministic mocks. They prove frontend contracts, error handling, and workflows, not live GitHub-provider or real database/queue/worker execution.
-- Ali's Day 12 work is local on branch `day12`. It is not committed, pushed, in a PR, merged, or deployed.
+- Ali's Day 12 work is on pushed branch `day12` in PR #28. It is not merged or deployed.
 
 ### Verification
-- Expected Dialog RED: 2 failed / 2 passed, proving duplicate accessible names and missing Escape handling; focused GREEN: 4/4.
-- Day 12 MSW integration suite: PASS, 6/6.
-- Complete web unit/component/API suite: PASS, 167/167 across 29 files.
-- Shared UI primitive suite: PASS, 4/4.
-- Complete Playwright/browser accessibility suite: PASS, 68/68 across desktop Chrome and Pixel 5.
+- Expected Dialog RED confirmed both the original duplicate accessible-name/Escape gaps and the later multi-dialog Escape regression; focused GREEN: 5/5.
+- Day 12 MSW integration suite: PASS, 7/7.
+- Complete web unit/component/API suite: PASS, 168/168 across 29 files.
+- Shared UI primitive suite: PASS, 5/5.
+- Complete Playwright/browser accessibility suite: PASS, 68/68 across desktop Chrome and Pixel 5, including axe WCAG A/AA scans on all ten primary routes.
 - Web lint: PASS, no warnings or errors except Next's upstream `next lint` deprecation notice.
 - Web and UI typecheck: PASS.
 - Production web build: PASS, 14/14 routes generated.
 
 ### What's next
-- With Ali's separate permission: commit and push local branch `day12`.
-- With separate permission after push: open the Day 12 PR; after integration-owner review/merge, rerun the exact merged-main frontend gate before calling the full team Day 12 complete.
+- Update PR #28 with the corrective verified commit and wait for both GitHub CI jobs.
+- After integration-owner review/merge, rerun the exact merged-main frontend gate before calling the full team Day 12 complete.

@@ -33,7 +33,20 @@ describe("Trace UI primitives", () => {
     const onClose = vi.fn();
     render(<Dialog open title="Confirm action" onClose={onClose} />);
 
-    fireEvent.keyDown(document, { key: "Escape" });
+    fireEvent.keyDown(document.activeElement ?? document.body, { key: "Escape" });
     expect(onClose).toHaveBeenCalledOnce();
+  });
+
+  it("closes only the focused topmost dialog with Escape", () => {
+    const closeLowerDialog = vi.fn();
+    const closeTopDialog = vi.fn();
+    render(<>
+      <Dialog open title="Lower dialog" onClose={closeLowerDialog} />
+      <Dialog open title="Top dialog" onClose={closeTopDialog} />
+    </>);
+
+    fireEvent.keyDown(document.activeElement ?? document.body, { key: "Escape" });
+    expect(closeTopDialog).toHaveBeenCalledOnce();
+    expect(closeLowerDialog).not.toHaveBeenCalled();
   });
 });

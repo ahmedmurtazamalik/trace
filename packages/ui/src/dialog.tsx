@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useId, type ReactNode } from "react";
+import { useEffect, useId, useRef, type KeyboardEvent, type ReactNode } from "react";
 
 interface DialogProps {
   open: boolean;
@@ -13,15 +13,22 @@ interface DialogProps {
 export function Dialog({ open, title, description, children, onClose }: DialogProps) {
   const titleId = useId();
   const descriptionId = useId();
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     if (!open) return;
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
+    const previouslyFocused = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    closeButtonRef.current?.focus();
+    return () => {
+      if (previouslyFocused?.isConnected) previouslyFocused.focus();
     };
-    document.addEventListener("keydown", closeOnEscape);
-    return () => document.removeEventListener("keydown", closeOnEscape);
-  }, [onClose, open]);
+  }, [open]);
+
+  function closeOnEscape(event: KeyboardEvent<HTMLElement>) {
+    if (event.key !== "Escape") return;
+    event.stopPropagation();
+    onClose();
+  }
 
   if (!open) return null;
   return <div className="trace-dialog-backdrop">
@@ -31,11 +38,12 @@ export function Dialog({ open, title, description, children, onClose }: DialogPr
       aria-labelledby={titleId}
       aria-describedby={description ? descriptionId : undefined}
       className="trace-dialog"
+      onKeyDown={closeOnEscape}
     >
       <h2 id={titleId}>{title}</h2>
       {description && <p id={descriptionId}>{description}</p>}
       {children}
-      <button type="button" onClick={onClose}>Close</button>
+      <button ref={closeButtonRef} type="button" onClick={onClose}>Close</button>
     </section>
   </div>;
 }
