@@ -3,15 +3,14 @@ import type { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 
 import { createApplication } from '../src/bootstrap';
+import { applyIntegrationEnvironment } from './support/integration-environment';
 
 describe('API health endpoints', () => {
   let app: INestApplication;
   let server: Server;
 
   beforeAll(async () => {
-    process.env.NODE_ENV = 'test';
-    process.env.DATABASE_URL = 'postgresql://trace:trace_dev_password@localhost:5432/trace?schema=public';
-    process.env.REDIS_URL ??= 'redis://localhost:6379';
+    applyIntegrationEnvironment();
     app = await createApplication();
     await app.init();
     server = app.getHttpServer() as Server;

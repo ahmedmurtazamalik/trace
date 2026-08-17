@@ -9,7 +9,8 @@
     "dev": "node --env-file-if-exists=../../.env --import tsx --watch src/main.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "eslint src test",
-    "test": "jest --runInBand test/api-exception.filter.spec.ts test/dependency-health.service.spec.ts test/operation-rate-limits.spec.ts test/password-reset-delivery.spec.ts test/report-publisher.spec.ts",
+    "test": "jest --runInBand test/api-exception.filter.spec.ts test/dependency-health.service.spec.ts test/integration-environment.spec.ts test/operation-rate-limits.spec.ts test/password-reset-delivery.spec.ts test/report-publisher.spec.ts",
+    "test:coverage": "jest --runInBand --coverage",
     "test:integration": "jest --runInBand --testPathPattern=integration.spec.ts"
   },
   "dependencies": {

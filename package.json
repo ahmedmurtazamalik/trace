@@ -9,6 +9,7 @@
     "lint": "pnpm -r --if-present lint",
     "test": "pnpm -r --if-present test",
     "test:integration": "pnpm --filter @trace/database test:integration && pnpm --filter @trace/api test:integration",
+    "test:coverage:backend": "pnpm --filter @trace/api test:coverage && pnpm --filter @trace/worker test:coverage",
     "test:latex:docker": "bash -c 'set -euo pipefail; image=trace-latex:candidate-$(git write-tree); docker build --tag \"$image\" infrastructure/latex; RUN_DOCKER_LATEX=1 REPORT_LATEX_TEST_IMAGE=\"$image\" pnpm --filter @trace/worker exec jest --runInBand test/latex/latex-compiler.docker.spec.ts'",
     "infra:up": "docker compose up -d postgres redis",
     "infra:down": "docker compose down",

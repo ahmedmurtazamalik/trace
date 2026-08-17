@@ -5,6 +5,7 @@ import { RedisService } from '../src/common/redis/redis.service';
 import { githubConnectResponseSchema, githubConnectionStatusSchema } from '@trace/shared';
 import request from 'supertest';
 import { createApplication } from '../src/bootstrap';
+import { applyIntegrationEnvironment } from './support/integration-environment';
 
 const username = 'day3.github.user';
 const email = 'day3.github@example.test';
@@ -39,9 +40,7 @@ describe('GitHub connection API', () => {
   let redis: RedisService;
 
   beforeAll(async () => {
-    process.env.NODE_ENV = 'test';
-    process.env.DATABASE_URL = 'postgresql://trace:trace_dev_password@localhost:5432/trace?schema=public';
-    process.env.REDIS_URL ??= 'redis://localhost:6379';
+    applyIntegrationEnvironment();
     process.env.SESSION_SECRET = 'test-only-session-secret-at-least-32-characters';
     process.env.GITHUB_APP_CLIENT_ID = 'test-client-id';
     process.env.GITHUB_APP_SLUG = 'trace-test-app';
