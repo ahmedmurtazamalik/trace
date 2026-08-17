@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import AxeBuilder from "@axe-core/playwright";
 
 const session = {
   user: { id: "usr_01HXYZ", username: "alice.dev", displayName: "Alice Developer", email: "alice@example.com", createdAt: "2026-08-11T12:00:00.000Z" },
@@ -51,6 +52,12 @@ for (const [route, heading] of Object.entries(routes)) {
     await page.goto(route);
     await expect(page.getByRole("heading", { level: 1, name: heading })).toBeVisible();
     await automatedAccessibilityAudit(page);
+    await page.addStyleTag({ content: "*, *::before, *::after { animation-duration: 0s !important; animation-delay: 0s !important; transition-duration: 0s !important; transition-delay: 0s !important; }" });
+    await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+    const axeResults = await new AxeBuilder({ page })
+      .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"])
+      .analyze();
+    expect(axeResults.violations, JSON.stringify(axeResults.violations, null, 2)).toEqual([]);
   });
 }
 
