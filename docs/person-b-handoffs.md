@@ -608,3 +608,44 @@ No Person A-owned backend or shared-contract source was changed.
 ### What's next
 - Person A must freeze contracts/implementation for durable repository removal and GitHub identity replacement.
 - After those backend contracts merge, Person B can add the accessible confirmation and recovery UX test-first.
+
+## Day 11 full-stack follow-up — durable repository lifecycle and GitHub identity switching
+
+### What was done
+- Implemented GitHub disconnect as one transaction that unlinks the account and disables tracking on its associated repository memberships while retaining history.
+- Added nullable `UserRepository.removedAt` state plus a migration, active/removed list visibility, atomic remove-and-untrack, restore, tracking protection while removed, and synchronization behavior that never silently restores removed memberships.
+- Added the real repository Remove/Restore API contract and frontend flows, including accessible confirmation, pending/error recovery, an explicit removed-repositories view, and restoration.
+- Implemented deliberate GitHub identity switching after OAuth verification: old installations and repository tracking are deactivated, historical activity remains, the new identity is persisted, cross-user identity uniqueness remains enforced, and an audit record is written.
+- Added an accessible **Switch GitHub account** confirmation that starts a fresh OAuth authorization only after confirmation.
+- Preserved the completed 16.5px/450 typography adjustment from the Day 11 follow-up.
+
+### How to test
+1. Sign in at `http://localhost:3002/login` and open **Repositories**.
+2. Remove a repository, confirm it disappears from Active, open **Removed repositories**, then restore it.
+3. Confirm removing a repository stops tracking and that synchronization does not restore it automatically.
+4. Open **GitHub**, confirm Disconnect before proceeding, and verify associated repositories are no longer tracked.
+5. Choose **Switch GitHub account**, confirm the warning, and complete OAuth with the intended second GitHub identity. A real two-identity browser test requires access to two GitHub accounts.
+
+### Real / mock / unfinished boundary
+- **Real:** PostgreSQL migration, API transactions, Redis-backed worker processing, repository persistence, account-switch persistence, and localhost API/web/worker runtime.
+- **Deterministic integration proof:** the second GitHub identity uses a test-only fake authorization code so history retention, installation deactivation, tracking deactivation, identity persistence, uniqueness, and audit behavior are repeatable.
+- **Live-provider boundary:** switching between two real GitHub identities still requires Ali to complete both GitHub OAuth interactions; automation does not bypass provider login/account selection.
+
+### Verification
+- Root unit/component suites: PASS; web 159/159, API unit 15/15, worker 92 passed with 2 skipped, and all package suites green.
+- API integration suites: PASS, 11/11 suites and 86/86 tests.
+- Playwright: PASS, 66/66 desktop and Pixel 5 tests, including Remove → Removed view → Restore with real request/response assertions.
+- Root typecheck: PASS.
+- Root lint: PASS after narrowing BullMQ diagnostic job data from `any` to `unknown`.
+- Production web build: PASS, 14 routes generated.
+- Prisma migration status: 16 migrations applied; schema up to date.
+- Live localhost smoke: API health/readiness, PostgreSQL, Redis, worker, `/login`, and `/repositories` verified from `/home/ali/trace-day11-fullstack`.
+
+### Issues / notes
+- A stale worker from `/home/ali/trace` consumed the shared Redis integration queue and caused false worker timeouts; stopping that old process made the focused real Redis→worker→database test pass. Test diagnostics now include bounded queue state on future timeouts.
+- Playwright write requests previously depended on a live cross-origin API preflight and only asserted request emission. The E2E server now builds with a same-origin mock API, exact mutation routes, and response-status assertions.
+- No merge was performed. This handoff accompanies the isolated `day11-fullstack-followup` PR for Person A/integration-owner review.
+
+### What's next
+- Review the cross-ownership backend/database/shared-contract changes and CI results.
+- After approval, merge through the repository's normal integration-owner process and repeat the authenticated localhost smoke on the exact merged branch.

@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 
 const session = { user: { id: "usr_01HXYZ", username: "alice.dev", displayName: "Alice Developer", email: "alice@example.com", createdAt: "2026-08-11T12:00:00.000Z" }, csrfToken: "csrf_opaque_value" };
-const repositories = { items: [{ id: "repo_1", owner: "trace-fixture-org", name: "trace", fullName: "trace-fixture-org/trace", private: false, defaultBranch: "main", url: null, accessible: true, trackingEnabled: true, lastActivityAt: "2026-08-12T09:30:00.000Z", contributorCount: 1 }], pageInfo: { nextCursor: null, hasNextPage: false } };
+const repositories = { items: [{ id: "repo_1", owner: "trace-fixture-org", name: "trace", fullName: "trace-fixture-org/trace", private: false, defaultBranch: "main", url: null, accessible: true, trackingEnabled: true, removed: false, lastActivityAt: "2026-08-12T09:30:00.000Z", contributorCount: 1 }], pageInfo: { nextCursor: null, hasNextPage: false } };
 
 function utcToday() {
   return new Intl.DateTimeFormat("en-CA", { timeZone: "UTC", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());

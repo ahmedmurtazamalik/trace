@@ -11,13 +11,15 @@ export const repositorySummarySchema = z.object({
   url: z.url().nullable(),
   accessible: z.boolean(),
   trackingEnabled: z.boolean(),
+  removed: z.boolean(),
   lastActivityAt: z.iso.datetime().nullable(),
   contributorCount: z.number().int().nonnegative(),
 }).strict();
 
 export const repositoryListQuerySchema = paginationQuerySchema.extend({
   search: z.string().trim().min(1).max(200).optional(),
-});
+  visibility: z.enum(['active', 'removed']).default('active'),
+}).strict();
 
 export const repositoryListResponseSchema = z.object({
   items: z.array(repositorySummarySchema),
@@ -33,6 +35,11 @@ export const repositoryTrackingResponseSchema = z.object({
   trackingEnabled: z.boolean(),
 }).strict();
 
+export const repositoryMembershipResponseSchema = z.object({
+  repositoryId: z.string().min(1),
+  trackingEnabled: z.boolean(),
+  removed: z.boolean(),
+}).strict();
 export const repositorySynchronizationResponseSchema = z.object({
   accessibleRepositoryCount: z.number().int().nonnegative(),
 }).strict();
@@ -40,6 +47,7 @@ export const repositorySynchronizationResponseSchema = z.object({
 export const repositoryErrorCodeSchema = z.enum([
   'REPOSITORY_NOT_FOUND',
   'REPOSITORY_ACCESS_REMOVED',
+  'REPOSITORY_REMOVED',
   'GITHUB_INSTALLATION_REQUIRED',
   'GITHUB_INSTALLATION_SUSPENDED',
 ]);
@@ -49,5 +57,6 @@ export type RepositoryListQuery = z.infer<typeof repositoryListQuerySchema>;
 export type RepositoryListResponse = z.infer<typeof repositoryListResponseSchema>;
 export type RepositoryDetailResponse = z.infer<typeof repositoryDetailResponseSchema>;
 export type RepositoryTrackingResponse = z.infer<typeof repositoryTrackingResponseSchema>;
+export type RepositoryMembershipResponse = z.infer<typeof repositoryMembershipResponseSchema>;
 export type RepositorySynchronizationResponse = z.infer<typeof repositorySynchronizationResponseSchema>;
 export type RepositoryErrorCode = z.infer<typeof repositoryErrorCodeSchema>;

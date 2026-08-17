@@ -67,14 +67,61 @@ export class GithubService {
         const conflict = await transaction.githubAccount.findFirst({ where: { githubUserId: authorized.id, userId: { not: state.userId } } });
         if (conflict !== null) return false;
         const existing = await transaction.githubAccount.findUnique({ where: { userId: state.userId } });
-        if (existing !== null && existing.githubUserId !== authorized.id) return false;
-        const linkedAccount = await transaction.githubAccount.upsert({
-          where: { userId: state.userId },
-          create: { userId: state.userId, githubUserId: authorized.id, githubUsername: authorized.username, displayName: authorized.displayName, avatarUrl: authorized.avatarUrl },
-          update: { githubUsername: authorized.username, displayName: authorized.displayName, avatarUrl: authorized.avatarUrl, unlinkedAt: null },
-        });
+        const switchingIdentity = existing !== null && existing.githubUserId !== authorized.id;
+        const changedAt = new Date();
+        let linkedAccount: GithubAccount;
+        let disabledRepositoryCount = 0;
+
+        if (existing === null) {
+          linkedAccount = await transaction.githubAccount.create({
+            data: { userId: state.userId, githubUserId: authorized.id, githubUsername: authorized.username, displayName: authorized.displayName, avatarUrl: authorized.avatarUrl },
+          });
+        } else {
+          if (switchingIdentity) {
+            const disabled = await transaction.userRepository.updateMany({
+              where: {
+                userId: state.userId,
+                repository: { installation: { githubAccountId: existing.id } },
+              },
+              data: { trackingEnabled: false, accessRemovedAt: changedAt },
+            });
+            disabledRepositoryCount = disabled.count;
+            await transaction.githubInstallation.updateMany({
+              where: { githubAccountId: existing.id },
+              data: { suspendedAt: changedAt },
+            });
+          }
+          linkedAccount = await transaction.githubAccount.update({
+            where: { id: existing.id },
+            data: {
+              githubUserId: authorized.id,
+              githubUsername: authorized.username,
+              displayName: authorized.displayName,
+              avatarUrl: authorized.avatarUrl,
+              unlinkedAt: null,
+            },
+          });
+        }
+
         await transaction.auditLog.create({
-          data: { actorUserId: state.userId, action: 'github.connected', targetType: 'github_account', targetId: linkedAccount.id },
+          data: switchingIdentity && existing !== null ? {
+            actorUserId: state.userId,
+            action: 'github.account_switched',
+            targetType: 'github_account',
+            targetId: linkedAccount.id,
+            metadata: {
+              previousGithubUserId: existing.githubUserId.toString(),
+              previousGithubUsername: existing.githubUsername,
+              newGithubUserId: authorized.id.toString(),
+              newGithubUsername: authorized.username,
+              disabledRepositoryCount,
+            },
+          } : {
+            actorUserId: state.userId,
+            action: 'github.connected',
+            targetType: 'github_account',
+            targetId: linkedAccount.id,
+          },
         });
         return true;
       });
@@ -147,8 +194,18 @@ export class GithubService {
       const result = await transaction.githubAccount.updateMany({ where: { userId, unlinkedAt: null }, data: { unlinkedAt: new Date() } });
       if (result.count === 1) {
         const account = await transaction.githubAccount.findUniqueOrThrow({ where: { userId }, select: { id: true } });
+        const repositories = await transaction.userRepository.updateMany({
+          where: { userId, trackingEnabled: true },
+          data: { trackingEnabled: false },
+        });
         await transaction.auditLog.create({
-          data: { actorUserId: userId, action: 'github.disconnected', targetType: 'github_account', targetId: account.id },
+          data: {
+            actorUserId: userId,
+            action: 'github.disconnected',
+            targetType: 'github_account',
+            targetId: account.id,
+            metadata: { disabledRepositoryCount: repositories.count },
+          },
         });
       }
       return result.count === 1;

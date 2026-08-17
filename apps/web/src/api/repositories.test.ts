@@ -17,6 +17,7 @@ const repository = {
   url: "https://github.com/trace-fixture-org/web",
   accessible: true,
   trackingEnabled: false,
+  removed: false,
   lastActivityAt: null,
   contributorCount: 0,
 };

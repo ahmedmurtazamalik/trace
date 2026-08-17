@@ -3,7 +3,7 @@ import { createHmac, timingSafeEqual } from 'node:crypto';
 import type { TraceConfig } from '@trace/config';
 import { Prisma, PrismaService, type Repository, type UserRepository } from '@trace/database';
 import type { GithubAuthorizationAdapter, GithubRepositoryAccess } from '@trace/github';
-import type { RepositoryDetailResponse, RepositoryListQuery, RepositoryListResponse, RepositorySummary, RepositoryTrackingResponse } from '@trace/shared';
+import type { RepositoryDetailResponse, RepositoryListQuery, RepositoryListResponse, RepositoryMembershipResponse, RepositorySummary, RepositoryTrackingResponse } from '@trace/shared';
 import { repositoryListQuerySchema } from '@trace/shared';
 import { GITHUB_AUTHORIZATION_ADAPTER } from '../github/github.tokens';
 import { TRACE_CONFIG } from '../../common/config/config.token';
@@ -24,6 +24,7 @@ export class RepositoriesService {
     const rows = await this.prisma.userRepository.findMany({
       where: {
         userId,
+        removedAt: query.visibility === 'removed' ? { not: null } : null,
         ...(search === undefined ? {} : {
           repository: {
             OR: [
@@ -89,6 +90,9 @@ export class RepositoriesService {
         include: { repository: { include: { installation: { include: { githubAccount: true } } } } },
       });
       if (row === null) throw this.error('REPOSITORY_NOT_FOUND', 'Repository not found.', HttpStatus.NOT_FOUND);
+      if (enabled && row.removedAt !== null) {
+        throw this.error('REPOSITORY_REMOVED', 'Restore the repository before enabling tracking.', HttpStatus.CONFLICT);
+      }
       if (enabled && (
         row.accessRemovedAt !== null ||
         row.repository.accessRemovedAt !== null ||
@@ -113,6 +117,35 @@ export class RepositoriesService {
         });
       }
       return { repositoryId, trackingEnabled: enabled };
+    });
+  }
+
+  async setRemoved(userId: string, repositoryId: string, removed: boolean): Promise<RepositoryMembershipResponse> {
+    return this.prisma.$transaction(async (transaction) => {
+      await transaction.$queryRaw`SELECT id FROM users WHERE id = ${userId} FOR UPDATE`;
+      await transaction.$queryRaw`SELECT id FROM user_repositories WHERE user_id = ${userId} AND repository_id = ${repositoryId} FOR UPDATE`;
+      const row = await transaction.userRepository.findUnique({
+        where: { userId_repositoryId: { userId, repositoryId } },
+      });
+      if (row === null) throw this.error('REPOSITORY_NOT_FOUND', 'Repository not found.', HttpStatus.NOT_FOUND);
+      const changed = removed ? row.removedAt === null : row.removedAt !== null;
+      const updated = await transaction.userRepository.update({
+        where: { userId_repositoryId: { userId, repositoryId } },
+        data: removed
+          ? { removedAt: row.removedAt ?? new Date(), trackingEnabled: false }
+          : { removedAt: null, trackingEnabled: false },
+      });
+      if (changed) {
+        await transaction.auditLog.create({
+          data: {
+            actorUserId: userId,
+            action: removed ? 'repository.removed' : 'repository.restored',
+            targetType: 'repository',
+            targetId: repositoryId,
+          },
+        });
+      }
+      return { repositoryId, trackingEnabled: updated.trackingEnabled, removed: updated.removedAt !== null };
     });
   }
 
@@ -310,6 +343,7 @@ export class RepositoriesService {
       url: repository.htmlUrl,
       accessible: row.accessRemovedAt === null && repository.accessRemovedAt === null && repository.installation.suspendedAt === null && repository.installation.githubAccount.unlinkedAt === null && repository.installation.githubAccount.userId === userId,
       trackingEnabled: row.userId === userId && row.trackingEnabled,
+      removed: row.removedAt !== null,
       lastActivityAt: activitySummary?.lastActivityAt?.toISOString() ?? null,
       contributorCount: activitySummary?.contributorCount ?? 0,
     };
@@ -349,7 +383,7 @@ export class RepositoriesService {
   }
 
   private cursorFingerprint(userId: string, query: RepositoryListQuery): string {
-    return JSON.stringify({ version: 1, userId, search: query.search ?? null, limit: query.limit });
+    return JSON.stringify({ version: 1, userId, search: query.search ?? null, visibility: query.visibility, limit: query.limit });
   }
 
   private encodeCursor(fullName: string, id: string, fingerprint: string): string {

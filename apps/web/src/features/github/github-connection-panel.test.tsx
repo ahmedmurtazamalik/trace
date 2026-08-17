@@ -98,6 +98,20 @@ describe("GitHub connection UX", () => {
     expect(suspendedProps.beginInstallation).toHaveBeenCalledOnce();
   });
 
+  it("requires confirmation before starting a GitHub account switch", async () => {
+    const beginConnection = vi.fn().mockResolvedValue({ authorizationUrl: "https://github.com/login/oauth/authorize?client_id=trace&state=switch" });
+    const props = renderPanel({ loadStatus: vi.fn().mockResolvedValue(connected), beginConnection });
+    const trigger = await screen.findByRole("button", { name: "Switch GitHub account" });
+
+    await userEvent.click(trigger);
+    expect(beginConnection).not.toHaveBeenCalled();
+    expect(screen.getByRole("dialog", { name: "Switch GitHub account?" })).toHaveTextContent("stop tracking repositories from @alice-dev");
+    await userEvent.click(screen.getByRole("button", { name: "Confirm account switch" }));
+
+    await waitFor(() => expect(beginConnection).toHaveBeenCalledWith("csrf-value"));
+    expect(props.navigate).toHaveBeenCalledWith(expect.stringMatching(/^https:\/\/github\.com\//));
+  });
+
   it("confirms disconnect, sends in-memory CSRF, and keeps history messaging", async () => {
     const revokeConnection = vi.fn().mockResolvedValue({ success: true, historyRetained: true });
     const loadStatus = vi.fn().mockResolvedValueOnce(connected).mockResolvedValueOnce(reconnect);

@@ -361,6 +361,42 @@ describe('Repository API', () => {
     }
   });
 
+  it('removes repositories durably, stops tracking, and supports an explicit restore', async () => {
+    const identity = await installedIdentity();
+    await request(server).post('/api/v1/repositories/sync').set('Cookie', identity.cookie).set('X-CSRF-Token', identity.csrfToken).expect(200);
+    const repository = await prisma.repository.findUniqueOrThrow({ where: { githubRepositoryId: 7_001n } });
+    await request(server).post(`/api/v1/repositories/${repository.id}/tracking`)
+      .set('Cookie', identity.cookie).set('X-CSRF-Token', identity.csrfToken).expect(200);
+
+    await request(server).delete(`/api/v1/repositories/${repository.id}`).set('Cookie', identity.cookie).expect(403);
+    await request(server).delete(`/api/v1/repositories/${repository.id}`)
+      .set('Cookie', identity.cookie).set('X-CSRF-Token', identity.csrfToken)
+      .expect(200, { repositoryId: repository.id, trackingEnabled: false, removed: true });
+
+    const activeAfterRemoval = await request(server).get('/api/v1/repositories').set('Cookie', identity.cookie).expect(200);
+    expect(repositoryListResponseSchema.parse(activeAfterRemoval.body as unknown).items.map((item) => item.id)).not.toContain(repository.id);
+    const removed = await request(server).get('/api/v1/repositories').query({ visibility: 'removed' }).set('Cookie', identity.cookie).expect(200);
+    expect((removed.body as { items: Array<{ id: string; removed: boolean }> }).items).toEqual(
+      expect.arrayContaining([expect.objectContaining({ id: repository.id, removed: true })]),
+    );
+
+    await request(server).post('/api/v1/repositories/sync').set('Cookie', identity.cookie).set('X-CSRF-Token', identity.csrfToken).expect(200);
+    const stillRemoved = await request(server).get('/api/v1/repositories').set('Cookie', identity.cookie).expect(200);
+    expect(repositoryListResponseSchema.parse(stillRemoved.body as unknown).items.map((item) => item.id)).not.toContain(repository.id);
+    const tracking = await request(server).post(`/api/v1/repositories/${repository.id}/tracking`)
+      .set('Cookie', identity.cookie).set('X-CSRF-Token', identity.csrfToken).expect(409);
+    expect(tracking.body).toMatchObject({ code: 'REPOSITORY_REMOVED' });
+
+    await request(server).post(`/api/v1/repositories/${repository.id}/restore`).set('Cookie', identity.cookie).expect(403);
+    await request(server).post(`/api/v1/repositories/${repository.id}/restore`)
+      .set('Cookie', identity.cookie).set('X-CSRF-Token', identity.csrfToken)
+      .expect(200, { repositoryId: repository.id, trackingEnabled: false, removed: false });
+    const activeAfterRestore = await request(server).get('/api/v1/repositories').set('Cookie', identity.cookie).expect(200);
+    expect(repositoryListResponseSchema.parse(activeAfterRestore.body as unknown).items.map((item) => item.id)).toContain(repository.id);
+    await request(server).delete('/api/v1/repositories/not-owned')
+      .set('Cookie', identity.cookie).set('X-CSRF-Token', identity.csrfToken).expect(404);
+  });
+
   it('fails closed when enabling tracking after repository access is removed', async () => {
     const identity = await installedIdentity();
     await request(server).post('/api/v1/repositories/sync').set('Cookie', identity.cookie).set('X-CSRF-Token', identity.csrfToken).expect(200);

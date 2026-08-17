@@ -60,6 +60,11 @@ export class FakeGithubAuthorizationAdapter implements GithubAuthorizationAdapte
   }
 
   authorize(code: string): Promise<GithubAuthorizationResult> {
+    if (code === 'fake-switch-code') {
+      return Promise.resolve({
+        user: { id: 583_232n, username: 'fake-switcher', displayName: 'Fake Switcher', avatarUrl: 'https://avatars.githubusercontent.com/u/583232' },
+      });
+    }
     if (code !== 'fake-success-code') return Promise.reject(new Error('GitHub authorization failed'));
     return Promise.resolve({
       user: { id: 583_231n, username: 'fake-octocat', displayName: 'Fake Octocat', avatarUrl: 'https://avatars.githubusercontent.com/u/583231' },

@@ -2,21 +2,23 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
-import { BookOpen, ExternalLink, RefreshCw, Search, ShieldCheck, ShieldX } from "lucide-react";
+import { ArchiveRestore, BookOpen, ExternalLink, RefreshCw, Search, ShieldCheck, ShieldX, Trash2 } from "lucide-react";
 import { Badge, Button, Card, Input } from "@trace/ui";
-import type { RepositoryListQuery, RepositoryListResponse, RepositorySummary, RepositorySynchronizationResponse, RepositoryTrackingResponse } from "@trace/shared";
+import type { RepositoryListQuery, RepositoryListResponse, RepositoryMembershipResponse, RepositorySummary, RepositorySynchronizationResponse, RepositoryTrackingResponse } from "@trace/shared";
 import { useOptionalAuthSession } from "@/auth/session-provider";
-import { listRepositories, RepositoryApiError, setRepositoryTracking, synchronizeRepositories } from "@/api/repositories";
+import { listRepositories, RepositoryApiError, setRepositoryRemoved, setRepositoryTracking, synchronizeRepositories } from "@/api/repositories";
 import { AccessibleConfirmDialog } from "@/components/accessible-confirm-dialog";
 
 type LoadRepositories = (query: Partial<RepositoryListQuery>, options?: { signal?: AbortSignal }) => Promise<RepositoryListResponse>;
 type UpdateTracking = (repositoryId: string, trackingEnabled: boolean, csrfToken: string) => Promise<RepositoryTrackingResponse>;
+type UpdateMembership = (repositoryId: string, removed: boolean, csrfToken: string) => Promise<RepositoryMembershipResponse>;
 type Synchronize = (csrfToken: string) => Promise<RepositorySynchronizationResponse>;
 
 interface RepositoryManagementPanelProps {
   initialSearch?: string;
   loadRepositories?: LoadRepositories;
   updateTracking?: UpdateTracking;
+  updateMembership?: UpdateMembership;
   synchronize?: Synchronize;
   csrfToken?: string;
   onSearchChange?: (search: string) => void;
@@ -30,6 +32,7 @@ export function RepositoryManagementPanel({
   initialSearch = "",
   loadRepositories = listRepositories,
   updateTracking = setRepositoryTracking,
+  updateMembership = setRepositoryRemoved,
   synchronize = synchronizeRepositories,
   csrfToken: injectedCsrfToken,
   onSearchChange,
@@ -37,6 +40,7 @@ export function RepositoryManagementPanel({
   const auth = useOptionalAuthSession();
   const csrfToken = injectedCsrfToken ?? auth?.csrfToken;
   const [repositories, setRepositories] = useState<RepositorySummary[]>([]);
+  const [visibility, setVisibility] = useState<"active" | "removed">("active");
   const [search, setSearch] = useState(initialSearch);
   const [debouncedSearch, setDebouncedSearch] = useState(initialSearch.trim());
   const [nextCursor, setNextCursor] = useState<string | null>(null);
@@ -50,6 +54,8 @@ export function RepositoryManagementPanel({
   const [syncing, setSyncing] = useState(false);
   const [stopTrackingTarget, setStopTrackingTarget] = useState<RepositorySummary>();
   const [stopTrackingTrigger, setStopTrackingTrigger] = useState<HTMLButtonElement>();
+  const [removeTarget, setRemoveTarget] = useState<RepositorySummary>();
+  const [removeTrigger, setRemoveTrigger] = useState<HTMLButtonElement>();
 
   useEffect(() => setSearch(initialSearch), [initialSearch]);
   useEffect(() => {
@@ -60,7 +66,7 @@ export function RepositoryManagementPanel({
   const reload = useCallback((signal?: AbortSignal) => {
     setLoading(true);
     setLoadError(undefined);
-    return loadRepositories({ search: debouncedSearch || undefined, limit: 25 }, { signal })
+    return loadRepositories({ search: debouncedSearch || undefined, visibility, limit: 25 }, { signal })
       .then((response) => {
         setRepositories(response.items);
         setNextCursor(response.pageInfo.nextCursor);
@@ -71,7 +77,7 @@ export function RepositoryManagementPanel({
         }
       })
       .finally(() => setLoading(false));
-  }, [debouncedSearch, loadRepositories]);
+  }, [debouncedSearch, loadRepositories, visibility]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -89,7 +95,7 @@ export function RepositoryManagementPanel({
     setLoadingMore(true);
     setPageError(undefined);
     try {
-      const response = await loadRepositories({ search: debouncedSearch || undefined, cursor: nextCursor, limit: 25 });
+      const response = await loadRepositories({ search: debouncedSearch || undefined, visibility, cursor: nextCursor, limit: 25 });
       setRepositories((current) => {
         const byId = new Map(current.map((item) => [item.id, item]));
         response.items.forEach((item) => byId.set(item.id, item));
@@ -136,6 +142,22 @@ export function RepositoryManagementPanel({
     }
   }
 
+  async function changeMembership(repository: RepositorySummary, removed: boolean) {
+    if (csrfToken === undefined) return;
+    setPendingRepositoryId(repository.id);
+    setNotice(undefined);
+    setUpdateError(undefined);
+    try {
+      await updateMembership(repository.id, removed, csrfToken);
+      setRepositories((current) => current.filter((item) => item.id !== repository.id));
+      setNotice(`${removed ? "Removed" : "Restored"} ${repository.fullName}. Tracking remains stopped.`);
+    } catch (error) {
+      setUpdateError(message(error, `Trace could not ${removed ? "remove" : "restore"} ${repository.fullName}. Please try again.`));
+    } finally {
+      setPendingRepositoryId(undefined);
+    }
+  }
+
   if (loading && repositories.length === 0) return <Card className="repository-state-card" role="status">Loading repository access…</Card>;
   if (loadError !== undefined && repositories.length === 0) return <Card className="repository-state-card repository-state-error" role="alert">
     <p>{loadError}</p><Button className="trace-button-secondary" onClick={() => void reload()}>Retry</Button>
@@ -152,10 +174,13 @@ export function RepositoryManagementPanel({
         <span className="sr-only">Search repositories</span><Search aria-hidden="true" size={18} />
         <Input type="search" value={search} onChange={(event) => changeSearch(event.target.value)} aria-label="Search repositories" placeholder="Search owner or repository" />
       </label>
-      <div className="repository-summary" aria-live="polite"><strong>{repositories.length}</strong><span>{repositories.length === 1 ? "repository loaded" : "repositories loaded"}</span></div>
-      <Button className="trace-button-secondary" disabled={syncing || csrfToken === undefined} onClick={() => void sync()}>
-        <RefreshCw aria-hidden="true" size={16} /> {syncing ? "Adding repositories…" : "Add or refresh repositories"}
+      <div className="repository-summary" aria-live="polite"><strong>{repositories.length}</strong><span>{visibility === "removed" ? "Removed repositories" : repositories.length === 1 ? "repository loaded" : "repositories loaded"}</span></div>
+      <Button className="trace-button-secondary" onClick={() => setVisibility((current) => current === "active" ? "removed" : "active")}>
+        <ArchiveRestore aria-hidden="true" size={16} /> {visibility === "active" ? "View removed repositories" : "View active repositories"}
       </Button>
+      {visibility === "active" && <Button className="trace-button-secondary" disabled={syncing || csrfToken === undefined} onClick={() => void sync()}>
+        <RefreshCw aria-hidden="true" size={16} /> {syncing ? "Adding repositories…" : "Add or refresh repositories"}
+      </Button>}
     </Card>
 
     {notice !== undefined && <div className="repository-notice-success" role="status">{notice}</div>}
@@ -176,6 +201,11 @@ export function RepositoryManagementPanel({
           <dl className="repository-metadata"><div><dt>Default branch</dt><dd>{repository.defaultBranch}</dd></div><div><dt>Contributors</dt><dd>{repository.contributorCount}</dd></div><div><dt>Last activity</dt><dd>{repository.lastActivityAt === null ? "None retained" : new Date(repository.lastActivityAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</dd></div></dl>
           <div className="repository-actions">
             {repository.url !== null && <a className="repository-link" href={repository.url} target="_blank" rel="noreferrer">Open on GitHub <ExternalLink aria-hidden="true" size={15} /></a>}
+            {repository.removed ? <Button
+              disabled={pending || csrfToken === undefined}
+              onClick={() => void changeMembership(repository, false)}
+              aria-label={`Restore ${repository.fullName}`}
+            ><ArchiveRestore aria-hidden="true" size={16} /> {pending ? "Restoring…" : "Restore repository"}</Button> : <>
             <Button
               className={repository.trackingEnabled ? "trace-button-secondary" : undefined}
               disabled={pending || cannotEnable || csrfToken === undefined}
@@ -190,12 +220,31 @@ export function RepositoryManagementPanel({
               aria-label={cannotEnable ? `Reconnect GitHub to track ${repository.fullName}` : `${repository.trackingEnabled ? "Stop tracking" : "Track"} ${repository.fullName}`}
             >{pending ? "Updating…" : cannotEnable ? "Reconnect GitHub to track" : repository.trackingEnabled ? "Stop tracking" : "Track repository"}</Button>
             {cannotEnable && <Link className="repository-link" href="/github">Reconnect GitHub</Link>}
+            <Button
+              className="trace-button-secondary"
+              disabled={pending || csrfToken === undefined}
+              onClick={(event) => {
+                setRemoveTrigger(event.currentTarget);
+                setRemoveTarget(repository);
+              }}
+              aria-label={`Remove ${repository.fullName}`}
+            ><Trash2 aria-hidden="true" size={16} /> Remove repository</Button>
+            </>}
           </div>
         </Card>;
       })}
     </div>}
     {nextCursor !== null && <div className="repository-pagination"><Button className="trace-button-secondary" disabled={loadingMore} onClick={() => void loadMore()}>{loadingMore ? "Loading…" : "Load more repositories"}</Button></div>}
     {pageError !== undefined && <div className="repository-notice-error" role="alert">{pageError} <Button className="trace-button-secondary" onClick={() => void loadMore()}>Retry</Button></div>}
+    {removeTarget !== undefined && <AccessibleConfirmDialog
+      title="Remove repository?"
+      description={<p>Removing <strong>{removeTarget.fullName}</strong> will automatically stop tracking and hide it from your active repositories. Previously retained activity will remain available, and you can restore it later.</p>}
+      confirmLabel={pendingRepositoryId === removeTarget.id ? "Removing…" : "Confirm remove repository"}
+      pending={pendingRepositoryId === removeTarget.id}
+      returnFocus={removeTrigger ?? null}
+      onCancel={() => setRemoveTarget(undefined)}
+      onConfirm={() => { const target = removeTarget; setRemoveTarget(undefined); void changeMembership(target, true); }}
+    />}
     {stopTrackingTarget !== undefined && <AccessibleConfirmDialog
       title="Stop tracking repository?"
       description={<p>Trace will stop collecting new activity for <strong>{stopTrackingTarget.fullName}</strong>. Previously retained activity will remain available.</p>}

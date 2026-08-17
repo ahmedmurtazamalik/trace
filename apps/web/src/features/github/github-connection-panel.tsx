@@ -50,7 +50,9 @@ export function GithubConnectionPanel({
   const [error, setError] = useState<string>();
   const [notice, setNotice] = useState<string>();
   const [confirmDisconnect, setConfirmDisconnect] = useState(false);
+  const [confirmSwitch, setConfirmSwitch] = useState(false);
   const disconnectTriggerRef = useRef<HTMLButtonElement>(null);
+  const switchTriggerRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -174,7 +176,10 @@ export function GithubConnectionPanel({
             : <>Linked as <strong>@{account?.username}</strong>. Trace sign-in remains separate.</>}</p>
         <div className="github-actions">
           {(disconnected || reconnectRequired) && <Button onClick={begin} disabled={Boolean(pending)}>{pending === "connect" ? "Opening GitHub…" : reconnectRequired ? "Reconnect GitHub" : "Connect GitHub"}</Button>}
-          {!disconnected && !reconnectRequired && <Button ref={disconnectTriggerRef} className="trace-button-secondary" onClick={() => setConfirmDisconnect(true)} disabled={Boolean(pending)}>Disconnect GitHub</Button>}
+          {!disconnected && !reconnectRequired && <>
+            <Button ref={switchTriggerRef} className="trace-button-secondary" onClick={() => setConfirmSwitch(true)} disabled={Boolean(pending)}>Switch GitHub account</Button>
+            <Button ref={disconnectTriggerRef} className="trace-button-secondary" onClick={() => setConfirmDisconnect(true)} disabled={Boolean(pending)}>Disconnect GitHub</Button>
+          </>}
         </div>
       </div>
     </Card>
@@ -216,6 +221,15 @@ export function GithubConnectionPanel({
       </div>
     </Card>
 
+    {confirmSwitch && <AccessibleConfirmDialog
+      title="Switch GitHub account?"
+      description={<p>Switching will stop tracking repositories from <strong>@{account?.username}</strong> and deactivate the old GitHub App installation. Historical activity remains in Trace. You will need to install the App for the new account.</p>}
+      confirmLabel={pending === "connect" ? "Opening GitHub…" : "Confirm account switch"}
+      pending={pending === "connect"}
+      returnFocus={switchTriggerRef.current}
+      onCancel={() => setConfirmSwitch(false)}
+      onConfirm={() => { setConfirmSwitch(false); void begin(); }}
+    />}
     {confirmDisconnect && <AccessibleConfirmDialog
       title="Disconnect GitHub?"
       description={<p>Trace will stop requesting GitHub access. Historical activity remains in Trace and is not deleted.</p>}

@@ -71,7 +71,6 @@ describe('Reports API', () => {
     });
     if (user === null) return;
     await prisma.reportArtifact.deleteMany({ where: { report: { userId: user.id } } });
-    await prisma.reportRevision.deleteMany({ where: { report: { userId: user.id } } });
     await prisma.report.deleteMany({ where: { userId: user.id } });
     if (user.githubAccount !== null) {
       const installationIds = user.githubAccount.installations.map((installation) => installation.id);
