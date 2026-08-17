@@ -31,6 +31,7 @@ describe("ActivitySummaryCard", () => {
     render(<ActivitySummaryCard item={activity} timezone="UTC" />);
 
     expect(screen.getByRole("img", { name: "Ali Majid's avatar" })).toHaveAttribute("src", activity.contributor?.avatarUrl);
+    expect(screen.getByRole("link", { name: "View activity for Ali Majid" })).toHaveAttribute("href", "/contributors/contributor-01");
     expect(screen.getByText("Ali Majid")).toBeInTheDocument();
     expect(screen.getByText("@alimajid266")).toBeInTheDocument();
     expect(screen.getByText("Branch main")).toBeInTheDocument();

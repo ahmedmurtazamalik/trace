@@ -749,3 +749,55 @@ No Person A-owned backend or shared-contract source was changed.
 
 ### What's next
 - Wait for integration-owner review of PR #30. Do not merge or deploy without separate authorization; do not edit the root README.
+
+## Day 14 — Final frontend QA and release-readiness
+
+### What was done
+- Started isolated local branch `day14` from exact merged `origin/main` commit `0ffbf32914be8ebe7c0abf4a79d8dba04f033278`; the merged Person A and Person B Day 13 work is present.
+- Closed the planned contributor-view gap test-first: known contributor identities now link to `/contributors/[id]`, the new route requests Activity with an immutable route-level `contributorId`, ordinary filter changes cannot override it, and clearing user filters cannot escape contributor scope. Missing contributor identities remain safe non-links.
+- Added unit and desktop/mobile browser coverage for contributor navigation, exact API query scoping, future/unknown Activity source and type values, and fixed-filter clearing behavior.
+- Added safe disabled-account browser coverage that rejects backend/internal error text.
+- Fixed release-blocking authorization defects test-first: after a successful repository load, a later 401 or 403 now clears cached repository names, pagination, notices, pending controls, and dialogs, increments an authorization generation, and prevents any older reload, pagination, sync, tracking, or membership completion from repopulating protected state.
+- Added a desktop/mobile production-browser matrix proving 401 and 403 fail closed for Dashboard, Repositories, Activity, Reports, and GitHub without rendering protected domain content or unsafe backend messages.
+- Did not change backend, worker, database, shared contracts, infrastructure, lockfiles, or the root README.
+
+### How to test
+1. Run `pnpm install --frozen-lockfile`.
+2. Run `NODE_ENV=production pnpm build`.
+3. Run `pnpm test`, `pnpm lint`, and `pnpm typecheck`.
+4. Against disposable PostgreSQL and Redis, run the gated deterministic seed and `pnpm test:integration`; expect 10 database plus 88 API integration tests.
+5. Run `NODE_ENV=production pnpm --filter @trace/web test:e2e`; expect 92/92 across desktop Chrome and Pixel 5.
+6. Run `NODE_ENV=production pnpm --filter @trace/web test:e2e:mock`; expect 2/2 credential-free MSW/axe tests.
+7. For the real joint smoke, build the frontend against a real isolated API origin, start the production frontend and API, sign in with the gated deterministic development seed, open Activity, and verify the rendered contributor target loads `/contributors/{id}` while the browser requests `/api/v1/activity?...&contributorId={id}&limit=25`.
+
+### Issues and important notes
+- The initial clean-worktree `pnpm test` attempt ran after only the web package had been built and failed because API/worker tests resolve workspace runtime packages from generated `dist/`. A full workspace build created the expected artifacts; the unchanged command then passed. No source fix was needed.
+- The first integration attempt used an intentionally empty disposable database. Migration checks passed, while six deterministic seed assertions correctly failed. Running the repository's gated seed twice proved idempotency; the unchanged integration suite then passed 98/98 and passed again after the final frontend fixes.
+- A pre-implementation independent audit found the missing contributor view, stale repository data after authorization failure, and absent Day 14 handoff evidence. The first exact-tree review then found that an older concurrent request could still repopulate repositories after authorization failure. A focused race regression reproduced that defect, and an authorization-generation guard corrected it. A fresh exact-tree review of the corrected index remains required before the local commit.
+- Standard and mock Playwright use deterministic HTTP/MSW fixtures. They prove frontend contracts, error handling, responsive behavior, and accessibility, but not live GitHub OAuth/App behavior, email delivery, real LLM/LaTeX report generation, or deployment.
+- The joint smoke used a production frontend, real API, real PostgreSQL, and real Redis with an isolated disposable database and Redis logical database. It proved authenticated login and real database-backed contributor Activity. It did not use live GitHub credentials or external providers.
+- The browser-control click primitive reported success without changing location during the manual smoke. The rendered anchor target was correct; direct navigation proved the real route/API/database seam, while standard Playwright independently proved actual contributor-link clicking on desktop and mobile.
+- Both temporary Day 14 API/frontend processes were stopped. Deleting the disposable `trace_day14` database, Redis DB 15, and `/tmp/trace-day14-artifacts` was blocked pending explicit destructive-action approval, so cleanup is not claimed complete.
+- Day 14 remains local-only. Nothing was pushed, no PR was opened, and nothing was merged or deployed.
+
+### Verification
+- TDD RED evidence: contributor link absent, fixed contributor filter absent, contributor route absent, stale repositories after both 401 and 403, and delayed pre-failure pagination repopulating protected data all failed focused tests before their implementations.
+- Focused repository authorization GREEN: PASS, 13/13.
+- Protected-domain 401/403 browser matrix: PASS, 20/20 across desktop and mobile.
+- Complete web unit/component/API suite: PASS, 200/200 across 31 files.
+- Complete workspace unit suite: PASS, 370/370 with 2 intentional Docker-only worker skips.
+- PostgreSQL/Redis integration suite: PASS, 98/98 (10 database + 88 API).
+- Complete standard Playwright suite: PASS, 92/92 across desktop and mobile.
+- Credential-free production Playwright/axe suite: PASS, 2/2 across desktop and mobile.
+- Repository lint and typecheck: PASS.
+- Complete production workspace build: PASS; web generated all 14 routes, including dynamic `/contributors/[id]`.
+- Production dependency audit: PASS, no known vulnerabilities.
+- Production artifact review: PASS across 224 `.next` files; zero source-map files/references and zero private-key, GitHub-token, AWS-key, or credential-bearing database URL signatures.
+- Source review: six credential-URL signatures were confined to explicit localhost/example backend/infrastructure test fixtures; no live secret was identified. Browser storage tests remained empty, and the real joint-smoke console contained zero messages or JavaScript errors.
+- Real joint smoke: PASS. API `/health` and `/ready` returned 200; the contributor page rendered database-backed Activity; the recorded browser request included the immutable contributor ID; no clear-filter escape was present.
+- Final independent exact-tree review: pending.
+
+### What's next
+- Complete the independent exact-tree review, correct any release blocker, and create a local Day 14 commit.
+- With explicit cleanup approval, remove the disposable Day 14 database, Redis logical database, and temporary artifact directory.
+- Do not push, open a PR, merge, or deploy without Ali's separate authorization.

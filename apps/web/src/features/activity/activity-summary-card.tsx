@@ -1,4 +1,5 @@
 import Image from "next/image";
+import Link from "next/link";
 import { GitCommitHorizontal, GitPullRequest, Upload } from "lucide-react";
 import { Badge, Card } from "@trace/ui";
 import type { ActivitySummary } from "@trace/shared";
@@ -30,7 +31,9 @@ export function ActivitySummaryCard({ item, timezone = "UTC", headingLevel = 2, 
         {item.contributor?.avatarUrl !== null && item.contributor?.avatarUrl !== undefined
           ? <Image unoptimized className="activity-contributor-avatar" src={item.contributor.avatarUrl} width={32} height={32} alt={`${name}'s avatar`} />
           : <span className="activity-contributor-avatar activity-contributor-fallback" aria-hidden="true">{contributorInitials(item)}</span>}
-        <span className="activity-contributor-identity"><strong>{name}</strong>{item.contributor?.username !== null && item.contributor?.username !== undefined && <small>@{item.contributor.username}</small>}</span>
+        {item.contributor === null
+          ? <span className="activity-contributor-identity"><strong>{name}</strong></span>
+          : <Link className="activity-contributor-link" aria-label={`View activity for ${name}`} href={`/contributors/${encodeURIComponent(item.contributor.id)}`}><span className="activity-contributor-identity"><strong>{name}</strong>{item.contributor.username !== null && <small>@{item.contributor.username}</small>}</span></Link>}
         <span aria-hidden="true">·</span>
         <span>{item.repository.fullName}</span>
       </div>

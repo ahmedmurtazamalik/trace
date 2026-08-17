@@ -33,6 +33,18 @@ test("login renders safe invalid-credential feedback and remains usable", async 
   await expect(page.getByRole("button", { name: "Sign in" })).toBeEnabled();
 });
 
+test("login renders safe disabled-account feedback without exposing backend details", async ({ page }) => {
+  await anonymous(page);
+  await page.route("**/api/v1/auth/login", (route) => route.fulfill({ status: 403, contentType: "application/json", body: JSON.stringify({ code: "ACCOUNT_DISABLED", message: "unsafe suspension reason", requestId: "e2e-disabled" }) }));
+  await page.goto("/login");
+  await page.getByLabel("Username").fill("alice.dev");
+  await page.getByLabel("Password").fill("correct-horse-battery-staple");
+  await page.getByRole("button", { name: "Sign in" }).click();
+  await expect(page.locator(".auth-alert[role='alert']")).toHaveText("This account is disabled. Contact support for help.");
+  await expect(page.getByText("unsafe suspension reason")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Sign in" })).toBeEnabled();
+});
+
 test("registration validates locally and creates a session", async ({ page }) => {
   await anonymous(page);
   await page.route("**/api/v1/auth/register", (route) => route.fulfill({ status: 201, contentType: "application/json", body: JSON.stringify(session) }));

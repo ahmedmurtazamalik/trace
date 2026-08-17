@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ArchiveRestore, BookOpen, ExternalLink, RefreshCw, Search, ShieldCheck, ShieldX, Trash2 } from "lucide-react";
 import { Badge, Button, Card, Input } from "@trace/ui";
 import type { RepositoryListQuery, RepositoryListResponse, RepositoryMembershipResponse, RepositorySummary, RepositorySynchronizationResponse, RepositoryTrackingResponse } from "@trace/shared";
@@ -26,6 +26,10 @@ interface RepositoryManagementPanelProps {
 
 function message(error: unknown, fallback: string): string {
   return error instanceof RepositoryApiError ? error.message : fallback;
+}
+
+function isAuthorizationFailure(error: unknown): boolean {
+  return error instanceof RepositoryApiError && (error.status === 401 || error.status === 403);
 }
 
 export function RepositoryManagementPanel({
@@ -56,6 +60,19 @@ export function RepositoryManagementPanel({
   const [stopTrackingTrigger, setStopTrackingTrigger] = useState<HTMLButtonElement>();
   const [removeTarget, setRemoveTarget] = useState<RepositorySummary>();
   const [removeTrigger, setRemoveTrigger] = useState<HTMLButtonElement>();
+  const authorizationGeneration = useRef(0);
+
+  const clearProtectedState = useCallback(() => {
+    authorizationGeneration.current += 1;
+    setRepositories([]);
+    setNextCursor(null);
+    setPageError(undefined);
+    setUpdateError(undefined);
+    setNotice(undefined);
+    setPendingRepositoryId(undefined);
+    setStopTrackingTarget(undefined);
+    setRemoveTarget(undefined);
+  }, []);
 
   useEffect(() => setSearch(initialSearch), [initialSearch]);
   useEffect(() => {
@@ -64,20 +81,23 @@ export function RepositoryManagementPanel({
   }, [search]);
 
   const reload = useCallback((signal?: AbortSignal) => {
+    const requestGeneration = authorizationGeneration.current;
     setLoading(true);
     setLoadError(undefined);
     return loadRepositories({ search: debouncedSearch || undefined, visibility, limit: 25 }, { signal })
       .then((response) => {
+        if (requestGeneration !== authorizationGeneration.current) return;
         setRepositories(response.items);
         setNextCursor(response.pageInfo.nextCursor);
       })
       .catch((error) => {
         if (!(error instanceof DOMException && error.name === "AbortError")) {
+          if (isAuthorizationFailure(error)) clearProtectedState();
           setLoadError(message(error, "Trace could not load repositories. Please try again."));
         }
       })
       .finally(() => setLoading(false));
-  }, [debouncedSearch, loadRepositories, visibility]);
+  }, [clearProtectedState, debouncedSearch, loadRepositories, visibility]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -92,10 +112,12 @@ export function RepositoryManagementPanel({
 
   async function loadMore() {
     if (nextCursor === null) return;
+    const requestGeneration = authorizationGeneration.current;
     setLoadingMore(true);
     setPageError(undefined);
     try {
       const response = await loadRepositories({ search: debouncedSearch || undefined, visibility, cursor: nextCursor, limit: 25 });
+      if (requestGeneration !== authorizationGeneration.current) return;
       setRepositories((current) => {
         const byId = new Map(current.map((item) => [item.id, item]));
         response.items.forEach((item) => byId.set(item.id, item));
@@ -103,6 +125,7 @@ export function RepositoryManagementPanel({
       });
       setNextCursor(response.pageInfo.nextCursor);
     } catch (error) {
+      if (isAuthorizationFailure(error)) clearProtectedState();
       setPageError(message(error, "Trace could not load more repositories. Please try again."));
     } finally {
       setLoadingMore(false);
@@ -111,14 +134,17 @@ export function RepositoryManagementPanel({
 
   async function sync() {
     if (csrfToken === undefined) return;
+    const requestGeneration = authorizationGeneration.current;
     setSyncing(true);
     setNotice(undefined);
     setLoadError(undefined);
     try {
       const result = await synchronize(csrfToken);
+      if (requestGeneration !== authorizationGeneration.current) return;
       setNotice(`${result.accessibleRepositoryCount} accessible ${result.accessibleRepositoryCount === 1 ? "repository" : "repositories"} synchronized.`);
       await reload();
     } catch (error) {
+      if (isAuthorizationFailure(error)) clearProtectedState();
       setLoadError(message(error, "Trace could not synchronize repositories. Please try again."));
     } finally {
       setSyncing(false);
@@ -127,15 +153,18 @@ export function RepositoryManagementPanel({
 
   async function toggleTracking(repository: RepositorySummary) {
     if (csrfToken === undefined) return;
+    const requestGeneration = authorizationGeneration.current;
     const nextTracking = !repository.trackingEnabled;
     setPendingRepositoryId(repository.id);
     setNotice(undefined);
     setUpdateError(undefined);
     try {
       const result = await updateTracking(repository.id, nextTracking, csrfToken);
+      if (requestGeneration !== authorizationGeneration.current) return;
       setRepositories((current) => current.map((item) => item.id === result.repositoryId ? { ...item, trackingEnabled: result.trackingEnabled } : item));
       setNotice(`Tracking ${result.trackingEnabled ? "enabled" : "stopped"} for ${repository.fullName}.`);
     } catch (error) {
+      if (isAuthorizationFailure(error)) clearProtectedState();
       setUpdateError(message(error, `Trace could not update tracking for ${repository.fullName}. Please try again.`));
     } finally {
       setPendingRepositoryId(undefined);
@@ -144,14 +173,17 @@ export function RepositoryManagementPanel({
 
   async function changeMembership(repository: RepositorySummary, removed: boolean) {
     if (csrfToken === undefined) return;
+    const requestGeneration = authorizationGeneration.current;
     setPendingRepositoryId(repository.id);
     setNotice(undefined);
     setUpdateError(undefined);
     try {
       await updateMembership(repository.id, removed, csrfToken);
+      if (requestGeneration !== authorizationGeneration.current) return;
       setRepositories((current) => current.filter((item) => item.id !== repository.id));
       setNotice(`${removed ? "Removed" : "Restored"} ${repository.fullName}. Tracking remains stopped.`);
     } catch (error) {
+      if (isAuthorizationFailure(error)) clearProtectedState();
       setUpdateError(message(error, `Trace could not ${removed ? "remove" : "restore"} ${repository.fullName}. Please try again.`));
     } finally {
       setPendingRepositoryId(undefined);
