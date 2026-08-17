@@ -177,15 +177,15 @@ function renderContributor(
   content: { summary: string; accomplishments: string[] },
 ): string {
   const name = contributor.displayName ?? contributor.username ?? contributor.id;
-  const accomplishmentsBox = content.accomplishments.length === 0
-    ? ''
-    : `
-\\begin{tcolorbox}[colback=white,colframe=secondarycolor,fonttitle=\\bfseries,title={Accomplishments}]
-\\begin{itemize}[leftmargin=*]
+  const accomplishments = content.accomplishments.length === 0
+    ? '\\textit{No accomplishments recorded.}'
+    : `\\begin{itemize}[leftmargin=*]
 ${content.accomplishments.map((item) => `\\item ${escapeLatex(item)}`).join('\n')}
-\\end{itemize}
-\\end{tcolorbox}`;
+\\end{itemize}`;
   return `\\subsection{${escapeLatex(name)}}
 ${factsTable(contributor.facts)}
-${escapeLatex(content.summary)}${accomplishmentsBox}`;
+${escapeLatex(content.summary)}
+\\begin{tcolorbox}[colback=white,colframe=secondarycolor,fonttitle=\\bfseries,title={Accomplishments}]
+${accomplishments}
+\\end{tcolorbox}`;
 }

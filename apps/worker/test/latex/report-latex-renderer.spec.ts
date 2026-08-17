@@ -57,7 +57,7 @@ describe('Trace LaTeX report renderer', () => {
     expect(first).toContain('Commits & 2');
   });
 
-  it('omits the accomplishments box when a validated contributor has no accomplishments', () => {
+  it('renders an honest placeholder instead of an invalid empty accomplishments list', () => {
     const withoutAccomplishments = {
       ...content,
       repositories: content.repositories.map((repository) => ({
@@ -68,8 +68,9 @@ describe('Trace LaTeX report renderer', () => {
 
     const rendered = renderReportLatex(snapshot, withoutAccomplishments, 1);
 
+    expect(rendered).toContain('No accomplishments recorded.');
+    expect(rendered).toContain('title={Accomplishments}');
     expect(rendered).not.toContain('\\begin{itemize}[leftmargin=*]\n\n\\end{itemize}');
-    expect(rendered).not.toContain('title={Accomplishments}');
   });
 
   it('escapes every untrusted LaTeX metacharacter without exposing commands', () => {
