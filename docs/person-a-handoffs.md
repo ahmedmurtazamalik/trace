@@ -489,6 +489,7 @@ Final recorded results:
 - Added a production JSON logger controlled by `LOG_LEVEL`; sanitized request events contain correlation ID, method, path without query, status, bounded duration, and a completed/aborted outcome exactly once.
 - Propagated one absolute worker shutdown deadline into both concurrently closing BullMQ consumers and resource cleanup, with a bounded forced-cleanup reserve inside that deadline; the production container grace period exceeds the complete application budget.
 - Added executable backend smoke automation, immutable-image validation, backend operations/rollback documentation, and GitHub App setup/rotation documentation.
+- Pinned transitive `deepmerge-ts` to patched `8.0.0` after hosted production audit surfaced `GHSA-ggr8-5vv4-36mx`; Prisma generate/validate and migration packaging remain green, and both production/full audits report no known vulnerabilities.
 - Changed no root README, `apps/web/**`, `packages/ui/**`, frontend docs, or Person B handoff path.
 
 ### Contracts published or changed
@@ -514,8 +515,8 @@ Final recorded results:
 - Result: `BACKEND_SMOKE_PASS` on a fresh Compose project; immutable local image IDs, all 18 migrations in the hardened one-shot container, production API/worker startup, `/health` and `/ready`, UID `1000`, Docker client/socket access, real 3,729-byte PDF compile, active webhook/report queue drain, bounded SIGTERM stop, and cleanup passed.
 - Command: `bash /tmp/trace-person-a-day13-acceptance.sh`.
 - Result: `DAY13_ACCEPTANCE_PASS` on base `68b70772ffffbf11b9762d1749a88546471f672b`; 340 workspace tests were collected (338 passed and two intentional Docker-only worker skips), database integration 10/10, API integration 88/88, lint, typecheck, 14-route production build, full and production dependency audits with no known vulnerabilities, real Docker/XeLaTeX 2/2, Playwright desktop/mobile 68/68, diff-check, unchanged working-diff fingerprint, and disposable-service cleanup.
-- Logs: `/tmp/trace-day13-acceptance-1669958-logs`.
-- Post-review remediation: the reported missing migration CLI was disproven against the exact artifact and built migration image (`prisma 6.19.3`); `pnpm test:deployment` now includes an executable production-bundle regression and passes 6/6. A genuine sequential shutdown-budget finding was fixed with one coordinator deadline, concurrent consumer closure, remaining-time resource cleanup, and an in-budget forced-cleanup reserve. Focused worker lifecycle/queue tests passed 31/31 against disposable Redis, the exhausted-deadline regression passed, worker lint/typecheck passed, fresh full acceptance passed, and a fresh production-like backend smoke passed the active-drain and bounded-stop gates. Exact-tree review was reopened after these changes.
+- Logs: `/tmp/trace-day13-acceptance-1784000-logs`.
+- Post-review remediation: the reported missing migration CLI was disproven against the exact artifact and built migration image (`prisma 6.19.3`); `pnpm test:deployment` now includes an executable production-bundle regression and passes 6/6. A genuine sequential shutdown-budget finding was fixed with one coordinator deadline, concurrent consumer closure, remaining-time resource cleanup, and an in-budget forced-cleanup reserve. Focused worker lifecycle/queue tests passed 31/31 against disposable Redis, the exhausted-deadline regression passed, worker lint/typecheck passed, fresh full acceptance passed, and a fresh production-like backend smoke passed the active-drain and bounded-stop gates. The initial immutable commit received a clean exact-tree review; the later hosted-audit dependency remediation was rerun as a separate child candidate for fresh review.
 
 ### Person B integration notes
 
