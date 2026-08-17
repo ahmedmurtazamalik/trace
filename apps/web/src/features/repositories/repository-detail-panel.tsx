@@ -5,7 +5,7 @@ import Link from "next/link";
 import { ExternalLink, ShieldCheck, ShieldX } from "lucide-react";
 import { Badge, Button, Card } from "@trace/ui";
 import type { RepositoryDetailResponse } from "@trace/shared";
-import { getRepository } from "@/api/repositories";
+import { getRepository, RepositoryApiError } from "@/api/repositories";
 
 type LoadRepository = (id: string, options?: { signal?: AbortSignal }) => Promise<RepositoryDetailResponse>;
 
@@ -16,7 +16,7 @@ export function RepositoryDetailPanel({ repositoryId, loadRepository = getReposi
   const load = useCallback((signal?: AbortSignal) => {
     setLoading(true); setError(undefined);
     return loadRepository(repositoryId, { signal }).then(setDetail).catch((reason) => {
-      if (!(reason instanceof DOMException && reason.name === "AbortError")) setError(reason instanceof Error ? reason.message : "Trace could not load this repository.");
+      if (!(reason instanceof DOMException && reason.name === "AbortError")) setError(reason instanceof RepositoryApiError ? reason.message : "Trace could not load this repository. Please try again.");
     }).finally(() => setLoading(false));
   }, [loadRepository, repositoryId]);
   useEffect(() => { const controller = new AbortController(); void load(controller.signal); return () => controller.abort(); }, [load]);

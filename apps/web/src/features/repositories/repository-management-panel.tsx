@@ -6,7 +6,8 @@ import { BookOpen, ExternalLink, RefreshCw, Search, ShieldCheck, ShieldX } from 
 import { Badge, Button, Card, Input } from "@trace/ui";
 import type { RepositoryListQuery, RepositoryListResponse, RepositorySummary, RepositorySynchronizationResponse, RepositoryTrackingResponse } from "@trace/shared";
 import { useOptionalAuthSession } from "@/auth/session-provider";
-import { listRepositories, setRepositoryTracking, synchronizeRepositories } from "@/api/repositories";
+import { listRepositories, RepositoryApiError, setRepositoryTracking, synchronizeRepositories } from "@/api/repositories";
+import { AccessibleConfirmDialog } from "@/components/accessible-confirm-dialog";
 
 type LoadRepositories = (query: Partial<RepositoryListQuery>, options?: { signal?: AbortSignal }) => Promise<RepositoryListResponse>;
 type UpdateTracking = (repositoryId: string, trackingEnabled: boolean, csrfToken: string) => Promise<RepositoryTrackingResponse>;
@@ -22,7 +23,7 @@ interface RepositoryManagementPanelProps {
 }
 
 function message(error: unknown, fallback: string): string {
-  return error instanceof Error ? error.message : fallback;
+  return error instanceof RepositoryApiError ? error.message : fallback;
 }
 
 export function RepositoryManagementPanel({
@@ -47,6 +48,8 @@ export function RepositoryManagementPanel({
   const [updateError, setUpdateError] = useState<string>();
   const [pendingRepositoryId, setPendingRepositoryId] = useState<string>();
   const [syncing, setSyncing] = useState(false);
+  const [stopTrackingTarget, setStopTrackingTarget] = useState<RepositorySummary>();
+  const [stopTrackingTrigger, setStopTrackingTrigger] = useState<HTMLButtonElement>();
 
   useEffect(() => setSearch(initialSearch), [initialSearch]);
   useEffect(() => {
@@ -173,7 +176,19 @@ export function RepositoryManagementPanel({
           <dl className="repository-metadata"><div><dt>Default branch</dt><dd>{repository.defaultBranch}</dd></div><div><dt>Contributors</dt><dd>{repository.contributorCount}</dd></div><div><dt>Last activity</dt><dd>{repository.lastActivityAt === null ? "None retained" : new Date(repository.lastActivityAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</dd></div></dl>
           <div className="repository-actions">
             {repository.url !== null && <a className="repository-link" href={repository.url} target="_blank" rel="noreferrer">Open on GitHub <ExternalLink aria-hidden="true" size={15} /></a>}
-            <Button className={repository.trackingEnabled ? "trace-button-secondary" : undefined} disabled={pending || cannotEnable || csrfToken === undefined} onClick={() => void toggleTracking(repository)} aria-label={cannotEnable ? `Reconnect GitHub to track ${repository.fullName}` : `${repository.trackingEnabled ? "Stop tracking" : "Track"} ${repository.fullName}`}>{pending ? "Updating…" : cannotEnable ? "Reconnect GitHub to track" : repository.trackingEnabled ? "Stop tracking" : "Track repository"}</Button>
+            <Button
+              className={repository.trackingEnabled ? "trace-button-secondary" : undefined}
+              disabled={pending || cannotEnable || csrfToken === undefined}
+              onClick={(event) => {
+                if (repository.trackingEnabled) {
+                  setStopTrackingTrigger(event.currentTarget);
+                  setStopTrackingTarget(repository);
+                } else {
+                  void toggleTracking(repository);
+                }
+              }}
+              aria-label={cannotEnable ? `Reconnect GitHub to track ${repository.fullName}` : `${repository.trackingEnabled ? "Stop tracking" : "Track"} ${repository.fullName}`}
+            >{pending ? "Updating…" : cannotEnable ? "Reconnect GitHub to track" : repository.trackingEnabled ? "Stop tracking" : "Track repository"}</Button>
             {cannotEnable && <Link className="repository-link" href="/github">Reconnect GitHub</Link>}
           </div>
         </Card>;
@@ -181,5 +196,14 @@ export function RepositoryManagementPanel({
     </div>}
     {nextCursor !== null && <div className="repository-pagination"><Button className="trace-button-secondary" disabled={loadingMore} onClick={() => void loadMore()}>{loadingMore ? "Loading…" : "Load more repositories"}</Button></div>}
     {pageError !== undefined && <div className="repository-notice-error" role="alert">{pageError} <Button className="trace-button-secondary" onClick={() => void loadMore()}>Retry</Button></div>}
+    {stopTrackingTarget !== undefined && <AccessibleConfirmDialog
+      title="Stop tracking repository?"
+      description={<p>Trace will stop collecting new activity for <strong>{stopTrackingTarget.fullName}</strong>. Previously retained activity will remain available.</p>}
+      confirmLabel={pendingRepositoryId === stopTrackingTarget.id ? "Stopping tracking…" : "Confirm stop tracking"}
+      pending={pendingRepositoryId === stopTrackingTarget.id}
+      returnFocus={stopTrackingTrigger ?? null}
+      onCancel={() => setStopTrackingTarget(undefined)}
+      onConfirm={() => { const target = stopTrackingTarget; setStopTrackingTarget(undefined); void toggleTracking(target); }}
+    />}
   </div>;
 }

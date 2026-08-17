@@ -42,8 +42,15 @@ test("connected GitHub status stays separate from installation and disconnect re
   await expect(page.getByText("@alice-dev")).toBeVisible();
   await expect(page.getByText("Installation active")).toBeVisible();
   await expect(page.getByText("4 accessible")).toBeVisible();
-  await page.getByRole("button", { name: "Disconnect GitHub" }).click();
+  const disconnect = page.getByRole("button", { name: "Disconnect GitHub" });
+  await disconnect.focus();
+  await page.keyboard.press("Enter");
   await expect(page.getByRole("dialog")).toContainText("Historical activity remains in Trace");
+  await expect(page.getByRole("button", { name: "Cancel" })).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(disconnect).toBeFocused();
+  await page.keyboard.press("Enter");
   await page.getByRole("button", { name: "Confirm disconnect" }).click();
   await expect(page.getByRole("status")).toContainText("Historical activity remains");
   await expect(page.getByRole("button", { name: "Reconnect GitHub" })).toBeVisible();

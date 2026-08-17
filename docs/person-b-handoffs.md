@@ -543,3 +543,43 @@ No Person A-owned backend or shared-contract source was changed.
 ### What's next
 - Run the joint authenticated real-backend save/regenerate/download smoke against the now-merged Person A revision, regeneration, and artifact endpoints.
 - Do not mark Day 10 overall complete until browser → API → database/worker → real PDF download/open and stale-revision conflict are proven.
+
+## Day 11 — Frontend security, accessibility, and UX hardening
+
+### What was done
+- Audited Ali's Day 11 plan against exact merged `origin/main` commit `7caf40c3fe44e9fc547ae689fbbe9282e38fa592`, which contains Person A's merged backend Day 11 security work.
+- Kept protected-route bootstrap, safe local return-path validation, cookie credentials, in-memory CSRF/session state, and closed 401/403 UI handling intact.
+- Added accessible destructive confirmations for GitHub disconnection and repository tracking removal, including initial focus, Escape dismissal, Tab containment, focus restoration, pending-state protection, and retained-history explanations.
+- Added first-invalid-field focus to login and registration validation.
+- Replaced raw unexpected repository errors with safe user-facing fallbacks while preserving validated `RepositoryApiError` messages.
+- Added reusable route/global error containment that announces and focuses safe recovery UI without rendering error messages or framework digests.
+- Added automated browser audits across every public/protected page shell for landmarks, duplicate IDs, unnamed controls, missing image alternatives, and horizontal overflow.
+- Added browser proof that CSRF/session identifiers never enter local storage, session storage, or readable cookies; added reduced-motion and keyboard-only critical-flow checks.
+- Changed only `apps/web/**` and this Person B handoff. No backend, worker, database, shared contract, infrastructure, root README, package manifest, or lockfile was changed.
+
+### How to test
+1. Open `/login`, submit empty fields, and confirm focus moves to **Username**.
+2. Open `/github`, choose **Disconnect GitHub**, and confirm focus moves to **Cancel**; Escape closes the dialog and restores focus.
+3. Open `/repositories`, choose **Stop tracking**, and confirm no request occurs until **Confirm stop tracking** is selected.
+4. Run `NODE_ENV=test pnpm --filter @trace/web test` and expect 156/156.
+5. Run `NODE_ENV=production pnpm --filter @trace/web test:e2e` and expect 66/66 across desktop and Pixel 5.
+
+### Issues and important notes
+- The first clean-worktree test command could not start because dependencies were absent; `pnpm install --frozen-lockfile` restored the exact merged dependency tree without changing the lockfile.
+- The first accessibility scanner incorrectly ignored valid wrapping `<label>` elements, and the first reduced-motion assertion compared Chromium's equivalent scientific-notation CSS serialization as text. Both test-harness assumptions were corrected; no product workaround was added.
+- Automated browser tests use deterministic HTTP interception. They prove frontend security/UX behavior and request boundaries, not live PostgreSQL/Redis/worker execution.
+- Ali's Day 11 slice is complete on local branch `day11`. It is not pushed, in a PR, merged, or deployed.
+
+### Verification
+- Focused RED confirmed five missing behaviors; focused GREEN: 30/30.
+- Route error-boundary RED confirmed missing implementation; focused GREEN: 1/1.
+- Complete web unit/component suite: PASS, 156/156 across 27 files.
+- Complete Playwright suite: PASS, 66/66 across desktop Chrome and Pixel 5.
+- Web lint: PASS, no warnings or errors (only Next's upstream `next lint` deprecation notice).
+- Web typecheck: PASS.
+- Final production build after browser tests: PASS, 14/14 routes generated.
+- `git diff --check`, ownership inspection, and sensitive-browser-API scan: PASS.
+
+### What's next
+- With Ali's permission: push `day11`, then separately open the Day 11 PR.
+- After merge, verify the exact integrated main branch before calling the full team Day 11 complete.

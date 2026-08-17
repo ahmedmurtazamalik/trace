@@ -112,6 +112,19 @@ describe("GitHub connection UX", () => {
     expect(loadStatus).toHaveBeenCalledTimes(2);
   });
 
+  it("moves focus into the disconnect dialog, closes on Escape, and restores the trigger", async () => {
+    renderPanel({ loadStatus: vi.fn().mockResolvedValue(connected) });
+    const trigger = await screen.findByRole("button", { name: "Disconnect GitHub" });
+
+    await userEvent.click(trigger);
+
+    const cancel = screen.getByRole("button", { name: "Cancel" });
+    expect(cancel).toHaveFocus();
+    await userEvent.keyboard("{Escape}");
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(trigger).toHaveFocus();
+  });
+
   it("keeps a successful disconnect truthful when the status refresh is unavailable", async () => {
     const loadStatus = vi.fn().mockResolvedValueOnce(connected).mockRejectedValueOnce(new Error("offline"));
     renderPanel({ loadStatus });

@@ -46,6 +46,8 @@ test("repository access and Trace tracking use live API contracts on desktop and
   await expect(page.getByRole("button", { name: "Stop tracking archive-fixture-org/legacy-api" })).toBeEnabled();
   const trackingRequest = page.waitForRequest((request) => request.method() === "DELETE" && request.url().endsWith("/api/v1/repositories/repo_02/tracking"));
   await page.getByRole("button", { name: "Stop tracking archive-fixture-org/legacy-api" }).click();
+  await expect(page.getByRole("dialog", { name: "Stop tracking repository?" })).toContainText("Previously retained activity will remain available");
+  await page.getByRole("button", { name: "Confirm stop tracking" }).click();
   const trackingHeaders = await (await trackingRequest).allHeaders();
   expect(trackingHeaders["x-csrf-token"]).toBe(session.csrfToken);
   expect((await trackingRequest).postData()).toBeNull();

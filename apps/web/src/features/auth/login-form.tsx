@@ -35,7 +35,12 @@ export function LoginForm({ onAuthenticated, authenticate = login }: LoginFormPr
     setFieldErrors(nextErrors);
     setFormError(undefined);
     setSuccess(false);
-    if (Object.keys(nextErrors).length > 0) return;
+    if (Object.keys(nextErrors).length > 0) {
+      const firstInvalid = nextErrors.username ? "username" : "password";
+      const field = event.currentTarget.elements.namedItem(firstInvalid);
+      if (field instanceof HTMLElement) field.focus();
+      return;
+    }
 
     setPending(true);
     try {

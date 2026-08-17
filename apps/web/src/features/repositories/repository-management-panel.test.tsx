@@ -2,6 +2,7 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import type { RepositoryListResponse } from "@trace/shared";
+import { RepositoryApiError } from "@/api/repositories";
 import { RepositoryManagementPanel } from "./repository-management-panel";
 
 const repositories: RepositoryListResponse = {
@@ -46,6 +47,7 @@ describe("repository management", () => {
     renderPanel();
     await screen.findByRole("link", { name: "archive-fixture-org/legacy-api" });
     await userEvent.click(screen.getByRole("button", { name: "Stop tracking archive-fixture-org/legacy-api" }));
+    await userEvent.click(screen.getByRole("button", { name: "Confirm stop tracking" }));
 
     expect(screen.getByRole("button", { name: "Reconnect GitHub to track archive-fixture-org/legacy-api" })).toBeDisabled();
     expect(screen.getByRole("link", { name: "Reconnect GitHub" })).toHaveAttribute("href", "/github");
@@ -62,7 +64,7 @@ describe("repository management", () => {
   });
 
   it("sends the in-memory CSRF token for tracking and rolls back safely on failure", async () => {
-    const updateTracking = vi.fn().mockRejectedValue(new Error("Tracking is temporarily unavailable."));
+    const updateTracking = vi.fn().mockRejectedValue(new RepositoryApiError("SERVICE_UNAVAILABLE", "Tracking is temporarily unavailable.", 503));
     renderPanel({ updateTracking });
     const button = await screen.findByRole("button", { name: "Track trace-fixture-org/trace" });
     await userEvent.click(button);
@@ -80,9 +82,30 @@ describe("repository management", () => {
     const disable = screen.getByRole("button", { name: "Stop tracking trace-fixture-org/trace" });
     expect(disable).toBeEnabled();
     await userEvent.click(disable);
+    await userEvent.click(screen.getByRole("button", { name: "Confirm stop tracking" }));
 
     expect(await screen.findByRole("status")).toHaveTextContent("Tracking stopped for trace-fixture-org/trace");
     expect(screen.getByRole("button", { name: "Track trace-fixture-org/trace" })).toBeEnabled();
+  });
+
+  it("requires confirmation before stopping tracking", async () => {
+    const updateTracking = vi.fn().mockImplementation(async (repositoryId: string, trackingEnabled: boolean) => ({ repositoryId, trackingEnabled }));
+    renderPanel({ updateTracking });
+    const stop = await screen.findByRole("button", { name: "Stop tracking archive-fixture-org/legacy-api" });
+
+    await userEvent.click(stop);
+
+    expect(updateTracking).not.toHaveBeenCalled();
+    expect(screen.getByRole("dialog", { name: "Stop tracking repository?" })).toHaveTextContent("archive-fixture-org/legacy-api");
+    await userEvent.click(screen.getByRole("button", { name: "Confirm stop tracking" }));
+    expect(updateTracking).toHaveBeenCalledWith("repo_02", false, "csrf-live");
+  });
+
+  it("does not expose unexpected internal repository errors", async () => {
+    renderPanel({ loadRepositories: vi.fn().mockRejectedValue(new Error("postgres host=internal-db password=secret")) });
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Trace could not load repositories. Please try again.");
+    expect(screen.queryByText(/internal-db|password=secret/)).not.toBeInTheDocument();
   });
 
   it("synchronizes with CSRF and reloads the authoritative list", async () => {
