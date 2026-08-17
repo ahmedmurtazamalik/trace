@@ -22,6 +22,7 @@ interface GithubConnectionPanelProps {
   revokeConnection?: RevokeConnection;
   navigate?: (url: string) => void;
   callbackResult?: GithubCallbackResult;
+  demoMode?: boolean;
 }
 
 const callbackMessages: Record<string, string> = {
@@ -45,6 +46,7 @@ export function GithubConnectionPanel({
   revokeConnection = disconnectGithub,
   navigate = (url) => window.location.assign(url),
   callbackResult,
+  demoMode = false,
 }: GithubConnectionPanelProps) {
   const { csrfToken } = useAuthSession();
   const [status, setStatus] = useState<GithubConnectionStatus>();
@@ -77,6 +79,7 @@ export function GithubConnectionPanel({
   }, []);
 
   async function begin() {
+    if (demoMode) return;
     if (!csrfToken) {
       setError("Your security session is no longer valid. Please sign in again.");
       return;
@@ -93,6 +96,7 @@ export function GithubConnectionPanel({
   }
 
   async function startSwitch() {
+    if (demoMode) return;
     if (!csrfToken) {
       setError("Your security session is no longer valid. Please sign in again.");
       return;
@@ -109,6 +113,7 @@ export function GithubConnectionPanel({
   }
 
   async function install() {
+    if (demoMode) return;
     if (!csrfToken) {
       setError("Your security session is no longer valid. Please sign in again.");
       return;
@@ -182,6 +187,7 @@ export function GithubConnectionPanel({
     </div>}
     {error && <div className="github-notice github-notice-error" role="alert"><AlertTriangle aria-hidden="true" size={18} /><span>{error}</span></div>}
     {notice && <div className="github-notice github-notice-success" role="status"><CheckCircle2 aria-hidden="true" size={18} /><span>{notice}</span></div>}
+    {demoMode && <div className="github-notice github-demo-note" role="note"><ShieldCheck aria-hidden="true" size={18} /><span>External GitHub authorization is unavailable in demo mode. Disconnect remains available because it only changes in-memory demo data.</span></div>}
 
     <Card className={`github-hero-card ${reconnectRequired ? "github-hero-warning" : ""}`}>
       <div className="github-hero-icon"><Github aria-hidden="true" size={30} /></div>
@@ -194,9 +200,9 @@ export function GithubConnectionPanel({
             ? "Restore GitHub authorization to refresh repository access while keeping existing Trace history."
             : <>Linked as <strong>@{account?.username}</strong>. Trace sign-in remains separate.</>}</p>
         <div className="github-actions">
-          {(disconnected || reconnectRequired) && <Button onClick={begin} disabled={Boolean(pending)}>{pending === "connect" ? "Opening GitHub…" : reconnectRequired ? "Reconnect GitHub" : "Connect GitHub"}</Button>}
+          {(disconnected || reconnectRequired) && <Button onClick={begin} disabled={demoMode || Boolean(pending)}>{pending === "connect" ? "Opening GitHub…" : reconnectRequired ? "Reconnect GitHub" : "Connect GitHub"}</Button>}
           {!disconnected && !reconnectRequired && <>
-            <Button ref={switchTriggerRef} className="trace-button-secondary" onClick={() => setConfirmSwitch(true)} disabled={Boolean(pending)}>Switch GitHub account</Button>
+            <Button ref={switchTriggerRef} className="trace-button-secondary" onClick={() => setConfirmSwitch(true)} disabled={demoMode || Boolean(pending)}>Switch GitHub account</Button>
             <Button ref={disconnectTriggerRef} className="trace-button-secondary" onClick={() => setConfirmDisconnect(true)} disabled={Boolean(pending)}>Disconnect GitHub</Button>
           </>}
         </div>
@@ -210,12 +216,12 @@ export function GithubConnectionPanel({
         <h3>{status.installationAuthorization.status === "ACTIVE" ? "Installation active" : status.installationAuthorization.status === "SUSPENDED" ? "Installation suspended" : "Not installed"}</h3>
         <p>{installation ? <><strong>{installation.accountLogin}</strong> · {installation.accountType === "ORGANIZATION" ? "Organization" : "Personal"}</> : "Install the Trace GitHub App after connecting to choose repository access."}</p>
         {status.accountConnection.status === "CONNECTED" && status.installationAuthorization.status !== "ACTIVE" && <div className="github-actions">
-          <Button onClick={install} disabled={Boolean(pending)}>
+          <Button onClick={install} disabled={demoMode || Boolean(pending)}>
             {pending === "install" ? "Opening GitHub…" : status.installationAuthorization.status === "SUSPENDED" ? "Update GitHub App installation" : "Install GitHub App"}
           </Button>
         </div>}
         {status.accountConnection.status === "CONNECTED" && status.installationAuthorization.status === "ACTIVE" && <div className="github-actions">
-          <Button className="trace-button-secondary" onClick={install} disabled={Boolean(pending)}>{pending === "install" ? "Opening GitHub…" : "Manage repository access"}</Button>
+          <Button className="trace-button-secondary" onClick={install} disabled={demoMode || Boolean(pending)}>{pending === "install" ? "Opening GitHub…" : "Manage repository access"}</Button>
         </div>}
       </Card>
       <Card className="github-status-card">

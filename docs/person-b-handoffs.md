@@ -700,3 +700,51 @@ No Person A-owned backend or shared-contract source was changed.
 ### What's next
 - Update PR #28 with the corrective verified commit and wait for both GitHub CI jobs.
 - After integration-owner review/merge, rerun the exact merged-main frontend gate before calling the full team Day 12 complete.
+
+## Day 13 — Frontend documentation, credential-free mode, and final polish
+
+### What was done
+- Created local `day13` from merged `origin/main` commit `68b70772ffffbf11b9762d1749a88546471f672b`; Day 12 PR #28 is included in that base.
+- Replaced the stale Day 2 frontend setup document with verified install, configuration, live development, credential-free MSW, unit, Playwright, build, environment-safety, and troubleshooting commands.
+- Expanded the user guide to cover authentication/recovery, GitHub connection versus App access versus Trace tracking, repository search/sync/tracking/removal/restoration, Dashboard, Activity filters/URL state, report lifecycle/edit/regenerate/download, session safety, mobile/accessibility behavior, and mock/live data provenance.
+- Documented that CLI support is future work and that illustrative `cli` activity fixtures do not prove a CLI exists.
+- Added a real browser MSW mode via `pnpm --filter @trace/web dev:mock`, official committed service worker, startup gating before session requests, explicit startup failure UI, and a persistent **Demo data** disclosure.
+- Added contract-valid deterministic handlers for authentication, Dashboard, GitHub status/safe disconnect, repository read/sync/tracking/removal/restoration, global/repository Activity, and stateful report read/create/edit/regenerate/download surfaces. Protected mutations enforce the demo CSRF token, explicit HTTP methods prevent accidental mutation aliases, and a final `/api/v1/**` handler fails closed instead of contacting a live API.
+- Added a separate production-mode Playwright gate, `test:e2e:mock`, that proves unknown paths, unsupported tracking methods, and direct demo GitHub authorization APIs fail closed; external GitHub controls remain disabled; and repository plus complete report lifecycle behavior works without an API, credentials, database, queue, or worker on desktop Chrome and Pixel 5.
+- Expanded mock-state axe coverage across Dashboard, Repositories, Activity, processing Report detail, and GitHub. It exposed and fixed dynamic GitHub preview, repository-card caption, and report-progress contrast defects rather than excluding them.
+- Did not edit backend, worker, database, infrastructure, shared contracts, or the root README.
+
+### How to test
+1. Run `pnpm install --frozen-lockfile`.
+2. Run `pnpm --filter @trace/web dev:mock`, open `http://localhost:3000/dashboard`, and confirm the persistent **Demo data** note plus fixture Dashboard, Repositories, Activity, Reports, and GitHub content.
+3. Run `NODE_ENV=production pnpm --filter @trace/web test:e2e:mock` and expect 2/2 across desktop and mobile.
+4. Run `NODE_ENV=test pnpm --filter @trace/web test` and expect 196/196.
+5. Run `NODE_ENV=test pnpm --filter @trace/ui test` and expect 5/5.
+6. Run `NODE_ENV=production pnpm --filter @trace/web test:e2e` and expect 68/68.
+7. Run web lint, web/UI typecheck, and the production build; all must exit successfully.
+
+### Issues and important notes
+- Demo data is deterministic and in-memory; simulated state may reset after reload/restart and is not evidence of live GitHub, database, email, queue, LLM, LaTeX, storage, or artifact execution.
+- Demo mode does not emulate real GitHub OAuth/App redirects, email delivery, durable report processing, or durable artifact storage.
+- The first independent review correctly rejected response-shaped report mutations and `onUnhandledRequest: "bypass"` without an API catch-all. The corrected tree persists create/list/detail state, applies revision bodies, transitions regeneration to processing, serves checksum-consistent PDF bytes, covers safe auth and GitHub disconnect actions, and catches every otherwise-unhandled `/api/v1/**` request with `501 MOCK_API_UNHANDLED`.
+- The corrective review then found that `http.all` accepted unsupported repository-tracking methods and mocked GitHub authorization URLs could still open live GitHub. Tracking now has explicit POST/DELETE handlers, GET/PUT/PATCH are proven `501` failures, connect/switch/installation mock handlers were removed, and the corresponding demo controls are disabled with an accessible explanation while safe in-memory disconnect stays enabled.
+- The first mock Playwright assertions guessed combined text/route headings. Captured DOM proved product behavior was correct; selectors were corrected to the exact semantic structure before the gate passed.
+- The dynamic GitHub caption contrast issue was a real product defect and was fixed rather than excluded from axe.
+- Branch `day13` is local-only at this handoff point; no PR, merge, or deployment exists.
+
+### Verification
+- Mock handler contract/lifecycle suite: PASS, 24/24, including CSRF rejection, unknown-path and unsupported-method/API fail-closed behavior, create/list/detail coherence, revision increment/content persistence, checksum-consistent download, and regeneration transition.
+- Mock startup/disclosure suite: PASS, 2/2.
+- Complete web unit/component/API suite: PASS, 196/196 across 31 files.
+- Shared UI primitive suite: PASS, 5/5.
+- Credential-free production Playwright/axe gate: PASS, 2/2 across desktop and mobile.
+- Complete standard Playwright suite: PASS, 68/68 across desktop and mobile.
+- Frozen lockfile install: PASS.
+- Web lint and web/UI typecheck: PASS.
+- Production web build: PASS, 14/14 routes generated.
+- Production dependency audit: PASS, no known vulnerabilities.
+- `git diff --check`, credential-pattern review, and root README scope check: PASS; only the explicit test/demo dummy CSRF fixtures `csrf-value` and `csrf-demo-only` matched the assignment scanner.
+- Final independent exact-tree review `deleg_ebbd6c24`: PASS with no release blockers; the reviewer independently confirmed all gates and made no workspace changes.
+
+### What's next
+- Commit the approved tree locally. Push/open a PR only when Ali authorizes publication; do not edit the root README.

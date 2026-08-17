@@ -288,6 +288,7 @@ main#main-content { max-width: 1540px; margin: 0 auto; padding: clamp(1.65rem, 4
 .github-notice { display: flex; align-items: center; gap: .65rem; padding: .78rem .9rem; border: 1px solid; border-radius: .8rem; font-size: .78rem; font-weight: 680; }
 .github-notice-success { border-color: #bbf7d0; background: #f0fdf4; color: #166534; }
 .github-notice-error { border-color: #fecaca; background: #fff1f2; color: #9f1239; }
+.github-demo-note { border-color: #bfdbfe; background: #eff6ff; color: #29425f; }
 .github-hero-card { position: relative; overflow: hidden; display: grid; grid-template-columns: auto 1fr; gap: 1.15rem; padding: 1.45rem; background: linear-gradient(135deg, #fff 28%, #f4f8ff); }
 .github-hero-card::after { content: ""; position: absolute; right: -4rem; bottom: -6rem; width: 13rem; height: 13rem; border-radius: 50%; background: #2563eb0c; }
 .github-hero-warning { border-color: #f4c56f; background: linear-gradient(135deg, #fff 28%, #fff9ec); }
@@ -309,7 +310,7 @@ main#main-content { max-width: 1540px; margin: 0 auto; padding: clamp(1.65rem, 4
 .github-preview-rows { display: grid; gap: .55rem; }
 .github-preview-rows > div { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: .8rem .9rem; border: 1px solid #e0e8f2; border-radius: .75rem; background: #f8fbff; }
 .github-preview-rows span { display: grid; gap: .18rem; }
-.github-preview-rows small { color: #66778c; font-size: .68rem; }
+.github-preview-rows small { color: #5f7085; font-size: .68rem; }
 .github-dialog h2 { margin-top: 0; }
 .github-dialog p { color: #53647a; line-height: 1.6; }
 .github-dialog-actions { justify-content: flex-end; }
@@ -334,12 +335,12 @@ main#main-content { max-width: 1540px; margin: 0 auto; padding: clamp(1.65rem, 4
 .repository-label-grid > div { display: flex; align-items: center; gap: .55rem; min-width: 0; padding: .7rem; border: 1px solid #e1e8f0; border-radius: .72rem; color: #2563eb; background: #f8fbff; }
 .repository-label-grid span { display: grid; min-width: 0; }
 .repository-label-grid strong { color: #26364a; font-size: .7rem; }
-.repository-label-grid small { margin-top: .12rem; color: #718096; font-size: .62rem; }
+.repository-label-grid small { margin-top: .12rem; color: #5f7085; font-size: .62rem; }
 .repository-tracking-dot { width: .72rem; height: .72rem; flex: 0 0 auto; border: 2px solid #94a3b8; border-radius: 50%; }
 .repository-tracking-dot.is-active { border-color: #16a34a; background: #22c55e; box-shadow: 0 0 0 4px #dcfce7; }
 .repository-metadata { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .5rem; margin: 0; }
 .repository-metadata div { min-width: 0; padding: .65rem; border-left: 2px solid #dbeafe; background: #f8fafc; }
-.repository-metadata dt { color: #718096; font-size: .6rem; text-transform: uppercase; letter-spacing: .06em; }
+.repository-metadata dt { color: #5f7085; font-size: .6rem; text-transform: uppercase; letter-spacing: .06em; }
 .repository-metadata dd { overflow-wrap: anywhere; margin: .22rem 0 0; color: #26364a; font-size: .72rem; font-weight: 750; }
 .repository-actions { display: flex; justify-content: flex-end; align-items: center; gap: .7rem; margin-top: auto; }
 .repository-link { display: inline-flex; align-items: center; gap: .35rem; margin-right: auto; color: #1d4ed8; font-size: .72rem; font-weight: 750; }
@@ -427,6 +428,7 @@ main#main-content { max-width: 1540px; margin: 0 auto; padding: clamp(1.65rem, 4
 .report-artifacts li small { color: #66778d; }
 .report-status { color: #1d4ed8; font-size: .65rem; font-weight: 850; letter-spacing: .08em; text-transform: uppercase; }
 .report-progress-card { display: flex; gap: .65rem; padding: 1rem; border-color: #bfdbfe; background: #eff6ff; }
+.report-progress-card span { color: #5f7085; }
 .report-facts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .75rem; }
 .report-facts > .trace-card { display: grid; gap: .25rem; padding: 1rem; }
 .report-facts span { color: #66778d; font-size: .65rem; text-transform: uppercase; }
@@ -626,6 +628,25 @@ main#main-content { max-width: 1540px; margin: 0 auto; padding: clamp(1.65rem, 4
   .activity-filter-grid { grid-template-columns: 1fr; }
   .activity-event-card { padding: .9rem; }
 }
+
+.mock-mode-disclosure {
+  position: fixed;
+  right: 1rem;
+  bottom: 1rem;
+  z-index: 100;
+  display: grid;
+  gap: .15rem;
+  width: min(26rem, calc(100vw - 2rem));
+  padding: .7rem .85rem;
+  color: #13233a;
+  background: #eaf4ff;
+  border: 1px solid #7ba8d1;
+  border-radius: .75rem;
+  box-shadow: 0 .5rem 1.5rem rgba(19, 35, 58, .18);
+  pointer-events: none;
+}
+.mock-mode-disclosure strong { font-size: .78rem; text-transform: uppercase; letter-spacing: .08em; }
+.mock-mode-disclosure span { font-size: .82rem; line-height: 1.35; }
 
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
