@@ -1,4 +1,5 @@
 import { Queue, Worker, type Job } from 'bullmq';
+import { workerDrainDeadline } from '../../shutdown-budget';
 
 export interface GithubWebhookWorkerOptions {
   redisUrl: string;
@@ -119,27 +120,28 @@ export class GithubWebhookWorker {
     throw new Error('Timed out waiting for the webhook queue to become idle.');
   }
 
-  async close(): Promise<void> {
+  async close(requestedDeadline?: number): Promise<void> {
     if (this.closing !== undefined) return this.closing;
     this.closing = (async () => {
       const worker = this.worker;
       const queue = this.queue;
       this.worker = undefined;
       this.queue = undefined;
-      const deadline = Date.now() + (this.options.shutdownTimeoutMs ?? 10_000);
+      const deadline = requestedDeadline ?? Date.now() + (this.options.shutdownTimeoutMs ?? 10_000);
+      const drainDeadline = workerDrainDeadline(deadline);
       let drained = worker === undefined;
       try {
         if (worker !== undefined) {
-          await this.beforeDeadline(this.attempt(() => worker.pause(true)), deadline);
+          await this.beforeDeadline(this.attempt(() => worker.pause(true)), drainDeadline);
         }
         while (!drained) {
           const counts = await this.beforeDeadline(
             this.attempt(() => queue?.getJobCounts('active')),
-            deadline,
+            drainDeadline,
           );
           drained = (counts?.active ?? 0) === 0;
           if (!drained) {
-            await this.beforeDeadline(new Promise((resolve) => setTimeout(resolve, 10)), deadline);
+            await this.beforeDeadline(new Promise((resolve) => setTimeout(resolve, 10)), drainDeadline);
           }
         }
         await this.beforeDeadline(
@@ -148,10 +150,10 @@ export class GithubWebhookWorker {
             this.attempt(() => queue?.close()),
             this.runPromise?.catch(() => undefined) ?? Promise.resolve(),
           ]).then(() => undefined),
-          deadline,
+          drainDeadline,
         );
       } catch (error) {
-        const forcedDeadline = Date.now() + (this.options.shutdownTimeoutMs ?? 10_000);
+
         const forcedCleanup = Promise.allSettled([
           this.attempt(() => worker?.close(true)),
           this.attempt(() => queue?.close()),
@@ -161,7 +163,7 @@ export class GithubWebhookWorker {
         ]);
         let forcedFailure: Error | undefined;
         try {
-          const outcomes = await this.beforeDeadline(forcedCleanup, forcedDeadline);
+          const outcomes = await this.beforeDeadline(forcedCleanup, deadline);
           if (outcomes.some((outcome) => outcome.status === 'rejected')) {
             forcedFailure = new Error('Webhook worker forced cleanup failed.');
           }

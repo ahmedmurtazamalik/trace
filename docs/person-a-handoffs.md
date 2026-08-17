@@ -477,3 +477,60 @@ Final recorded results:
 
 - READY.
 - Reason: clean migrations, seed, backend unit/integration/security/queue/report/storage coverage, workspace static/build gates, dependency audits, and real Docker compilation are green with reproducible coverage commands.
+
+## Day 13 — Person A
+
+### Done
+
+- Added non-root multi-stage API and worker images plus a dedicated non-root migration target with OpenSSL-compatible Prisma runtime packaging.
+- Added backend-only production-like Compose with digest-pinned PostgreSQL/Redis, required immutable application images, internal data networking, API/worker egress, hardened migration gating, health/readiness, read-only filesystems, dropped capabilities, bounded stop windows, persistent report storage, and isolated LaTeX compilation.
+- Added a fail-closed generated-Prisma payload copier because `pnpm deploy` omits `.prisma/client` from deployed workspace bundles; the deployment contract and live container startup prove the repair.
+- Added a host-shared absolute `REPORT_LATEX_WORK_ROOT` contract so a containerized worker can provide paths visible to the host Docker daemon.
+- Added a production JSON logger controlled by `LOG_LEVEL`; sanitized request events contain correlation ID, method, path without query, status, bounded duration, and a completed/aborted outcome exactly once.
+- Propagated one absolute worker shutdown deadline into both concurrently closing BullMQ consumers and resource cleanup, with a bounded forced-cleanup reserve inside that deadline; the production container grace period exceeds the complete application budget.
+- Added executable backend smoke automation, immutable-image validation, backend operations/rollback documentation, and GitHub App setup/rotation documentation.
+- Changed no root README, `apps/web/**`, `packages/ui/**`, frontend docs, or Person B handoff path.
+
+### Contracts published or changed
+
+- Endpoint/schema: no API endpoint or database schema change; `/health` and `/ready` behavior is unchanged and now used as deployment gates.
+- Contract version: Day 13 backend deployment contract v1 (`pnpm test:deployment`, `pnpm smoke:backend`).
+- Backward-compatible impact: additive deployment, logging, and worker configuration behavior; bare-host development continues to default LaTeX work files to the OS temporary directory.
+- Fixture path: `infrastructure/test/deployment-contract.test.mjs`; live workflow: `infrastructure/scripts/smoke-backend.sh`.
+
+### Database/migrations
+
+- Migration: no new migration; the migration image applied all 18 existing migrations from zero.
+- Data implications: PostgreSQL and report-artifact volumes persist across ordinary Compose restarts; rollback remains forward-fix or verified pre-deploy backup restoration, never improvised down SQL.
+
+### Configuration
+
+- New/changed environment variables: `REPORT_LATEX_WORK_ROOT` is optional outside production and required as an absolute host-shared path in production; `WORKER_SHUTDOWN_TIMEOUT_MS` defaults to 210 seconds; `DOCKER_SOCKET` selects the host socket mounted into the worker.
+- Production Compose also requires externally supplied database, session, GitHub App, report-provider, immutable API/migration/worker/compiler images, Docker-group, and host work-root settings documented in `docs/backend-operations.md`; no credentials or concrete production values are committed.
+
+### Tests and builds actually run
+
+- Command: `pnpm smoke:backend`.
+- Result: `BACKEND_SMOKE_PASS` on a fresh Compose project; immutable local image IDs, all 18 migrations in the hardened one-shot container, production API/worker startup, `/health` and `/ready`, UID `1000`, Docker client/socket access, real 3,729-byte PDF compile, active webhook/report queue drain, bounded SIGTERM stop, and cleanup passed.
+- Command: `bash /tmp/trace-person-a-day13-acceptance.sh`.
+- Result: `DAY13_ACCEPTANCE_PASS` on base `68b70772ffffbf11b9762d1749a88546471f672b`; 340 workspace tests were collected (338 passed and two intentional Docker-only worker skips), database integration 10/10, API integration 88/88, lint, typecheck, 14-route production build, full and production dependency audits with no known vulnerabilities, real Docker/XeLaTeX 2/2, Playwright desktop/mobile 68/68, diff-check, unchanged working-diff fingerprint, and disposable-service cleanup.
+- Logs: `/tmp/trace-day13-acceptance-1669958-logs`.
+- Post-review remediation: the reported missing migration CLI was disproven against the exact artifact and built migration image (`prisma 6.19.3`); `pnpm test:deployment` now includes an executable production-bundle regression and passes 6/6. A genuine sequential shutdown-budget finding was fixed with one coordinator deadline, concurrent consumer closure, remaining-time resource cleanup, and an in-budget forced-cleanup reserve. Focused worker lifecycle/queue tests passed 31/31 against disposable Redis, the exhausted-deadline regression passed, worker lint/typecheck passed, fresh full acceptance passed, and a fresh production-like backend smoke passed the active-drain and bounded-stop gates. Exact-tree review was reopened after these changes.
+
+### Person B integration notes
+
+- No same-day implementation dependency: Person B Day 13 frontend documentation/polish can proceed independently.
+- Mock/fixture path: none required; Person B continues to own `docs/frontend-setup.md`, `docs/user-guide.md`, frontend code, and frontend tests.
+- Ownership: this branch contains zero Person B-owned frontend/UI changes.
+
+### Risks
+
+- Docker socket access is root-equivalent on the host. Restrict worker deployment/admin access and dedicate the Docker host or replace the socket boundary before stronger multi-tenant operation.
+- `REPORT_LATEX_WORK_ROOT` is a host bind path and must exist with UID `1000` write access at the identical container path.
+- Automated acceptance proves local configured-provider startup but not a real LLM response, live GitHub OAuth/App installation/webhook delivery, or production infrastructure/backup restoration.
+- Nest may report API exit `143` after completing SIGTERM shutdown hooks; forced exit `137` or a grace-period timeout remains a failure.
+
+### Next-day joint gate
+
+- READY.
+- Reason: Day 13 backend deployment/operations behavior, documentation, fresh migration, health/readiness, real compiler execution, shutdown, full repository acceptance, and ownership boundaries are proven; external-provider and production-operational acceptance remain explicit Day 14/release gates.

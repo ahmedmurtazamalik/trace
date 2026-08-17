@@ -1,6 +1,7 @@
 import { startTraceWorkers } from './application';
+import type { WorkerStop } from './shutdown-budget';
 
-let stopWorkers: (() => Promise<void>) | undefined;
+let stopWorkers: WorkerStop | undefined;
 let runtimeFailurePending = false;
 const runtimeFailure = (): void => {
   process.exitCode = 1;

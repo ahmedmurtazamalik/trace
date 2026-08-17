@@ -1,0 +1,149 @@
+services:
+  postgres:
+    image: postgres@sha256:18cfe3ef5e6815560c98237d6216d1e5119702fb0f3894c8785dd58b8bbe5d73
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-trace}
+      POSTGRES_USER: ${POSTGRES_USER:-trace}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+    volumes:
+      - trace_postgres_data:/var/lib/postgresql/data
+    networks: [data]
+
+  redis:
+    image: redis@sha256:978f0e01593e65eed801f2402944efcd936d43b5027e4908a7897baf88ed6241
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+    volumes:
+      - trace_redis_data:/data
+    networks: [data]
+
+  migrate:
+    image: ${TRACE_MIGRATION_IMAGE:?Set TRACE_MIGRATION_IMAGE to an immutable sha256 image ID or registry digest}
+    restart: "no"
+    init: true
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=64m,mode=1777
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    stop_grace_period: 30s
+    environment:
+      NODE_ENV: production
+      CHECKPOINT_DISABLE: "1"
+      DATABASE_URL: ${DATABASE_URL:?Set DATABASE_URL}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks: [data]
+
+  api:
+    image: ${TRACE_API_IMAGE:?Set TRACE_API_IMAGE to an immutable sha256 image ID or registry digest}
+    restart: unless-stopped
+    init: true
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=64m,mode=1777
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    environment:
+      NODE_ENV: production
+      PORT: 3001
+      DATABASE_URL: ${DATABASE_URL:?Set DATABASE_URL}
+      REDIS_URL: ${REDIS_URL:?Set REDIS_URL}
+      SESSION_SECRET: ${SESSION_SECRET:?Set SESSION_SECRET}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      FRONTEND_ORIGIN: ${FRONTEND_ORIGIN:?Set FRONTEND_ORIGIN}
+      GITHUB_APP_ID: ${GITHUB_APP_ID:?Set GITHUB_APP_ID}
+      GITHUB_APP_SLUG: ${GITHUB_APP_SLUG:?Set GITHUB_APP_SLUG}
+      GITHUB_APP_PRIVATE_KEY: ${GITHUB_APP_PRIVATE_KEY:?Set GITHUB_APP_PRIVATE_KEY}
+      GITHUB_APP_CLIENT_ID: ${GITHUB_APP_CLIENT_ID:?Set GITHUB_APP_CLIENT_ID}
+      GITHUB_APP_CLIENT_SECRET: ${GITHUB_APP_CLIENT_SECRET:?Set GITHUB_APP_CLIENT_SECRET}
+      GITHUB_CALLBACK_URL: ${GITHUB_CALLBACK_URL:?Set GITHUB_CALLBACK_URL}
+      GITHUB_INSTALLATION_CALLBACK_URL: ${GITHUB_INSTALLATION_CALLBACK_URL:?Set GITHUB_INSTALLATION_CALLBACK_URL}
+      GITHUB_WEBHOOK_SECRET: ${GITHUB_WEBHOOK_SECRET:?Set GITHUB_WEBHOOK_SECRET}
+      REPORT_STORAGE_DRIVER: filesystem
+      REPORT_STORAGE_ROOT: /var/lib/trace/reports
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:${TRACE_API_PORT:-3001}:3001"
+    healthcheck:
+      test: ["CMD", "node", "-e", "Promise.all(['/health','/ready'].map(p=>fetch('http://127.0.0.1:3001'+p).then(r=>{if(!r.ok)throw Error(String(r.status))}))).catch(()=>process.exit(1))"]
+      interval: 5s
+      timeout: 4s
+      retries: 20
+      start_period: 5s
+    stop_grace_period: 30s
+    volumes:
+      - trace_report_artifacts:/var/lib/trace/reports
+    networks: [data, egress]
+
+  worker:
+    image: ${TRACE_WORKER_IMAGE:?Set TRACE_WORKER_IMAGE to an immutable sha256 image ID or registry digest}
+    restart: unless-stopped
+    init: true
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=64m,mode=1777
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    group_add:
+      - ${DOCKER_GID:?Set DOCKER_GID to the Docker socket group ID}
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: ${DATABASE_URL:?Set DATABASE_URL}
+      REDIS_URL: ${REDIS_URL:?Set REDIS_URL}
+      GITHUB_APP_ID: ${GITHUB_APP_ID:?Set GITHUB_APP_ID}
+      GITHUB_APP_PRIVATE_KEY: ${GITHUB_APP_PRIVATE_KEY:?Set GITHUB_APP_PRIVATE_KEY}
+      REPORT_LLM_PROVIDER: configured
+      REPORT_LLM_ENDPOINT: ${REPORT_LLM_ENDPOINT:-https://api.openai.com/v1/chat/completions}
+      REPORT_LLM_MODEL: ${REPORT_LLM_MODEL:?Set REPORT_LLM_MODEL}
+      LLM_API_KEY: ${LLM_API_KEY:?Set LLM_API_KEY}
+      REPORT_PROVIDER_ATTEMPTS: ${REPORT_PROVIDER_ATTEMPTS:-3}
+      REPORT_WORKER_CONCURRENCY: ${REPORT_WORKER_CONCURRENCY:-2}
+      WORKER_SHUTDOWN_TIMEOUT_MS: ${WORKER_SHUTDOWN_TIMEOUT_MS:-210000}
+      REPORT_LATEX_IMAGE: ${REPORT_LATEX_IMAGE:?Set REPORT_LATEX_IMAGE to an immutable digest}
+      REPORT_LATEX_TIMEOUT_MS: ${REPORT_LATEX_TIMEOUT_MS:-30000}
+      REPORT_LATEX_WORK_ROOT: ${REPORT_LATEX_WORK_ROOT:?Set an absolute host-shared LaTeX work directory}
+      REPORT_STORAGE_DRIVER: filesystem
+      REPORT_STORAGE_ROOT: /var/lib/trace/reports
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    stop_grace_period: 240s
+    volumes:
+      - trace_report_artifacts:/var/lib/trace/reports
+      - ${REPORT_LATEX_WORK_ROOT:?Set REPORT_LATEX_WORK_ROOT}:${REPORT_LATEX_WORK_ROOT:?Set REPORT_LATEX_WORK_ROOT}
+      - ${DOCKER_SOCKET:?Set DOCKER_SOCKET to the host Docker socket path}:/var/run/docker.sock:ro
+    networks: [data, egress]
+
+networks:
+  data:
+    internal: true
+  egress:
+    driver: bridge
+
+volumes:
+  trace_postgres_data:
+  trace_redis_data:
+  trace_report_artifacts:

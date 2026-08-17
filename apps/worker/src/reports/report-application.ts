@@ -1,13 +1,15 @@
 import { PrismaClient } from '@trace/database';
 import { artifactStorageFromEnvironment } from '@trace/report-storage';
+import { isAbsolute } from 'node:path';
 import { DockerLatexCompiler } from '../latex/latex-compiler';
 import { ReportQueueWorker, type ReportQueueWorkerOptions } from '../queues/reports/report.worker';
 import { reportProviderFromEnvironment } from './configured-report-provider';
 import { ReportArtifactProcessor } from './report-artifact.processor';
 import { ReportProcessor } from './report.processor';
+import { beforeWorkerDeadline, workerShutdownDeadline, workerShutdownTimeoutMs, type WorkerStop } from '../shutdown-budget';
 
 interface ReportProcessorLike { process(reportId: string): Promise<void> }
-interface ReportWorkerLifecycle { start(): Promise<void>; close(): Promise<void>; readonly completion: Promise<void> }
+interface ReportWorkerLifecycle { start(): Promise<void>; close(deadline?: number): Promise<void>; readonly completion: Promise<void> }
 
 export interface ReportApplicationOptions {
   environment: NodeJS.ProcessEnv;
@@ -19,7 +21,7 @@ export interface ReportApplicationOptions {
   onRuntimeFailure?: () => void;
 }
 
-export async function startReportWorker(options: ReportApplicationOptions): Promise<() => Promise<void>> {
+export async function startReportWorker(options: ReportApplicationOptions): Promise<WorkerStop> {
   const configuration = reportWorkerConfiguration(options.environment);
   const prisma = options.prisma ?? new PrismaClient({ datasourceUrl: configuration.databaseUrl });
   let worker: ReportWorkerLifecycle | undefined;
@@ -30,7 +32,11 @@ export async function startReportWorker(options: ReportApplicationOptions): Prom
     const processor = options.processor ?? new ReportArtifactProcessor(
       prisma,
       generation,
-      new DockerLatexCompiler({ image: configuration.latexImage, timeoutMs: configuration.compileTimeoutMs }),
+      new DockerLatexCompiler({
+        image: configuration.latexImage,
+        timeoutMs: configuration.compileTimeoutMs,
+        workingRoot: configuration.latexWorkRoot,
+      }),
       artifactStorageFromEnvironment(options.environment),
       configuration.compileTimeoutMs + 60_000,
     );
@@ -40,6 +46,7 @@ export async function startReportWorker(options: ReportApplicationOptions): Prom
       redisUrl: configuration.redisUrl,
       queueName: configuration.queueName,
       concurrency: configuration.concurrency,
+      shutdownTimeoutMs: configuration.shutdownTimeoutMs,
       processReport: (reportId) => processor.process(reportId),
     });
     await worker.start();
@@ -49,15 +56,20 @@ export async function startReportWorker(options: ReportApplicationOptions): Prom
   }
 
   const signals = options.signals;
-  const cleanupTimeoutMs = options.cleanupTimeoutMs ?? 10_000;
+  const cleanupTimeoutMs = options.cleanupTimeoutMs ?? configuration.shutdownTimeoutMs;
   let stopping: Promise<void> | undefined;
-  const stop = async (): Promise<void> => {
+  const stop = async (requestedDeadline?: number): Promise<void> => {
     if (stopping !== undefined) return stopping;
+    const deadline = requestedDeadline ?? workerShutdownDeadline(options.environment);
     stopping = (async () => {
       try {
-        await withTimeout(worker?.close() ?? Promise.resolve(), cleanupTimeoutMs);
+        await beforeWorkerDeadline(worker?.close(deadline) ?? Promise.resolve(), deadline, 'Report cleanup timed out.');
       } finally {
-        await withTimeout(prisma.$disconnect(), cleanupTimeoutMs);
+        await beforeWorkerDeadline(
+          prisma.$disconnect(),
+          Math.min(deadline, Date.now() + cleanupTimeoutMs),
+          'Report cleanup timed out.',
+        );
         signals?.off('SIGINT', onSignal);
         signals?.off('SIGTERM', onSignal);
       }
@@ -75,33 +87,23 @@ export async function startReportWorker(options: ReportApplicationOptions): Prom
   return stop;
 }
 
-async function withTimeout<T>(operation: Promise<T>, timeoutMs: number): Promise<T> {
-  let timer: NodeJS.Timeout | undefined;
-  try {
-    return await Promise.race([
-      operation,
-      new Promise<never>((_resolve, reject) => {
-        timer = setTimeout(() => reject(new Error('Report cleanup timed out.')), timeoutMs);
-      }),
-    ]);
-  } finally {
-    if (timer !== undefined) clearTimeout(timer);
-  }
-}
 
-function reportWorkerConfiguration(environment: NodeJS.ProcessEnv): {
+export function reportWorkerConfiguration(environment: NodeJS.ProcessEnv): {
   databaseUrl: string;
   redisUrl: string;
   queueName: string;
   concurrency: number;
   providerAttempts: number;
   latexImage: string;
+  latexWorkRoot?: string;
   compileTimeoutMs: number;
+  shutdownTimeoutMs: number;
 } {
   const nodeEnvironment = environment.NODE_ENV;
   const databaseUrl = environment.DATABASE_URL;
   const redisUrl = environment.REDIS_URL;
   const provider = environment.REPORT_LLM_PROVIDER ?? 'fake';
+  const latexWorkRoot = environment.REPORT_LATEX_WORK_ROOT;
   if (nodeEnvironment !== 'development' && nodeEnvironment !== 'test' && nodeEnvironment !== 'production') {
     throw new Error('Invalid report worker configuration.');
   }
@@ -110,7 +112,9 @@ function reportWorkerConfiguration(environment: NodeJS.ProcessEnv): {
     databaseUrl === undefined || !databaseUrl.startsWith('postgresql://')
     || redisUrl === undefined || !/^rediss?:\/\//.test(redisUrl)
     || latexImage === undefined
-    || (nodeEnvironment === 'production' && !/@sha256:[a-f0-9]{64}$/.test(latexImage))
+    || (latexWorkRoot !== undefined && !isAbsolute(latexWorkRoot))
+    || (nodeEnvironment === 'production' && latexWorkRoot === undefined)
+    || (nodeEnvironment === 'production' && !/(?:@sha256:|^sha256:)[a-f0-9]{64}$/.test(latexImage))
     || (nodeEnvironment === 'production' && provider === 'fake')
   ) throw new Error('Invalid report worker configuration.');
   return {
@@ -120,7 +124,9 @@ function reportWorkerConfiguration(environment: NodeJS.ProcessEnv): {
     concurrency: boundedInteger(environment.REPORT_WORKER_CONCURRENCY, 2, 1, 16),
     providerAttempts: boundedInteger(environment.REPORT_PROVIDER_ATTEMPTS, 3, 1, 5),
     latexImage,
+    latexWorkRoot,
     compileTimeoutMs: boundedInteger(environment.REPORT_LATEX_TIMEOUT_MS, 30_000, 5_000, 120_000),
+    shutdownTimeoutMs: workerShutdownTimeoutMs(environment),
   };
 }
 

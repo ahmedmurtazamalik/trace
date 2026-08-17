@@ -1,5 +1,5 @@
 import { EventEmitter } from 'node:events';
-import { startReportWorker } from '../../src/reports/report-application';
+import { reportWorkerConfiguration, startReportWorker } from '../../src/reports/report-application';
 
 
 class SignalProcess extends EventEmitter { exitCode: number | undefined }
@@ -11,7 +11,7 @@ describe('report worker application', () => {
     const process = jest.fn().mockResolvedValue(undefined);
     const start = jest.fn().mockResolvedValue(undefined);
     const close = jest.fn().mockResolvedValue(undefined);
-    const workerFactory = jest.fn().mockImplementation((options: { processReport(id: string): Promise<void> }) => ({
+    const workerFactory = jest.fn().mockImplementation((options: { processReport(id: string): Promise<void>; shutdownTimeoutMs: number }) => ({
       start: async () => { await start(); await options.processReport('report-1'); },
       close,
       completion: new Promise<void>(() => undefined),
@@ -26,9 +26,32 @@ describe('report worker application', () => {
     });
 
     expect(process).toHaveBeenCalledWith('report-1');
-    await stop();
-    expect(close).toHaveBeenCalledTimes(1);
+    expect(workerFactory).toHaveBeenCalledWith(expect.objectContaining({ shutdownTimeoutMs: 210_000 }));
+    const deadline = Date.now() + 1_000;
+    await stop(deadline);
+    expect(close).toHaveBeenCalledWith(deadline);
     expect(disconnect).toHaveBeenCalledTimes(1);
+  });
+
+  it('requires an absolute host-shared LaTeX work root when configured', () => {
+    const base = {
+      NODE_ENV: 'test',
+      DATABASE_URL: 'postgresql://trace:password@localhost/trace',
+      REDIS_URL: 'redis://localhost:6379',
+      REPORT_LLM_PROVIDER: 'fake',
+      REPORT_LATEX_WORK_ROOT: '/var/lib/trace/latex-work',
+    };
+    expect(reportWorkerConfiguration(base)).toMatchObject({ latexWorkRoot: '/var/lib/trace/latex-work' });
+    expect(() => reportWorkerConfiguration({ ...base, REPORT_LATEX_WORK_ROOT: 'relative/path' }))
+      .toThrow('Invalid report worker configuration.');
+    expect(() => reportWorkerConfiguration({ ...base, WORKER_SHUTDOWN_TIMEOUT_MS: '9999' }))
+      .toThrow('WORKER_SHUTDOWN_TIMEOUT_MS');
+    expect(reportWorkerConfiguration({
+      ...base,
+      NODE_ENV: 'production',
+      REPORT_LLM_PROVIDER: 'configured',
+      REPORT_LATEX_IMAGE: `sha256:${'a'.repeat(64)}`,
+    })).toMatchObject({ latexImage: `sha256:${'a'.repeat(64)}` });
   });
 
   it('rejects fake provider defaults in production and incomplete settings', async () => {

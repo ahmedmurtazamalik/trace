@@ -4,7 +4,7 @@ import { spawn } from 'node:child_process';
 import { constants } from 'node:fs';
 import { chmod, mkdir, mkdtemp, open, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { isAbsolute, join } from 'node:path';
 import { PDFDocument } from 'pdf-lib';
 
 export const MAX_LATEX_BYTES = 2 * 1024 * 1024;
@@ -29,11 +29,13 @@ export interface LatexCompiler {
 export interface DockerLatexCompilerOptions {
   image: string;
   timeoutMs?: number;
+  workingRoot?: string;
   runner?: ProcessRunner;
 }
 
 export class DockerLatexCompiler implements LatexCompiler {
   private readonly timeoutMs: number;
+  private readonly workingRoot: string;
   private readonly runner: ProcessRunner;
 
   constructor(private readonly options: DockerLatexCompilerOptions) {
@@ -44,12 +46,15 @@ export class DockerLatexCompiler implements LatexCompiler {
     if (!Number.isInteger(this.timeoutMs) || this.timeoutMs < 1_000 || this.timeoutMs > 120_000) {
       throw new Error('REPORT_COMPILE_CONFIG');
     }
+    this.workingRoot = options.workingRoot ?? tmpdir();
+    if (!isAbsolute(this.workingRoot)) throw new Error('REPORT_COMPILE_CONFIG');
     this.runner = options.runner ?? spawnRunner;
   }
 
   async compile(source: string): Promise<Buffer> {
     if (Buffer.byteLength(source, 'utf8') > MAX_LATEX_BYTES) throw new Error(COMPILE_FAILED);
-    const directory = await mkdtemp(join(tmpdir(), 'trace-latex-'));
+    await mkdir(this.workingRoot, { recursive: true, mode: 0o700 });
+    const directory = await mkdtemp(join(this.workingRoot, 'trace-latex-'));
     const inputDirectory = join(directory, 'input');
     const outputDirectory = join(directory, 'output');
     const inputPath = join(inputDirectory, 'report.tex');

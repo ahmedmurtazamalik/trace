@@ -1,5 +1,6 @@
 import { Buffer } from 'node:buffer';
-import { symlink } from 'node:fs/promises';
+import { mkdtemp, rm, symlink } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { PDFDocument } from 'pdf-lib';
 import { DockerLatexCompiler, validateCompiledPdf, type ProcessRunner } from '../../src/latex/latex-compiler';
@@ -34,6 +35,26 @@ describe('bounded LaTeX compiler', () => {
     expect(calls[0]?.arguments_.some((argument) => argument.endsWith('dst=/output'))).toBe(true);
     expect(calls[0]?.arguments_).not.toContain('sh');
     expect(calls[0]?.timeoutMs).toBe(12_000);
+  });
+
+  it('uses an explicit absolute host-shared working root for Docker bind mounts', async () => {
+    const workingRoot = await mkdtemp(join(tmpdir(), 'trace-latex-root-test-'));
+    const calls: string[][] = [];
+    const runner: ProcessRunner = async (_command, arguments_, options) => {
+      calls.push(arguments_);
+      await options.prepareOutput(pdf);
+    };
+    try {
+      const compiler = new DockerLatexCompiler({ image: 'trace-latex:test', workingRoot, runner });
+      await expect(compiler.compile('safe')).resolves.toEqual(pdf);
+      const mounts = calls[0]?.filter((argument) => argument.startsWith('type=bind,src=')) ?? [];
+      expect(mounts).toHaveLength(2);
+      expect(mounts.every((mount) => mount.startsWith(`type=bind,src=${workingRoot}/trace-latex-`))).toBe(true);
+      expect(() => new DockerLatexCompiler({ image: 'trace-latex:test', workingRoot: 'relative/path' }))
+        .toThrow('REPORT_COMPILE_CONFIG');
+    } finally {
+      await rm(workingRoot, { recursive: true, force: true });
+    }
   });
 
   it('rejects malformed, prefixed, empty, or oversized compiler output', async () => {

@@ -1,0 +1,14 @@
+.git
+.gitignore
+.env*
+**/.env*
+node_modules
+**/node_modules
+**/dist
+**/.next
+**/coverage
+**/test
+**/e2e
+.hermes
+Planning Artifacts
+*.log
