@@ -5,12 +5,14 @@ import {
   repositoryErrorCodeSchema,
   repositoryListQuerySchema,
   repositoryListResponseSchema,
+  repositoryMembershipResponseSchema,
   repositorySynchronizationResponseSchema,
   repositoryTrackingResponseSchema,
   type RepositoryDetailResponse,
   type RepositoryErrorCode,
   type RepositoryListQuery,
   type RepositoryListResponse,
+  type RepositoryMembershipResponse,
   type RepositorySynchronizationResponse,
   type RepositoryTrackingResponse,
 } from "@trace/shared";
@@ -22,6 +24,7 @@ type ClientCode = RepositoryErrorCode | "UNAUTHENTICATED" | "CSRF_INVALID" | "VA
 const messages: Record<ClientCode, string> = {
   REPOSITORY_NOT_FOUND: "This repository is not available to your Trace account.",
   REPOSITORY_ACCESS_REMOVED: "GitHub access to this repository has been removed.",
+  REPOSITORY_REMOVED: "Restore this repository before enabling tracking.",
   GITHUB_INSTALLATION_REQUIRED: "Connect GitHub and install the Trace GitHub App before synchronizing repositories.",
   GITHUB_INSTALLATION_SUSPENDED: "The GitHub App installation is suspended. Restore it before synchronizing repositories.",
   UNAUTHENTICATED: "Your session has expired. Please sign in again.",
@@ -76,6 +79,7 @@ export function listRepositories(input: Partial<RepositoryListQuery> = {}, optio
   if (query.limit !== undefined) params.set("limit", String(query.limit));
   if (query.cursor !== undefined) params.set("cursor", query.cursor);
   if (query.search !== undefined) params.set("search", query.search);
+  if (query.visibility === "removed") params.set("visibility", query.visibility);
   const suffix = params.size === 0 ? "" : `?${params.toString()}`;
   return request(`/api/v1/repositories${suffix}`, "GET", repositoryListResponseSchema, options);
 }
@@ -90,4 +94,11 @@ export function synchronizeRepositories(csrfToken: string, options: Options = {}
 
 export function setRepositoryTracking(id: string, enabled: boolean, csrfToken: string, options: Options = {}): Promise<RepositoryTrackingResponse> {
   return request(`/api/v1/repositories/${encodeURIComponent(id)}/tracking`, enabled ? "POST" : "DELETE", repositoryTrackingResponseSchema, options, csrfToken);
+}
+
+export function setRepositoryRemoved(id: string, removed: boolean, csrfToken: string, options: Options = {}): Promise<RepositoryMembershipResponse> {
+  const path = removed
+    ? `/api/v1/repositories/${encodeURIComponent(id)}`
+    : `/api/v1/repositories/${encodeURIComponent(id)}/restore`;
+  return request(path, removed ? "DELETE" : "POST", repositoryMembershipResponseSchema, options, csrfToken);
 }

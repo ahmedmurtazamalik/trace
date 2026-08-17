@@ -167,6 +167,7 @@ model UserRepository {
   repositoryId    String     @map("repository_id")
   trackingEnabled Boolean    @default(false) @map("tracking_enabled")
   accessRemovedAt DateTime?  @map("access_removed_at")
+  removedAt       DateTime?  @map("removed_at")
   createdAt       DateTime   @default(now()) @map("created_at")
   updatedAt       DateTime   @updatedAt @map("updated_at")
   user            User       @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -174,6 +175,7 @@ model UserRepository {
 
   @@unique([userId, repositoryId])
   @@index([userId, trackingEnabled])
+  @@index([userId, removedAt])
   @@map("user_repositories")
 }
 
@@ -281,6 +283,7 @@ model GithubOauthState {
   purpose          String      @default("OAUTH") @db.VarChar(20)
   stateTokenHash   String      @unique @map("state_token_hash")
   intendedRedirect String?     @map("intended_redirect")
+  startingGithubUserId BigInt? @map("starting_github_user_id")
   createdAt        DateTime    @default(now()) @map("created_at")
   expiresAt        DateTime    @map("expires_at")
   consumedAt       DateTime?   @map("consumed_at")

@@ -11,9 +11,14 @@ const email = 'day3.github@example.test';
 const password = 'correct-horse-battery-staple';
 
 async function removeTestUser(prisma: PrismaService): Promise<void> {
-  const users = await prisma.user.findMany({ where: { username: { startsWith: username } }, include: { githubAccount: true } });
+  const users = await prisma.user.findMany({ where: { username: { startsWith: username } }, include: { githubAccount: { include: { installations: true } } } });
   for (const user of users) {
     if (user.githubAccount !== null) {
+      const installationIds = user.githubAccount.installations.map((installation) => installation.id);
+      const repositoryIds = (await prisma.repository.findMany({ where: { githubInstallationId: { in: installationIds } }, select: { id: true } })).map((repository) => repository.id);
+      await prisma.activityEvent.deleteMany({ where: { repositoryId: { in: repositoryIds } } });
+      await prisma.userRepository.deleteMany({ where: { repositoryId: { in: repositoryIds } } });
+      await prisma.repository.deleteMany({ where: { id: { in: repositoryIds } } });
       await prisma.githubInstallation.deleteMany({ where: { githubAccountId: user.githubAccount.id } });
       await prisma.githubAccount.delete({ where: { id: user.githubAccount.id } });
     }
@@ -42,6 +47,7 @@ describe('GitHub connection API', () => {
     process.env.GITHUB_APP_SLUG = 'trace-test-app';
     process.env.GITHUB_CALLBACK_URL = 'http://localhost:3001/api/v1/github/callback';
     process.env.GITHUB_INSTALLATION_CALLBACK_URL = 'http://localhost:3001/api/v1/github/installation/callback';
+    process.env.FRONTEND_ORIGIN = 'http://localhost:3000';
     app = await createApplication();
     await app.init();
     server = app.getHttpServer() as Server;
@@ -71,6 +77,13 @@ describe('GitHub connection API', () => {
     const response = await request(server).post('/api/v1/github/connect').set('Cookie', sessionCookie).set('X-CSRF-Token', csrfToken).expect(200);
     const state = new URL((response.body as { authorizationUrl: string }).authorizationUrl).searchParams.get('state');
     if (state === null) throw new Error('Expected GitHub OAuth state');
+    return state;
+  }
+
+  async function switchState(sessionCookie: string, csrfToken: string): Promise<string> {
+    const response = await request(server).post('/api/v1/github/switch').set('Cookie', sessionCookie).set('X-CSRF-Token', csrfToken).expect(200);
+    const state = new URL((response.body as { authorizationUrl: string }).authorizationUrl).searchParams.get('state');
+    if (state === null) throw new Error('Expected GitHub OAuth switch state');
     return state;
   }
 
@@ -107,6 +120,24 @@ describe('GitHub connection API', () => {
       historyRetained: true,
     });
 
+    const actorUserId = (registered.body as { user: { id: string } }).user.id;
+    const account = await prisma.githubAccount.findUniqueOrThrow({ where: { userId: actorUserId } });
+    const installation = await prisma.githubInstallation.create({
+      data: { githubInstallationId: 91_001n, githubAccountId: account.id, accountType: 'USER', accountLogin: 'fake-octocat' },
+    });
+    const repository = await prisma.repository.create({
+      data: {
+        githubRepositoryId: 71_001n,
+        githubInstallationId: installation.id,
+        owner: 'fake-octocat',
+        name: 'tracked-before-disconnect',
+        fullName: 'fake-octocat/tracked-before-disconnect',
+        private: true,
+        defaultBranch: 'main',
+      },
+    });
+    await prisma.userRepository.create({ data: { userId: actorUserId, repositoryId: repository.id, trackingEnabled: true } });
+
     await request(server).delete('/api/v1/github/connection').set('Cookie', sessionCookie).expect(403);
     await request(server)
       .delete('/api/v1/github/connection')
@@ -114,9 +145,12 @@ describe('GitHub connection API', () => {
       .set('X-CSRF-Token', csrfToken)
       .expect(200, { success: true, historyRetained: true });
 
+    await expect(prisma.userRepository.findUniqueOrThrow({
+      where: { userId_repositoryId: { userId: actorUserId, repositoryId: repository.id } },
+    })).resolves.toMatchObject({ trackingEnabled: false });
+
     const disconnected = await request(server).get('/api/v1/github/status').set('Cookie', sessionCookie).expect(200);
     expect(disconnected.body).toMatchObject({ accountConnection: { status: 'RECONNECT_REQUIRED', account: { username: 'fake-octocat' } } });
-    const actorUserId = (registered.body as { user: { id: string } }).user.id;
     const actions = (await prisma.auditLog.findMany({ where: { actorUserId }, select: { action: true } })).map((entry) => entry.action);
     expect(actions).toEqual(expect.arrayContaining(['github.connected', 'github.disconnected']));
   });
@@ -231,6 +265,117 @@ describe('GitHub connection API', () => {
     expect(reconnected.headers.location).toBe('http://localhost:3000/github?result=connected');
     const status = await request(server).get('/api/v1/github/status').set('Cookie', identity.cookie).expect(200);
     expect(status.body).toMatchObject({ accountConnection: { status: 'CONNECTED' } });
+  });
+
+  it('rejects a different GitHub identity during an ordinary reconnect', async () => {
+    const identity = await registerIdentity({ username, email });
+    const initialState = await connectState(identity.cookie, identity.csrfToken);
+    await request(server).get('/api/v1/github/callback').query({ code: 'fake-success-code', state: initialState }).set('Cookie', identity.cookie).expect(302);
+    await request(server).delete('/api/v1/github/connection').set('Cookie', identity.cookie).set('X-CSRF-Token', identity.csrfToken).expect(200);
+
+    const reconnectState = await connectState(identity.cookie, identity.csrfToken);
+    const rejected = await request(server)
+      .get('/api/v1/github/callback')
+      .query({ code: 'fake-switch-code', state: reconnectState })
+      .set('Cookie', identity.cookie)
+      .expect(302);
+
+    const rejectedLocation = new URL(rejected.headers.location as string);
+    expect(rejectedLocation.searchParams.get('result')).toBe('error');
+    expect(rejectedLocation.searchParams.get('reason')).toBe('callback_failed');
+    const user = await prisma.user.findUniqueOrThrow({ where: { username } });
+    const rejectedAccount = await prisma.githubAccount.findUniqueOrThrow({ where: { userId: user.id } });
+    expect(rejectedAccount).toMatchObject({
+      githubUserId: 583_231n,
+      githubUsername: 'fake-octocat',
+    });
+    expect(rejectedAccount.unlinkedAt).toBeInstanceOf(Date);
+  });
+
+  it('switches verified GitHub identity atomically while retaining old repository history', async () => {
+    const identity = await registerIdentity({ username, email });
+    const initialState = await connectState(identity.cookie, identity.csrfToken);
+    await request(server).get('/api/v1/github/callback').query({ code: 'fake-success-code', state: initialState }).set('Cookie', identity.cookie).expect(302);
+
+    const user = await prisma.user.findUniqueOrThrow({ where: { username } });
+    const account = await prisma.githubAccount.findUniqueOrThrow({ where: { userId: user.id } });
+    const installation = await prisma.githubInstallation.create({
+      data: { githubInstallationId: 92_001n, githubAccountId: account.id, accountType: 'USER', accountLogin: 'fake-octocat' },
+    });
+    const repository = await prisma.repository.create({
+      data: {
+        githubRepositoryId: 72_001n,
+        githubInstallationId: installation.id,
+        owner: 'fake-octocat',
+        name: 'retained-after-switch',
+        fullName: 'fake-octocat/retained-after-switch',
+        private: true,
+        defaultBranch: 'main',
+      },
+    });
+    await prisma.userRepository.create({ data: { userId: user.id, repositoryId: repository.id, trackingEnabled: true } });
+    const activity = await prisma.activityEvent.create({
+      data: { sourceKey: 'github:switch-retained', repositoryId: repository.id, source: 'github', type: 'commit', occurredAt: new Date('2026-08-17T08:00:00.000Z'), metadata: { sha: 'retained' } },
+    });
+
+    const switchedState = await switchState(identity.cookie, identity.csrfToken);
+    const switched = await request(server)
+      .get('/api/v1/github/callback')
+      .query({ code: 'fake-switch-code', state: switchedState })
+      .set('Cookie', identity.cookie)
+      .expect(302);
+    expect(switched.headers.location).toBe('http://localhost:3000/github?result=connected');
+
+    await expect(prisma.githubAccount.findUniqueOrThrow({ where: { id: account.id } })).resolves.toMatchObject({
+      githubUserId: 583_232n,
+      githubUsername: 'fake-switcher',
+      unlinkedAt: null,
+    });
+    const oldInstallation = await prisma.githubInstallation.findUniqueOrThrow({ where: { id: installation.id } });
+    expect(oldInstallation.suspendedAt).toBeInstanceOf(Date);
+    const oldMembership = await prisma.userRepository.findUniqueOrThrow({ where: { userId_repositoryId: { userId: user.id, repositoryId: repository.id } } });
+    expect(oldMembership.trackingEnabled).toBe(false);
+    expect(oldMembership.accessRemovedAt).toBeInstanceOf(Date);
+    await expect(prisma.repository.findUnique({ where: { id: repository.id } })).resolves.not.toBeNull();
+    await expect(prisma.activityEvent.findUnique({ where: { id: activity.id } })).resolves.not.toBeNull();
+
+    const status = await request(server).get('/api/v1/github/status').set('Cookie', identity.cookie).expect(200);
+    expect(status.body).toMatchObject({
+      accountConnection: { status: 'CONNECTED', account: { username: 'fake-switcher' } },
+      installationAuthorization: { status: 'SUSPENDED' },
+      accessibleRepositoryCount: 0,
+      trackedRepositoryCount: 0,
+      historyRetained: true,
+    });
+    const switchAudit = await prisma.auditLog.findFirst({ where: { actorUserId: user.id, action: 'github.account_switched' } });
+    expect(switchAudit?.targetId).toBe(account.id);
+    expect(switchAudit?.metadata).toMatchObject({ previousGithubUsername: 'fake-octocat', newGithubUsername: 'fake-switcher', disabledRepositoryCount: 1 });
+
+    const other = await registerIdentity({ username: `${username}.other`, email: `other.${email}` });
+    const otherState = await connectState(other.cookie, other.csrfToken);
+    const conflict = await request(server).get('/api/v1/github/callback').query({ code: 'fake-switch-code', state: otherState }).set('Cookie', other.cookie).expect(302);
+    expect(conflict.headers.location).toBe('http://localhost:3000/github?result=error&reason=callback_failed');
+  });
+
+  it('invalidates superseded switch states so a stale callback cannot switch the account back', async () => {
+    const identity = await registerIdentity({ username, email });
+    const initialState = await connectState(identity.cookie, identity.csrfToken);
+    await request(server).get('/api/v1/github/callback').query({ code: 'fake-success-code', state: initialState }).set('Cookie', identity.cookie).expect(302);
+
+    const staleState = await switchState(identity.cookie, identity.csrfToken);
+    const currentState = await switchState(identity.cookie, identity.csrfToken);
+    await request(server).get('/api/v1/github/callback').query({ code: 'fake-switch-code', state: currentState }).set('Cookie', identity.cookie).expect(302);
+    const stale = await request(server).get('/api/v1/github/callback').query({ code: 'fake-success-code', state: staleState }).set('Cookie', identity.cookie).expect(302);
+
+    const staleLocation = new URL(stale.headers.location as string);
+    expect(staleLocation.searchParams.get('result')).toBe('error');
+    expect(staleLocation.searchParams.get('reason')).toBe('state_invalid');
+    const user = await prisma.user.findUniqueOrThrow({ where: { username } });
+    await expect(prisma.githubAccount.findUniqueOrThrow({ where: { userId: user.id } })).resolves.toMatchObject({
+      githubUserId: 583_232n,
+      githubUsername: 'fake-switcher',
+      unlinkedAt: null,
+    });
   });
 
   it('rate limits GitHub linking by direct address and user', async () => {

@@ -33,6 +33,7 @@ function renderPanel(overrides: Partial<React.ComponentProps<typeof GithubConnec
   const props = {
     loadStatus: vi.fn().mockResolvedValue(disconnected),
     beginConnection: vi.fn().mockResolvedValue({ authorizationUrl: "https://github.com/login/oauth/authorize?client_id=trace&state=opaque" }),
+    beginSwitch: vi.fn().mockResolvedValue({ authorizationUrl: "https://github.com/login/oauth/authorize?client_id=trace&state=switch" }),
     beginInstallation: vi.fn().mockResolvedValue({ installationUrl: "https://github.com/apps/trace/installations/new?state=opaque" }),
     revokeConnection: vi.fn().mockResolvedValue({ success: true, historyRetained: true }),
     navigate: vi.fn(),
@@ -98,18 +99,46 @@ describe("GitHub connection UX", () => {
     expect(suspendedProps.beginInstallation).toHaveBeenCalledOnce();
   });
 
+  it("requires confirmation before starting a GitHub account switch", async () => {
+    const beginSwitch = vi.fn().mockResolvedValue({ authorizationUrl: "https://github.com/login/oauth/authorize?client_id=trace&state=switch" });
+    const props = renderPanel({ loadStatus: vi.fn().mockResolvedValue(connected), beginSwitch });
+    const trigger = await screen.findByRole("button", { name: "Switch GitHub account" });
+
+    await userEvent.click(trigger);
+    expect(beginSwitch).not.toHaveBeenCalled();
+    expect(screen.getByRole("dialog", { name: "Switch GitHub account?" })).toHaveTextContent("stop tracking repositories from @alice-dev");
+    await userEvent.click(screen.getByRole("button", { name: "Confirm account switch" }));
+
+    await waitFor(() => expect(beginSwitch).toHaveBeenCalledWith("csrf-value"));
+    expect(props.navigate).toHaveBeenCalledWith(expect.stringMatching(/^https:\/\/github\.com\//));
+  });
+
   it("confirms disconnect, sends in-memory CSRF, and keeps history messaging", async () => {
     const revokeConnection = vi.fn().mockResolvedValue({ success: true, historyRetained: true });
     const loadStatus = vi.fn().mockResolvedValueOnce(connected).mockResolvedValueOnce(reconnect);
     renderPanel({ loadStatus, revokeConnection });
     await screen.findByText("@alice-dev");
     await userEvent.click(screen.getByRole("button", { name: "Disconnect GitHub" }));
+    expect(screen.getByRole("dialog")).toHaveTextContent("stop tracking all repositories");
     expect(screen.getByRole("dialog")).toHaveTextContent("Historical activity remains in Trace");
     await userEvent.click(screen.getByRole("button", { name: "Confirm disconnect" }));
     await waitFor(() => expect(revokeConnection).toHaveBeenCalledWith("csrf-value"));
     expect(await screen.findByRole("status")).toHaveTextContent("disconnected");
     expect(await screen.findByRole("heading", { name: "Reconnect GitHub" })).toBeInTheDocument();
     expect(loadStatus).toHaveBeenCalledTimes(2);
+  });
+
+  it("moves focus into the disconnect dialog, closes on Escape, and restores the trigger", async () => {
+    renderPanel({ loadStatus: vi.fn().mockResolvedValue(connected) });
+    const trigger = await screen.findByRole("button", { name: "Disconnect GitHub" });
+
+    await userEvent.click(trigger);
+
+    const cancel = screen.getByRole("button", { name: "Cancel" });
+    expect(cancel).toHaveFocus();
+    await userEvent.keyboard("{Escape}");
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(trigger).toHaveFocus();
   });
 
   it("keeps a successful disconnect truthful when the status refresh is unavailable", async () => {

@@ -59,7 +59,7 @@ describe('GitHub webhook publisher fairness', () => {
     await prisma.userRepository.create({
       data: { userId: user.id, repositoryId: repository.id, trackingEnabled: true },
     });
-  });
+  }, 15_000);
 
   afterAll(async () => {
     try {
@@ -68,7 +68,7 @@ describe('GitHub webhook publisher fairness', () => {
       await admin.$executeRawUnsafe(`DROP SCHEMA IF EXISTS "${schema}" CASCADE`);
       await admin.$disconnect();
     }
-  });
+  }, 15_000);
 
   it('bounds a full hanging publication batch so a later healthy delivery is attempted on the next pass', async () => {
     const start = Date.UTC(2000, 0, 1);

@@ -30,7 +30,12 @@ export function RegisterForm({ createAccount = register, onAuthenticated }: Prop
     if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) next.email = "Enter a valid email address.";
     if (password.length < 12) next.password = "Use at least 12 characters.";
     setErrors(next);
-    if (Object.keys(next).length) return;
+    if (Object.keys(next).length) {
+      const firstInvalid = next.username ? "username" : next.email ? "email" : "password";
+      const field = event.currentTarget.elements.namedItem(firstInvalid);
+      if (field instanceof HTMLElement) field.focus();
+      return;
+    }
     await submission.submit(async () => {
       const session = await createAccount({
         username,

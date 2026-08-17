@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { connectGithub, disconnectGithub, getGithubInstallation, getGithubStatus, GithubApiError } from "./github";
+import { connectGithub, disconnectGithub, getGithubInstallation, getGithubStatus, GithubApiError, switchGithub } from "./github";
 
 const connected = {
   accountConnection: { status: "CONNECTED" as const, account: { id: "github-account-1", username: "alice-dev", displayName: "Alice Developer", avatarUrl: "https://avatars.githubusercontent.com/u/12345" } },
@@ -28,6 +28,18 @@ describe("GitHub API client", () => {
       ["http://localhost:3001/api/v1/github/status", "GET", "include"],
       ["http://localhost:3001/api/v1/github/connect", "POST", "include"],
     ]);
+  });
+
+  it("starts confirmed account changes through the dedicated switch endpoint", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(response({ authorizationUrl: "https://github.com/login/oauth/authorize?state=switch-state" }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(switchGithub("csrf-value")).resolves.toEqual(expect.objectContaining({ authorizationUrl: expect.stringMatching(/^https:\/\/github\.com\//) }));
+    expect(fetchMock).toHaveBeenCalledWith("http://localhost:3001/api/v1/github/switch", expect.objectContaining({
+      method: "POST",
+      credentials: "include",
+      headers: { "x-csrf-token": "csrf-value" },
+    }));
   });
 
   it("sends disconnect CSRF only in the canonical header", async () => {

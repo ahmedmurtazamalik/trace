@@ -1,20 +1,23 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AlertTriangle, CheckCircle2, Github, History, LockKeyhole, RefreshCw, ShieldCheck } from "lucide-react";
 import { Badge, Button, Card } from "@trace/ui";
 import type { GithubCallbackResult, GithubConnectionStatus } from "@trace/shared";
-import { connectGithub, disconnectGithub, getGithubInstallation, getGithubStatus, GithubApiError } from "@/api/github";
+import { connectGithub, disconnectGithub, getGithubInstallation, getGithubStatus, GithubApiError, switchGithub } from "@/api/github";
 import { useAuthSession } from "@/auth/session-provider";
+import { AccessibleConfirmDialog } from "@/components/accessible-confirm-dialog";
 
 type LoadStatus = typeof getGithubStatus;
 type BeginConnection = typeof connectGithub;
+type BeginSwitch = typeof switchGithub;
 type BeginInstallation = typeof getGithubInstallation;
 type RevokeConnection = typeof disconnectGithub;
 
 interface GithubConnectionPanelProps {
   loadStatus?: LoadStatus;
   beginConnection?: BeginConnection;
+  beginSwitch?: BeginSwitch;
   beginInstallation?: BeginInstallation;
   revokeConnection?: RevokeConnection;
   navigate?: (url: string) => void;
@@ -37,6 +40,7 @@ function errorMessage(error: unknown) {
 export function GithubConnectionPanel({
   loadStatus = getGithubStatus,
   beginConnection = connectGithub,
+  beginSwitch = switchGithub,
   beginInstallation = getGithubInstallation,
   revokeConnection = disconnectGithub,
   navigate = (url) => window.location.assign(url),
@@ -49,6 +53,9 @@ export function GithubConnectionPanel({
   const [error, setError] = useState<string>();
   const [notice, setNotice] = useState<string>();
   const [confirmDisconnect, setConfirmDisconnect] = useState(false);
+  const [confirmSwitch, setConfirmSwitch] = useState(false);
+  const disconnectTriggerRef = useRef<HTMLButtonElement>(null);
+  const switchTriggerRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -78,6 +85,22 @@ export function GithubConnectionPanel({
     setError(undefined);
     try {
       const result = await beginConnection(csrfToken);
+      navigate(result.authorizationUrl);
+    } catch (reason) {
+      setError(errorMessage(reason));
+      setPending(undefined);
+    }
+  }
+
+  async function startSwitch() {
+    if (!csrfToken) {
+      setError("Your security session is no longer valid. Please sign in again.");
+      return;
+    }
+    setPending("connect");
+    setError(undefined);
+    try {
+      const result = await beginSwitch(csrfToken);
       navigate(result.authorizationUrl);
     } catch (reason) {
       setError(errorMessage(reason));
@@ -172,7 +195,10 @@ export function GithubConnectionPanel({
             : <>Linked as <strong>@{account?.username}</strong>. Trace sign-in remains separate.</>}</p>
         <div className="github-actions">
           {(disconnected || reconnectRequired) && <Button onClick={begin} disabled={Boolean(pending)}>{pending === "connect" ? "Opening GitHub…" : reconnectRequired ? "Reconnect GitHub" : "Connect GitHub"}</Button>}
-          {!disconnected && !reconnectRequired && <Button className="trace-button-secondary" onClick={() => setConfirmDisconnect(true)} disabled={Boolean(pending)}>Disconnect GitHub</Button>}
+          {!disconnected && !reconnectRequired && <>
+            <Button ref={switchTriggerRef} className="trace-button-secondary" onClick={() => setConfirmSwitch(true)} disabled={Boolean(pending)}>Switch GitHub account</Button>
+            <Button ref={disconnectTriggerRef} className="trace-button-secondary" onClick={() => setConfirmDisconnect(true)} disabled={Boolean(pending)}>Disconnect GitHub</Button>
+          </>}
         </div>
       </div>
     </Card>
@@ -214,15 +240,23 @@ export function GithubConnectionPanel({
       </div>
     </Card>
 
-    {confirmDisconnect && <div className="trace-dialog-backdrop">
-      <section role="dialog" aria-modal="true" aria-labelledby="github-disconnect-title" className="trace-dialog github-dialog">
-        <h2 id="github-disconnect-title">Disconnect GitHub?</h2>
-        <p>Trace will stop requesting GitHub access. Historical activity remains in Trace and is not deleted.</p>
-        <div className="github-dialog-actions">
-          <Button className="trace-button-secondary" onClick={() => setConfirmDisconnect(false)} disabled={Boolean(pending)}>Cancel</Button>
-          <Button className="trace-button-danger" onClick={disconnect} disabled={Boolean(pending)}>{pending === "disconnect" ? "Disconnecting…" : "Confirm disconnect"}</Button>
-        </div>
-      </section>
-    </div>}
+    {confirmSwitch && <AccessibleConfirmDialog
+      title="Switch GitHub account?"
+      description={<p>Switching will stop tracking repositories from <strong>@{account?.username}</strong> and deactivate the old GitHub App installation. Historical activity remains in Trace. You will need to install the App for the new account.</p>}
+      confirmLabel={pending === "connect" ? "Opening GitHub…" : "Confirm account switch"}
+      pending={pending === "connect"}
+      returnFocus={switchTriggerRef.current}
+      onCancel={() => setConfirmSwitch(false)}
+      onConfirm={() => { setConfirmSwitch(false); void startSwitch(); }}
+    />}
+    {confirmDisconnect && <AccessibleConfirmDialog
+      title="Disconnect GitHub?"
+      description={<p>Trace will stop requesting GitHub access and stop tracking all repositories from this account. Historical activity remains in Trace and is not deleted.</p>}
+      confirmLabel={pending === "disconnect" ? "Disconnecting…" : "Confirm disconnect"}
+      pending={Boolean(pending)}
+      returnFocus={disconnectTriggerRef.current}
+      onCancel={() => setConfirmDisconnect(false)}
+      onConfirm={() => void disconnect()}
+    />}
   </div>;
 }

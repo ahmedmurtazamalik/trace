@@ -1,5 +1,5 @@
 import { Controller, Delete, Get, HttpCode, Param, Post, Query, Req, UseGuards } from '@nestjs/common';
-import type { RepositoryDetailResponse, RepositoryListResponse, RepositoryTrackingResponse } from '@trace/shared';
+import type { RepositoryDetailResponse, RepositoryListResponse, RepositoryMembershipResponse, RepositoryTrackingResponse } from '@trace/shared';
 import type { Request } from 'express';
 import { CurrentSession } from '../auth/current-session.decorator';
 import { CsrfGuard } from '../auth/csrf.guard';
@@ -37,6 +37,19 @@ export class RepositoriesController {
   @UseGuards(CsrfGuard)
   disableTracking(@CurrentSession() session: AuthenticatedSession, @Param('id') id: string): Promise<RepositoryTrackingResponse> {
     return this.repositories.setTracking(session.user.id, id, false);
+  }
+
+  @Delete(':id')
+  @UseGuards(CsrfGuard)
+  remove(@CurrentSession() session: AuthenticatedSession, @Param('id') id: string): Promise<RepositoryMembershipResponse> {
+    return this.repositories.setRemoved(session.user.id, id, true);
+  }
+
+  @Post(':id/restore')
+  @HttpCode(200)
+  @UseGuards(CsrfGuard)
+  restore(@CurrentSession() session: AuthenticatedSession, @Param('id') id: string): Promise<RepositoryMembershipResponse> {
+    return this.repositories.setRemoved(session.user.id, id, false);
   }
 
   @Post('sync')

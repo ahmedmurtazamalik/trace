@@ -543,3 +543,110 @@ No Person A-owned backend or shared-contract source was changed.
 ### What's next
 - Run the joint authenticated real-backend save/regenerate/download smoke against the now-merged Person A revision, regeneration, and artifact endpoints.
 - Do not mark Day 10 overall complete until browser → API → database/worker → real PDF download/open and stale-revision conflict are proven.
+
+## Day 11 — Frontend security, accessibility, and UX hardening
+
+### What was done
+- Audited Ali's Day 11 plan against exact merged `origin/main` commit `7caf40c3fe44e9fc547ae689fbbe9282e38fa592`, which contains Person A's merged backend Day 11 security work.
+- Kept protected-route bootstrap, safe local return-path validation, cookie credentials, in-memory CSRF/session state, and closed 401/403 UI handling intact.
+- Added accessible destructive confirmations for GitHub disconnection and repository tracking removal, including initial focus, Escape dismissal, Tab containment, focus restoration, pending-state protection, and retained-history explanations.
+- Added first-invalid-field focus to login and registration validation.
+- Replaced raw unexpected repository errors with safe user-facing fallbacks while preserving validated `RepositoryApiError` messages.
+- Added reusable route/global error containment that announces and focuses safe recovery UI without rendering error messages or framework digests.
+- Added automated browser audits across every public/protected page shell for landmarks, duplicate IDs, unnamed controls, missing image alternatives, and horizontal overflow.
+- Added browser proof that CSRF/session identifiers never enter local storage, session storage, or readable cookies; added reduced-motion and keyboard-only critical-flow checks.
+- Changed only `apps/web/**` and this Person B handoff. No backend, worker, database, shared contract, infrastructure, root README, package manifest, or lockfile was changed.
+
+### How to test
+1. Open `/login`, submit empty fields, and confirm focus moves to **Username**.
+2. Open `/github`, choose **Disconnect GitHub**, and confirm focus moves to **Cancel**; Escape closes the dialog and restores focus.
+3. Open `/repositories`, choose **Stop tracking**, and confirm no request occurs until **Confirm stop tracking** is selected.
+4. Run `NODE_ENV=test pnpm --filter @trace/web test` and expect 156/156.
+5. Run `NODE_ENV=production pnpm --filter @trace/web test:e2e` and expect 66/66 across desktop and Pixel 5.
+
+### Issues and important notes
+- The first clean-worktree test command could not start because dependencies were absent; `pnpm install --frozen-lockfile` restored the exact merged dependency tree without changing the lockfile.
+- The first accessibility scanner incorrectly ignored valid wrapping `<label>` elements, and the first reduced-motion assertion compared Chromium's equivalent scientific-notation CSS serialization as text. Both test-harness assumptions were corrected; no product workaround was added.
+- Automated browser tests use deterministic HTTP interception. They prove frontend security/UX behavior and request boundaries, not live PostgreSQL/Redis/worker execution.
+- Ali's Day 11 slice is complete on local branch `day11`. It is not pushed, in a PR, merged, or deployed.
+
+### Verification
+- Focused RED confirmed five missing behaviors; focused GREEN: 30/30.
+- Route error-boundary RED confirmed missing implementation; focused GREEN: 1/1.
+- Complete web unit/component suite: PASS, 156/156 across 27 files.
+- Complete Playwright suite: PASS, 66/66 across desktop Chrome and Pixel 5.
+- Web lint: PASS, no warnings or errors (only Next's upstream `next lint` deprecation notice).
+- Web typecheck: PASS.
+- Final production build after browser tests: PASS, 14/14 routes generated.
+- `git diff --check`, ownership inspection, and sensitive-browser-API scan: PASS.
+
+### What's next
+- With Ali's permission: push `day11`, then separately open the Day 11 PR.
+- After merge, verify the exact integrated main branch before calling the full team Day 11 complete.
+
+## Day 11 follow-up — repository/account requirements and typography
+
+### What was done
+- Increased the global root type scale from 16px to 16.5px and regular body weight to 450 without changing layout, routes, colors, or component hierarchy.
+- Added a focused typography token regression test.
+- Traced repository removal and GitHub identity switching through the frozen frontend/shared/backend contracts rather than adding misleading frontend-only controls.
+
+### Issues / notes
+- Durable repository removal is not in the current contract. `DELETE /repositories/:id/tracking` only disables tracking; synchronized accessible repositories remain listable. A real **Remove repository** action needs backend-persisted dismissal/removal semantics and must atomically stop tracking.
+- Switching GitHub identities is explicitly blocked in `GithubService.callback`: a disconnected Trace account may reconnect the same `githubUserId`, but a different GitHub user ID is rejected. Supporting **Switch GitHub account** requires Person A to safely untrack/detach old repositories/installations, enforce cross-user uniqueness, link the new account, and add integration tests before Person B exposes the control.
+- No backend/shared-contract code was changed in this follow-up.
+
+### Verification
+- Typography RED confirmed the old tokens; focused GREEN: 1/1.
+- Complete web unit/component suite: PASS, 157/157 across 28 files.
+- Web lint and typecheck: PASS.
+- Complete Playwright suite: PASS, 66/66 across desktop and Pixel 5, including all-route horizontal-overflow checks.
+- Final production build after browser tests: PASS, 14/14 routes generated.
+- Live computed styles: root 16.5px, body weight 450, viewport width equals body scroll width.
+- Desktop visual inspection: PASS; no clipping, crowding, or layout breakage.
+
+### What's next
+- Person A must freeze contracts/implementation for durable repository removal and GitHub identity replacement.
+- After those backend contracts merge, Person B can add the accessible confirmation and recovery UX test-first.
+
+## Day 11 full-stack follow-up — durable repository lifecycle and GitHub identity switching
+
+### What was done
+- Implemented GitHub disconnect as one transaction that unlinks the account and disables tracking on its associated repository memberships while retaining history.
+- Added nullable `UserRepository.removedAt` state plus a migration, active/removed list visibility, atomic remove-and-untrack, restore, tracking protection while removed, and synchronization behavior that never silently restores removed memberships.
+- Added the real repository Remove/Restore API contract and frontend flows, including accessible confirmation, pending/error recovery, an explicit removed-repositories view, and restoration.
+- Implemented deliberate GitHub identity switching after OAuth verification: connect/reconnect and switch use distinct persisted OAuth purposes bound to the starting GitHub identity; reconnect can only verify the same identity, switch must verify a different identity, successful callbacks invalidate superseded states, old installations and repository tracking are deactivated, historical activity remains, cross-user identity uniqueness remains enforced, and an audit record is written.
+- Added an accessible **Switch GitHub account** confirmation that starts a fresh OAuth authorization only after confirmation.
+- Preserved the completed 16.5px/450 typography adjustment from the Day 11 follow-up.
+
+### How to test
+1. Sign in at `http://localhost:3002/login` and open **Repositories**.
+2. Remove a repository, confirm it disappears from Active, open **Removed repositories**, then restore it.
+3. Confirm removing a repository stops tracking and that synchronization does not restore it automatically.
+4. Open **GitHub**, confirm Disconnect before proceeding, and verify associated repositories are no longer tracked.
+5. Choose **Switch GitHub account**, confirm the warning, and complete OAuth with the intended second GitHub identity. A real two-identity browser test requires access to two GitHub accounts.
+
+### Real / mock / unfinished boundary
+- **Real:** PostgreSQL migration, API transactions, Redis-backed worker processing, repository persistence, account-switch persistence, and localhost API/web/worker runtime.
+- **Deterministic integration proof:** the second GitHub identity uses a test-only fake authorization code so history retention, installation deactivation, tracking deactivation, identity persistence, uniqueness, and audit behavior are repeatable.
+- **Live-provider boundary:** switching between two real GitHub identities still requires Ali to complete both GitHub OAuth interactions; automation does not bypass provider login/account selection.
+
+### Verification
+- Root unit/component suites: PASS; web 160/160, API unit 15/15, worker 92 passed with 2 skipped, and all package suites green.
+- API integration suites: PASS, 11/11 suites and 88/88 tests, including reconnect identity-mismatch rejection and stale switch-state invalidation.
+- Playwright: PASS, 68/68 across desktop and Pixel 5, including proof that confirmed account switching calls only the dedicated CSRF-protected `/github/switch` endpoint, plus Remove → Removed view → Restore request/response assertions.
+- Root typecheck: PASS.
+- Root lint: PASS after narrowing BullMQ diagnostic job data from `any` to `unknown`.
+- Production web build: PASS, 14 routes generated.
+- Prisma migration status: 18 migrations applied; schema up to date.
+- Live localhost smoke: API health/readiness, PostgreSQL, Redis, worker, `/login`, and `/repositories` verified from `/home/ali/trace-day11-fullstack`.
+
+### Issues / notes
+- A stale worker from `/home/ali/trace` consumed the shared Redis integration queue and caused false worker timeouts; stopping that old process made the focused real Redis→worker→database test pass. Test diagnostics now include bounded queue state on future timeouts.
+- Independent PR review found that the first implementation reused ordinary connect state for switching, which could let reconnect replace the identity or a stale callback switch it back. The PR now binds state to explicit connect/switch intent and starting identity, invalidates superseded states, and has API/unit/browser regressions for those paths.
+- Playwright write requests previously depended on a live cross-origin API preflight and only asserted request emission. The E2E server now builds with a same-origin mock API, exact mutation routes, and response-status assertions.
+- No merge was performed. This handoff accompanies the isolated `day11-fullstack-followup` PR for Person A/integration-owner review.
+
+### What's next
+- Review the cross-ownership backend/database/shared-contract changes and CI results.
+- After approval, merge through the repository's normal integration-owner process and repeat the authenticated localhost smoke on the exact merged branch.

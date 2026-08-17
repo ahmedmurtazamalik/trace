@@ -42,12 +42,37 @@ test("connected GitHub status stays separate from installation and disconnect re
   await expect(page.getByText("@alice-dev")).toBeVisible();
   await expect(page.getByText("Installation active")).toBeVisible();
   await expect(page.getByText("4 accessible")).toBeVisible();
-  await page.getByRole("button", { name: "Disconnect GitHub" }).click();
+  const disconnect = page.getByRole("button", { name: "Disconnect GitHub" });
+  await disconnect.focus();
+  await page.keyboard.press("Enter");
   await expect(page.getByRole("dialog")).toContainText("Historical activity remains in Trace");
+  await expect(page.getByRole("button", { name: "Cancel" })).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(disconnect).toBeFocused();
+  await page.keyboard.press("Enter");
   await page.getByRole("button", { name: "Confirm disconnect" }).click();
   await expect(page.getByRole("status")).toContainText("Historical activity remains");
   await expect(page.getByRole("button", { name: "Reconnect GitHub" })).toBeVisible();
   expect(csrf).toBe("csrf_opaque_value");
+});
+
+test("confirmed account switch uses the dedicated intent-bound endpoint", async ({ page }) => {
+  await authenticated(page);
+  await page.route("**/api/v1/github/status", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(connected) }));
+  let switchCsrf: string | undefined;
+  await page.route("**/api/v1/github/switch", async (route) => {
+    switchCsrf = route.request().headers()["x-csrf-token"];
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ authorizationUrl: "https://github.com/login/oauth/authorize?client_id=trace&state=switch" }) });
+  });
+
+  await page.goto("/github");
+  await page.getByRole("button", { name: "Switch GitHub account" }).click();
+  await expect(page.getByRole("dialog", { name: "Switch GitHub account?" })).toContainText("stop tracking repositories from @alice-dev");
+  await page.getByRole("button", { name: "Confirm account switch" }).click();
+
+  await expect(page).toHaveURL(/^https:\/\/github\.com\//);
+  expect(switchCsrf).toBe("csrf_opaque_value");
 });
 
 test("connect uses the backend github.com URL and callback errors remain closed", async ({ page }) => {

@@ -15,6 +15,7 @@ describe("LoginForm", () => {
     await userEvent.click(screen.getByRole("button", { name: "Sign in" }));
     expect(await screen.findByText("Enter your username.")).toBeVisible();
     expect(screen.getByText("Enter your password.")).toBeVisible();
+    expect(screen.getByLabelText("Username")).toHaveFocus();
     expect(authenticate).not.toHaveBeenCalled();
   });
 

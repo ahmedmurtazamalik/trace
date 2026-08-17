@@ -22,6 +22,7 @@ describe("RegisterForm", () => {
     expect(await screen.findByText("Use 3–39 letters, numbers, dots, underscores, or hyphens.")).toBeVisible();
     expect(screen.getByText("Enter a valid email address.")).toBeVisible();
     expect(screen.getByText("Use at least 12 characters.")).toBeVisible();
+    expect(screen.getByLabelText("Username")).toHaveFocus();
     expect(createAccount).not.toHaveBeenCalled();
   });
 
