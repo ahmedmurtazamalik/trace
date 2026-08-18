@@ -242,6 +242,7 @@ test("fallback history guard restores marked jumps and unmarked auth history", a
   const anonymousBootstrap = page.waitForResponse((response) => new URL(response.url()).pathname === "/api/v1/auth/me");
   await page.goto("/login");
   await anonymousBootstrap;
+  await expect(page.getByLabel("Username")).toBeEnabled();
   await page.getByRole("link", { name: "Create an account" }).click();
   await page.getByRole("link", { name: "Sign in" }).click();
   await page.getByLabel("Username").fill("alice.dev");

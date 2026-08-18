@@ -9,6 +9,18 @@ const session = {
 };
 
 describe("LoginForm", () => {
+  it("does not accept credentials before session bootstrap commits", async () => {
+    const authenticate = vi.fn();
+    const { rerender } = render(<LoginForm sessionReady={false} onAuthenticated={vi.fn()} authenticate={authenticate} />);
+    expect(screen.getByLabelText("Username")).toBeDisabled();
+    expect(screen.getByLabelText("Password")).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Sign in" })).toBeDisabled();
+
+    rerender(<LoginForm sessionReady onAuthenticated={vi.fn()} authenticate={authenticate} />);
+    expect(screen.getByLabelText("Username")).toBeEnabled();
+    expect(screen.getByLabelText("Password")).toBeEnabled();
+  });
+
   it("validates required fields before making a request", async () => {
     const authenticate = vi.fn();
     render(<LoginForm onAuthenticated={vi.fn()} authenticate={authenticate} />);
