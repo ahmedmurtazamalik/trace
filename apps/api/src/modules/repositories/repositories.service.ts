@@ -232,8 +232,12 @@ export class RepositoriesService {
       });
       const lockIds = [...new Set([...externalIds, ...currentlyOwned.map((repository) => repository.githubRepositoryId)])]
         .sort((left, right) => left < right ? -1 : left > right ? 1 : 0);
-      for (const repositoryId of lockIds) {
-        await transaction.$executeRaw`SELECT pg_advisory_xact_lock(${repositoryId})`;
+      if (lockIds.length > 0) {
+        await transaction.$executeRaw(
+          Prisma.sql`SELECT pg_advisory_xact_lock(repository_id)
+            FROM unnest(ARRAY[${Prisma.join(lockIds)}]::bigint[]) AS lock_ids(repository_id)
+            ORDER BY repository_id`,
+        );
       }
       const orderedRepositories = [...repositories].sort((left, right) => left.id < right.id ? -1 : left.id > right.id ? 1 : 0);
       let acceptedRepositoryCount = 0;
@@ -320,7 +324,7 @@ export class RepositoriesService {
         },
       });
       return acceptedRepositoryCount;
-    });
+    }, { maxWait: 10_000, timeout: 60_000 });
   }
 
   private summary(

@@ -88,6 +88,18 @@ describe('loadConfig', () => {
     expect(config.github.clientSecret).toBeUndefined();
   });
 
+  it('normalizes escaped newlines in the GitHub App private key', () => {
+    const config = loadConfig({
+      NODE_ENV: 'development',
+      DATABASE_URL: 'postgresql://trace:***@localhost:5432/trace',
+      REDIS_URL: 'redis://localhost:6379',
+      GITHUB_APP_PRIVATE_KEY: '-----BEGIN PRIVATE KEY-----\\nfixture-key-material\\n-----END PRIVATE KEY-----\\n',
+    });
+
+    expect(config.github.privateKey).toBe('-----BEGIN PRIVATE KEY-----\nfixture-key-material\n-----END PRIVATE KEY-----\n');
+    expect(config.github.privateKey).not.toContain('\\n');
+  });
+
   it('normalizes blank optional environment values from the documented env file to absent', () => {
     const config = loadConfig({
       NODE_ENV: 'development',

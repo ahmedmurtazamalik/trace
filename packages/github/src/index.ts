@@ -37,7 +37,7 @@ type GithubUserPayload = {
 
 type GithubInstallationPayload = {
   id?: number;
-  account?: { login?: string; type?: string };
+  account?: { id?: number; login?: string; type?: string };
   suspended_at?: string | null;
 };
 
@@ -45,6 +45,7 @@ export interface GithubAuthorizationAdapter {
   authorizationUrl(input: { state: string; callbackUrl: string }): string;
   authorize(code: string): Promise<GithubAuthorizationResult>;
   installationUrl(input: { state: string; appSlug: string }): string;
+  installationForUser(githubUserId: bigint): Promise<GithubInstallationAccess | null>;
   installation(installationId: bigint): Promise<GithubInstallationAccess>;
   repositories(installationId: bigint): Promise<GithubRepositoryAccess[]>;
   verifyInstallation(code: string, installationId: bigint): Promise<{ user: GithubAuthorizedUser; installation: GithubInstallationAccess }>;
@@ -77,6 +78,11 @@ export class FakeGithubAuthorizationAdapter implements GithubAuthorizationAdapte
     return url.toString();
   }
 
+  installationForUser(githubUserId: bigint): Promise<GithubInstallationAccess | null> {
+    void githubUserId;
+    return Promise.resolve(null);
+  }
+
   installation(installationId: bigint): Promise<GithubInstallationAccess> {
     return Promise.resolve({ id: installationId, accountType: 'ORGANIZATION', accountLogin: 'trace-fixture-org', suspended: false });
   }
@@ -102,6 +108,7 @@ export class UnavailableGithubAuthorizationAdapter implements GithubAuthorizatio
   authorizationUrl(input: { state: string; callbackUrl: string }): string { void input; throw new Error('GitHub authorization is not configured'); }
   authorize(code: string): Promise<GithubAuthorizationResult> { void code; return Promise.reject(new Error('GitHub authorization is not configured')); }
   installationUrl(input: { state: string; appSlug: string }): string { void input; throw new Error('GitHub installation is not configured'); }
+  installationForUser(githubUserId: bigint): Promise<GithubInstallationAccess | null> { void githubUserId; return Promise.reject(new Error('GitHub installation is not configured')); }
   installation(installationId: bigint): Promise<GithubInstallationAccess> { void installationId; return Promise.reject(new Error('GitHub installation is not configured')); }
   repositories(installationId: bigint): Promise<GithubRepositoryAccess[]> { void installationId; return Promise.reject(new Error('GitHub installation is not configured')); }
   verifyInstallation(code: string, installationId: bigint): Promise<{ user: GithubAuthorizedUser; installation: GithubInstallationAccess }> { void code; void installationId; return Promise.reject(new Error('GitHub installation is not configured')); }
@@ -161,6 +168,26 @@ export class RealGithubAuthorizationAdapter implements GithubAuthorizationAdapte
       accountLogin,
       suspended: value.suspended_at != null,
     };
+  }
+
+  async installationForUser(githubUserId: bigint): Promise<GithubInstallationAccess | null> {
+    for (let page = 1; page <= 100; page += 1) {
+      const response = await fetch(`https://api.github.com/app/installations?per_page=100&page=${page}`, {
+        headers: { Accept: 'application/vnd.github+json', Authorization: `Bearer ${this.appJwt()}`, 'X-GitHub-Api-Version': '2022-11-28' },
+        signal: AbortSignal.timeout(5_000),
+      });
+      await this.requireOk(response, 'GitHub installation lookup failed');
+      const values = await this.boundedJson(response, 2_097_152, 'GitHub installation lookup failed');
+      if (!Array.isArray(values)) throw new Error('GitHub installation lookup failed');
+      for (const value of values as GithubInstallationPayload[]) {
+        if (value.account?.type !== 'User' || !Number.isSafeInteger(value.account.id) || BigInt(value.account.id as number) !== githubUserId) continue;
+        const accountLogin = value.account.login;
+        if (!Number.isSafeInteger(value.id) || !this.boundedString(accountLogin, 100)) throw new Error('GitHub installation lookup failed');
+        return { id: BigInt(value.id as number), accountType: 'USER', accountLogin, suspended: value.suspended_at != null };
+      }
+      if (values.length < 100) return null;
+    }
+    throw new Error('GitHub installation lookup failed');
   }
 
   async repositories(installationId: bigint): Promise<GithubRepositoryAccess[]> {

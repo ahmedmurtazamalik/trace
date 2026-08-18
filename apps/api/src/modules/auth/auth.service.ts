@@ -18,7 +18,7 @@ import { TRACE_CONFIG } from '../../common/config/config.token';
 import { AuthRateLimitService } from './auth-rate-limit.service';
 import { createOpaqueToken, deriveCsrfToken, hashCsrfToken, hashResetToken, hashSessionToken } from './auth-tokens';
 import type { AuthenticatedSession } from './auth.types';
-import { PASSWORD_RESET_DELIVERY, type PasswordResetDelivery } from './password-reset-delivery';
+import { PASSWORD_RESET_DELIVERY, type PasswordResetDelivery, type PasswordResetDeliveryInput } from './password-reset-delivery';
 
 const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1_000;
 const RESET_TTL_MS = 30 * 60 * 1_000;
@@ -226,8 +226,13 @@ export class AuthService {
         ],
       },
     });
-    const issuance = user !== null && user.disabledAt === null && user.email !== null
-      ? this.issuePasswordReset(user, user.email, context.requestId).catch(() => undefined)
+    const recipient: Pick<PasswordResetDeliveryInput, 'recipient' | 'recipientType'> | null = user?.email !== null && user?.email !== undefined
+      ? { recipient: user.email, recipientType: 'email' }
+      : user !== null && this.resetDelivery.supportsUsernameRecipient
+        ? { recipient: user.username, recipientType: 'username' }
+        : null;
+    const issuance = user !== null && user.disabledAt === null && recipient !== null
+      ? this.issuePasswordReset(user, recipient, context.requestId).catch(() => undefined)
       : Promise.resolve();
     await Promise.race([issuance, this.waitUntil(respondAfter)]);
     await this.waitUntil(respondAfter);
@@ -306,7 +311,11 @@ export class AuthService {
     };
   }
 
-  private async issuePasswordReset(user: User, email: string, requestId?: string): Promise<void> {
+  private async issuePasswordReset(
+    user: User,
+    recipient: Pick<PasswordResetDeliveryInput, 'recipient' | 'recipientType'>,
+    requestId?: string,
+  ): Promise<void> {
     await this.rateLimits.withLock('password-reset-issuance', user.id, RESET_ISSUANCE_LOCK_MS, async (assertOwned) => {
       const rawToken = createOpaqueToken();
       const tokenHash = hashResetToken(rawToken);
@@ -333,7 +342,7 @@ export class AuthService {
       });
 
       try {
-        await this.resetDelivery.deliver({ email, token: rawToken, expiresAt });
+        await this.resetDelivery.deliver({ ...recipient, token: rawToken, expiresAt });
       } catch {
         await this.prisma.passwordResetToken.deleteMany({ where: { id: token.id, consumedAt: null } });
         return;

@@ -4,13 +4,16 @@ import { GithubWebhookQueue } from './github-webhook.queue';
 
 const PUBLISH_INTERVAL_MS = 5_000;
 const REQUEST_PUBLISH_TIMEOUT_MS = 1_000;
-const PUBLICATION_TRANSACTION_TIMEOUT_MS = REQUEST_PUBLISH_TIMEOUT_MS + 500;
+const RECONCILIATION_PUBLISH_TIMEOUT_MS = 3_000;
+const PUBLICATION_TRANSACTION_TIMEOUT_MS = 2_500;
 const PUBLISH_BATCH_SIZE = 100;
 
 @Injectable()
 export class GithubWebhookPublisher implements OnApplicationBootstrap, OnModuleDestroy {
   private interval: NodeJS.Timeout | undefined;
   private reconciliation: Promise<void> | undefined;
+  private readonly requestPublications = new Set<Promise<void>>();
+  private shuttingDown = false;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -26,13 +29,21 @@ export class GithubWebhookPublisher implements OnApplicationBootstrap, OnModuleD
   }
 
   async publishOneBounded(deliveryId: string): Promise<void> {
-    await this.withTimeout(
+    if (this.shuttingDown) return;
+    const publication = this.withTimeout(
       (signal) => this.publishOne(deliveryId, signal),
       REQUEST_PUBLISH_TIMEOUT_MS,
     ).catch(() => undefined);
+    this.requestPublications.add(publication);
+    try {
+      await publication;
+    } finally {
+      this.requestPublications.delete(publication);
+    }
   }
 
   async publishOwed(): Promise<void> {
+    if (this.shuttingDown) return;
     if (this.reconciliation !== undefined) return this.reconciliation;
     this.reconciliation = this.reconcile();
     try {
@@ -64,9 +75,11 @@ export class GithubWebhookPublisher implements OnApplicationBootstrap, OnModuleD
   }
 
   async onModuleDestroy(): Promise<void> {
+    this.shuttingDown = true;
     if (this.interval !== undefined) clearInterval(this.interval);
     this.interval = undefined;
     await this.reconciliation?.catch(() => undefined);
+    await Promise.allSettled([...this.requestPublications]);
   }
 
   private async publishOne(deliveryId: string, signal: AbortSignal): Promise<void> {
@@ -82,7 +95,7 @@ export class GithubWebhookPublisher implements OnApplicationBootstrap, OnModuleD
         data: { publishedAt: new Date() },
       });
       return true;
-    });
+    }, { maxWait: 10_000, timeout: 30_000 });
   }
 
   private async publishAttempt(deliveryId: string, parentSignal?: AbortSignal): Promise<void> {
@@ -91,9 +104,9 @@ export class GithubWebhookPublisher implements OnApplicationBootstrap, OnModuleD
       return this.prisma.$transaction(async (transaction) => {
         if (!await this.lockCurrentAuthority(transaction, deliveryId)) return;
         signal.throwIfAborted();
-        await this.queue.enqueue(deliveryId, signal);
+        await this.enqueueUntilAborted(deliveryId, signal);
       }, {
-        maxWait: REQUEST_PUBLISH_TIMEOUT_MS,
+        maxWait: RECONCILIATION_PUBLISH_TIMEOUT_MS,
         timeout: PUBLICATION_TRANSACTION_TIMEOUT_MS,
       });
     };
@@ -101,7 +114,7 @@ export class GithubWebhookPublisher implements OnApplicationBootstrap, OnModuleD
       await operation(parentSignal);
       return;
     }
-    await this.withTimeout(operation, REQUEST_PUBLISH_TIMEOUT_MS);
+    await this.withTimeout(operation, RECONCILIATION_PUBLISH_TIMEOUT_MS);
   }
 
   private async lockCurrentAuthority(transaction: Prisma.TransactionClient, deliveryId: string): Promise<boolean> {
@@ -144,12 +157,24 @@ export class GithubWebhookPublisher implements OnApplicationBootstrap, OnModuleD
     return false;
   }
 
+  private async enqueueUntilAborted(deliveryId: string, signal: AbortSignal): Promise<void> {
+    signal.throwIfAborted();
+    await new Promise<void>((resolve, reject) => {
+      const onAbort = (): void => reject(new Error('Webhook queue publication aborted.'));
+      signal.addEventListener('abort', onAbort, { once: true });
+      void this.queue.enqueue(deliveryId, signal).then(resolve, reject).finally(() => {
+        signal.removeEventListener('abort', onAbort);
+      });
+    });
+  }
+
   private async withTimeout(operation: (signal: AbortSignal) => Promise<void>, timeoutMs: number): Promise<void> {
     const controller = new AbortController();
+    const running = operation(controller.signal);
     let timer: NodeJS.Timeout | undefined;
     try {
       await Promise.race([
-        operation(controller.signal),
+        running,
         new Promise<never>((_resolve, reject) => {
           timer = setTimeout(() => {
             controller.abort();
@@ -157,6 +182,9 @@ export class GithubWebhookPublisher implements OnApplicationBootstrap, OnModuleD
           }, timeoutMs);
         }),
       ]);
+    } catch (error) {
+      if (controller.signal.aborted) await running.catch(() => undefined);
+      throw error;
     } finally {
       if (timer !== undefined) clearTimeout(timer);
     }
