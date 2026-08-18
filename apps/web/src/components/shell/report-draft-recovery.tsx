@@ -12,6 +12,7 @@ export interface ReportDraftRecovery {
 }
 
 interface PendingRecovery extends ReportDraftRecovery {
+  sessionEpoch?: number;
   url: string;
 }
 
@@ -42,7 +43,8 @@ const ReportDraftRecoveryContext = createContext<ReportDraftRecoveryContextValue
 export function ReportDraftRecoveryProvider({ children }: { children: ReactNode }) {
   const router = useRouter();
   const authSession = useOptionalAuthSession();
-  const lastSessionEpochRef = useRef(authSession?.sessionEpoch);
+  const sessionEpoch = authSession?.sessionEpoch;
+  const lastSessionEpochRef = useRef(sessionEpoch);
   const activeRef = useRef<PendingRecovery>();
   const pendingRef = useRef<PendingRecovery>();
   const expiryRef = useRef<ReturnType<typeof setTimeout>>();
@@ -60,12 +62,13 @@ export function ReportDraftRecoveryProvider({ children }: { children: ReactNode 
   }, [clearRouteRetries]);
 
   const publishActive = useCallback((recovery: ReportDraftRecovery) => {
-    activeRef.current = { ...recovery, url: window.location.href };
+    activeRef.current = { ...recovery, sessionEpoch, url: window.location.href };
     setHasActiveDraft(true);
-  }, []);
+  }, [sessionEpoch]);
   const stageActive = useCallback((url: string) => {
-    pendingRef.current = activeRef.current ? { ...activeRef.current, url } : undefined;
-  }, []);
+    const active = activeRef.current;
+    pendingRef.current = active && active.sessionEpoch === sessionEpoch ? { ...active, url } : undefined;
+  }, [sessionEpoch]);
   const discardActive = useCallback(() => {
     activeRef.current = undefined;
     setHasActiveDraft(false);
@@ -74,10 +77,10 @@ export function ReportDraftRecoveryProvider({ children }: { children: ReactNode 
     clearRouteRetries();
   }, [clearRouteRetries]);
   useEffect(() => {
-    if (lastSessionEpochRef.current === authSession?.sessionEpoch) return;
-    lastSessionEpochRef.current = authSession?.sessionEpoch;
+    if (lastSessionEpochRef.current === sessionEpoch) return;
+    lastSessionEpochRef.current = sessionEpoch;
     discardActive();
-  }, [authSession?.sessionEpoch, discardActive]);
+  }, [discardActive, sessionEpoch]);
   const clearActive = useCallback((reportId: string, url: string) => {
     const active = activeRef.current;
     if (!active || active.reportId !== reportId || active.url !== url) return;
@@ -89,6 +92,10 @@ export function ReportDraftRecoveryProvider({ children }: { children: ReactNode 
   }, [clearRouteRetries]);
   const restorePending = useCallback(() => {
     clearRouteRetries();
+    if (pendingRef.current?.sessionEpoch !== sessionEpoch) {
+      discardActive();
+      return;
+    }
     setRecoveryGeneration((generation) => generation + 1);
     const pendingUrl = pendingRef.current?.url;
     if (expiryRef.current) clearTimeout(expiryRef.current);
@@ -114,30 +121,32 @@ export function ReportDraftRecoveryProvider({ children }: { children: ReactNode 
         routeRetryRefs.current.push(timeout);
       }
     }
-  }, [clearRouteRetries, router]);
+  }, [clearRouteRetries, discardActive, router, sessionEpoch]);
   const consume = useCallback((reportId: string, revision: number, url: string) => {
     const pending = pendingRef.current;
-    if (pending && pending.reportId === reportId && pending.revision === revision && pending.url === url) {
+    if (pending && pending.sessionEpoch === sessionEpoch && pending.reportId === reportId && pending.revision === revision && pending.url === url) {
       pendingRef.current = undefined;
       if (expiryRef.current) clearTimeout(expiryRef.current);
       return pending.content;
     }
     const active = activeRef.current;
-    if (!active || active.reportId !== reportId || active.revision !== revision || active.url !== url) return undefined;
+    if (!active || active.sessionEpoch !== sessionEpoch || active.reportId !== reportId || active.revision !== revision || active.url !== url) return undefined;
     return active.content;
-  }, []);
+  }, [sessionEpoch]);
 
-  const value = useMemo(() => ({ clearActive, consume, discardActive, hasActiveDraft, publishActive, recoveryGeneration, restorePending, stageActive }), [
+  const activeMatchesSession = hasActiveDraft && activeRef.current?.sessionEpoch === sessionEpoch;
+  const value = useMemo(() => ({ clearActive, consume, discardActive, hasActiveDraft: activeMatchesSession, publishActive, recoveryGeneration, restorePending, stageActive }), [
+    activeMatchesSession,
     clearActive,
     consume,
     discardActive,
-    hasActiveDraft,
+
     publishActive,
     recoveryGeneration,
     restorePending,
     stageActive,
   ]);
-  return <ReportDraftRecoveryContext.Provider value={value}>{children}</ReportDraftRecoveryContext.Provider>;
+  return <ReportDraftRecoveryContext.Provider key={sessionEpoch ?? "isolated"} value={value}>{children}</ReportDraftRecoveryContext.Provider>;
 }
 
 export function useReportDraftRecovery(): ReportDraftRecoveryContextValue {

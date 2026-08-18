@@ -1,4 +1,5 @@
 import { act, render, waitFor } from "@testing-library/react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ReportContent } from "@trace/shared";
@@ -78,9 +79,12 @@ describe("ReportDraftRecoveryProvider", () => {
     };
     let recovery!: ReturnType<typeof useReportDraftRecovery>;
     let establishSession!: ReturnType<typeof useAuthSession>["establishSession"];
+    let consumed: ReportContent | undefined;
     function Harness() {
       recovery = useReportDraftRecovery();
       establishSession = useAuthSession().establishSession;
+      const [initialDraft] = useState(() => recovery.consume("report-1", 1, window.location.href));
+      consumed = initialDraft;
       return null;
     }
     render(
@@ -93,5 +97,6 @@ describe("ReportDraftRecoveryProvider", () => {
 
     act(() => establishSession({ ...initialSession, csrfToken: "fresh-csrf" }));
     await waitFor(() => expect(recovery.hasActiveDraft).toBe(false));
+    expect(consumed).toBeUndefined();
   });
 });
