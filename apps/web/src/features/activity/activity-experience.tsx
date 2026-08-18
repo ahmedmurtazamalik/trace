@@ -9,7 +9,7 @@ import { ActivitySummaryCard } from "./activity-summary-card";
 export type ActivityFilters = Pick<ActivityListQuery, "date" | "repositoryId" | "contributorId" | "source" | "type">;
 export type LoadActivity = (query: Partial<ActivityListQuery>, options?: { signal?: AbortSignal }) => Promise<ActivityListResponse>;
 export type LoadActivityRepositories = (query?: { limit?: number }, options?: { signal?: AbortSignal }) => Promise<RepositoryListResponse>;
-interface ActivityExperienceProps { loadActivity: LoadActivity; loadRepositories?: LoadActivityRepositories; initialFilters?: ActivityFilters; timezone?: string; onFiltersChange?: (filters: ActivityFilters) => void }
+interface ActivityExperienceProps { loadActivity: LoadActivity; loadRepositories?: LoadActivityRepositories; initialFilters?: ActivityFilters; fixedFilters?: ActivityFilters; timezone?: string; onFiltersChange?: (filters: ActivityFilters) => void }
 
 const labels: Record<string, string> = { commit: "Commit", push: "Push", pull_request: "Pull request", working_tree_snapshot: "Working tree snapshot", staged_change: "Staged change", untracked_file: "Untracked file", local_commit: "Local commit" };
 const typeOptions: Array<{ value: ActivityType; label: string }> = Object.entries(labels).map(([value, label]) => ({ value: value as ActivityType, label }));
@@ -38,7 +38,7 @@ function safeError(cause: unknown, pagination = false) {
   return pagination ? "Trace could not load more activity. Try again." : "Trace could not load activity. Try again.";
 }
 
-export function ActivityExperience({ loadActivity, loadRepositories, initialFilters = {}, timezone = "UTC", onFiltersChange }: ActivityExperienceProps) {
+export function ActivityExperience({ loadActivity, loadRepositories, initialFilters = {}, fixedFilters = {}, timezone = "UTC", onFiltersChange }: ActivityExperienceProps) {
   const [filters, setFilters] = useState<ActivityFilters>(filtered(initialFilters));
   const filtersRef = useRef(filters);
   const [items, setItems] = useState<ActivitySummary[]>([]);
@@ -53,7 +53,9 @@ export function ActivityExperience({ loadActivity, loadRepositories, initialFilt
   const activeRequest = useRef<AbortController>();
   const activePageRequest = useRef<AbortController>();
   const initialFilterKey = filterKey(initialFilters);
-  const query = useMemo(() => ({ ...filters, limit: 25, timezone }), [filters, timezone]);
+  const fixedFilterKey = filterKey(fixedFilters);
+  const fixedQueryFilters = useMemo(() => JSON.parse(fixedFilterKey) as ActivityFilters, [fixedFilterKey]);
+  const query = useMemo(() => ({ ...filters, ...fixedQueryFilters, limit: 25, timezone }), [filters, fixedQueryFilters, timezone]);
   const availableTypes = useMemo(() => filters.source === undefined ? typeOptions : typeOptions.filter((option) => validTypesBySource[filters.source!].has(option.value)), [filters.source]);
 
   const reload = useCallback(() => {
@@ -131,7 +133,7 @@ export function ActivityExperience({ loadActivity, loadRepositories, initialFilt
         <label>Activity type<select value={filters.type ?? ""} onChange={(event) => change("type", event.target.value as ActivityType | "")}><option value="">All types</option>{availableTypes.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
       </div>
       {repositoryError && <p className="activity-notice-error" role="status">Repository choices are temporarily unavailable. Existing activity filters still work.</p>}
-      <Button className="trace-button-secondary" onClick={clear} disabled={Object.keys(filters).length === 0}>Clear filters</Button>
+      {(Object.keys(fixedQueryFilters).length === 0 || Object.keys(filters).length > 0) && <Button className="trace-button-secondary" onClick={clear} disabled={Object.keys(filters).length === 0}>Clear filters</Button>}
     </Card>
 
     {loading && items.length === 0 ? <Card className="activity-state-card" role="status">Loading development activity…</Card>

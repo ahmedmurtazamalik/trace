@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import type { RepositoryListResponse } from "@trace/shared";
@@ -124,6 +124,50 @@ describe("repository management", () => {
     await userEvent.click(screen.getByRole("button", { name: "Restore trace-fixture-org/trace" }));
     expect(updateMembership).toHaveBeenLastCalledWith("repo_01", false, "csrf-live");
     expect(await screen.findByRole("status")).toHaveTextContent("Restored trace-fixture-org/trace");
+  });
+
+  it.each([
+    [401, "UNAUTHENTICATED", "Your session has expired. Please sign in again."],
+    [403, "UNEXPECTED_ERROR", "Trace could not complete the repository request. Please try again."],
+  ] as const)("clears stale protected repository data after a %i refresh", async (status, code, safeMessage) => {
+    const loadRepositories = vi.fn()
+      .mockResolvedValueOnce(repositories)
+      .mockRejectedValueOnce(new RepositoryApiError(code, safeMessage, status));
+    renderPanel({ loadRepositories });
+    expect(await screen.findByRole("link", { name: "trace-fixture-org/trace" })).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "View removed repositories" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(safeMessage);
+    expect(screen.queryByRole("link", { name: "trace-fixture-org/trace" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "archive-fixture-org/legacy-api" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Track|Remove|Restore/ })).not.toBeInTheDocument();
+  });
+
+  it("ignores an older pagination response after an authorization failure clears protected data", async () => {
+    let resolveOlderPage!: (response: RepositoryListResponse) => void;
+    const loadRepositories = vi.fn()
+      .mockResolvedValueOnce({ ...repositories, items: [repositories.items[0]], pageInfo: { nextCursor: "cursor-2", hasNextPage: true } })
+      .mockImplementationOnce(() => new Promise<RepositoryListResponse>((resolve) => {
+        resolveOlderPage = resolve;
+      }));
+    const updateTracking = vi.fn().mockRejectedValue(
+      new RepositoryApiError("UNAUTHENTICATED", "Your session has expired. Please sign in again.", 401),
+    );
+    renderPanel({ loadRepositories, updateTracking });
+    await screen.findByRole("link", { name: "trace-fixture-org/trace" });
+
+    await userEvent.click(screen.getByRole("button", { name: "Load more repositories" }));
+    await waitFor(() => expect(loadRepositories).toHaveBeenCalledTimes(2));
+    await userEvent.click(screen.getByRole("button", { name: "Track trace-fixture-org/trace" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("Your session has expired");
+
+    await act(async () => {
+      resolveOlderPage({ ...repositories, items: [repositories.items[1]], pageInfo: { nextCursor: null, hasNextPage: false } });
+    });
+
+    expect(screen.queryByRole("link", { name: "archive-fixture-org/legacy-api" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "trace-fixture-org/trace" })).not.toBeInTheDocument();
   });
 
   it("does not expose unexpected internal repository errors", async () => {

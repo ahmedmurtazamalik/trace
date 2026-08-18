@@ -70,6 +70,17 @@ describe("Day 5 activity experience", () => {
     expect(screen.queryByLabelText("Contributor")).not.toBeInTheDocument();
   });
 
+  it("locks a contributor detail view to its contributor", async () => {
+    const loadActivity = vi.fn().mockResolvedValue(activityFixturePages.first);
+    render(<ActivityExperience loadActivity={loadActivity} fixedFilters={{ contributorId: "contributor-01" }} />);
+
+    await waitFor(() => expect(loadActivity).toHaveBeenCalledWith(
+      expect.objectContaining({ contributorId: "contributor-01", limit: 25, timezone: "UTC" }),
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    ));
+    expect(screen.queryByRole("button", { name: "Clear filters" })).not.toBeInTheDocument();
+  });
+
   it("appends cursor pages without duplicate activities", async () => {
     const loadActivity = vi.fn().mockResolvedValueOnce(activityFixturePages.first).mockResolvedValueOnce(activityFixturePages.second);
     renderExperience({ loadActivity });
@@ -146,9 +157,10 @@ describe("Day 5 activity experience", () => {
   });
 
   it("uses a safe fallback for future activity values", async () => {
-    const future = { ...activityFixturePages.first.items[0], id: "future", type: "future_event" } as unknown as ActivitySummary;
+    const future = { ...activityFixturePages.first.items[0], id: "future", source: "future_source", type: "future_event" } as unknown as ActivitySummary;
     renderExperience({ loadActivity: vi.fn().mockResolvedValue({ items: [future], pageInfo: { nextCursor: null, hasNextPage: false } }) });
     expect(await screen.findByText("Activity")).toBeInTheDocument();
+    expect(screen.getByText("FUTURE_SOURCE")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Refine activity timeline" })).toBeInTheDocument();
   });
 });

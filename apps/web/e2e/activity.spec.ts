@@ -13,7 +13,7 @@ test.beforeEach(async ({ page }) => {
   await page.route("**/api/v1/repositories?*", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(repositories) }));
   await page.route("**/api/v1/activity?*", (route) => {
     const url = new URL(route.request().url());
-    const filtered = activityItems.filter((item) => (!url.searchParams.get("repositoryId") || item.repository.id === url.searchParams.get("repositoryId")) && (!url.searchParams.get("source") || item.source === url.searchParams.get("source")) && (!url.searchParams.get("type") || item.type === url.searchParams.get("type")) && (!url.searchParams.get("date") || (url.searchParams.get("timezone") === "Pacific/Honolulu" ? "2026-08-11" : "2026-08-12") === url.searchParams.get("date")));
+    const filtered = activityItems.filter((item) => (!url.searchParams.get("repositoryId") || item.repository.id === url.searchParams.get("repositoryId")) && (!url.searchParams.get("contributorId") || item.contributor?.id === url.searchParams.get("contributorId")) && (!url.searchParams.get("source") || item.source === url.searchParams.get("source")) && (!url.searchParams.get("type") || item.type === url.searchParams.get("type")) && (!url.searchParams.get("date") || (url.searchParams.get("timezone") === "Pacific/Honolulu" ? "2026-08-11" : "2026-08-12") === url.searchParams.get("date")));
     return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ items: filtered, pageInfo: { nextCursor: null, hasNextPage: false } }) });
   });
 });
@@ -44,6 +44,22 @@ test("activity filters restore through the URL and the timeline remains responsi
   await page.getByRole("button", { name: "Clear filters" }).click();
   await expect(page).toHaveURL(/\/activity\?context=review$/);
   await expect(page.getByRole("heading", { name: "Refine activity timeline" })).toBeVisible();
+});
+
+test("contributor identity opens a contributor-scoped activity view", async ({ page }) => {
+  await page.goto("/activity");
+  const contributorRequest = page.waitForRequest((request) => {
+    const url = new URL(request.url());
+    return url.pathname === "/api/v1/activity" && url.searchParams.get("contributorId") === "contributor-01";
+  });
+
+  await page.getByRole("link", { name: "View activity for Maya Chen" }).click();
+  await contributorRequest;
+  await expect(page).toHaveURL(/\/contributors\/contributor-01$/);
+  await expect(page.getByRole("heading", { level: 1, name: "Contributor activity" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Refine activity timeline" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Publish webhook acceptance" })).not.toBeVisible();
+  await expect(page.getByRole("button", { name: "Clear filters" })).not.toBeVisible();
 });
 
 test("browser history restores URL-derived activity filters", async ({ page }) => {

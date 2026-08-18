@@ -372,6 +372,9 @@ main#main-content { max-width: 1540px; margin: 0 auto; padding: clamp(1.65rem, 4
 .activity-contributor-avatar { flex: 0 0 auto; width: 2rem; height: 2rem; border: 1px solid #d7e1ed; border-radius: 50%; object-fit: cover; background: #eef4fb; }
 .activity-contributor-fallback { display: grid; place-items: center; color: #1e40af; font-size: .65rem; font-weight: 850; }
 .activity-contributor-identity { display: grid; line-height: 1.15; }
+.activity-contributor-link { border-radius: .25rem; color: inherit; text-decoration: none; }
+.activity-contributor-link:hover .activity-contributor-identity strong { color: #1d4ed8; text-decoration: underline; text-underline-offset: .15rem; }
+.activity-contributor-link:focus-visible { outline: 3px solid #93c5fd; outline-offset: 3px; }
 .activity-contributor-identity strong { color: #34445a; font-size: .76rem; }
 .activity-contributor-identity small { color: #718096; font-size: .65rem; }
 .activity-event-card time { color: #66778d; font-size: .69rem; white-space: nowrap; }
