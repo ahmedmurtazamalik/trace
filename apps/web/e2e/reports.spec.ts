@@ -162,3 +162,65 @@ test("Day 9 structured editor stays usable without horizontal overflow on mobile
   await page.getByLabel("Executive summary").fill("Mobile edit.");
   await expect(page.getByRole("button", { name: "Save revision" })).toBeVisible();
 });
+
+test("unsaved report edits guard browser Back until discarding is accepted", async ({ page }) => {
+  await page.unrouteAll();
+  await interceptReportsApi(page);
+  await interceptEditableReport(page);
+  await page.goto("/reports");
+  await page.getByRole("link", { name: "View and download report for August 12, 2026" }).click();
+  await expect(page).toHaveURL(/\/reports\/report-completed$/);
+  await page.getByLabel("Executive summary").fill("Keep this browser-history edit.");
+
+  page.once("dialog", (dialog) => dialog.dismiss());
+  await page.evaluate(() => history.back());
+  await expect(page).toHaveURL(/\/reports\/report-completed$/);
+  await expect(page.getByLabel("Executive summary")).toHaveValue("Keep this browser-history edit.");
+
+  page.once("dialog", (dialog) => dialog.accept());
+  await page.evaluate(() => history.back());
+  await expect(page).toHaveURL(/\/reports$/);
+});
+
+test("unsaved report edits guard browser Forward until discarding is accepted", async ({ page }) => {
+  await page.unrouteAll();
+  await interceptEditableReport(page);
+  await page.goto("/reports/report-completed");
+  await page.getByRole("link", { name: "Dashboard" }).first().click();
+  await expect(page).toHaveURL(/\/dashboard$/);
+  await page.evaluate(() => history.back());
+  await expect(page).toHaveURL(/\/reports\/report-completed$/);
+  await page.getByLabel("Executive summary").fill("Decline forward data loss.");
+
+  page.once("dialog", (dialog) => dialog.dismiss());
+  await page.evaluate(() => history.forward());
+  await expect(page).toHaveURL(/\/reports\/report-completed$/);
+  await expect(page.getByLabel("Executive summary")).toHaveValue("Decline forward data loss.");
+
+  page.once("dialog", (dialog) => dialog.accept());
+  await page.goForward({ waitUntil: "commit" });
+  await expect(page).toHaveURL(/\/dashboard$/);
+});
+
+test("unsaved report edits guard sign-out before the session is revoked", async ({ page }) => {
+  await page.unrouteAll();
+  await interceptEditableReport(page);
+  let logoutRequests = 0;
+  await page.route("**/api/v1/auth/logout", (route) => {
+    logoutRequests += 1;
+    return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ success: true }) });
+  });
+  await page.goto("/reports/report-completed");
+  await page.getByLabel("Executive summary").fill("Do not discard this by signing out.");
+
+  page.once("dialog", (dialog) => dialog.dismiss());
+  await page.getByRole("button", { name: "Sign out" }).click();
+  expect(logoutRequests).toBe(0);
+  await expect(page).toHaveURL(/\/reports\/report-completed$/);
+  await expect(page.getByLabel("Executive summary")).toHaveValue("Do not discard this by signing out.");
+
+  page.once("dialog", (dialog) => dialog.accept());
+  await page.getByRole("button", { name: "Sign out" }).click();
+  await expect.poll(() => logoutRequests).toBe(1);
+  await expect(page).toHaveURL(/\/login$/);
+});

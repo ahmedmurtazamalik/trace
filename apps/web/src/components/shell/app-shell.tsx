@@ -4,6 +4,7 @@ import { useEffect, useState, type MouseEvent, type ReactNode } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { SessionControls } from "./session-controls";
+import { browserGuardsUnsavedNavigation, confirmDiscardUnsavedReportChanges, useUnsavedNavigationGuard } from "./unsaved-navigation";
 import {
   Activity,
   BookOpen,
@@ -24,7 +25,7 @@ const items = [
 ];
 
 function guardUnsavedNavigation(event: MouseEvent<HTMLAnchorElement>, dirty: boolean) {
-  if (dirty && !window.confirm("You have unsaved report changes. Discard them and leave this page?")) event.preventDefault();
+  if (!browserGuardsUnsavedNavigation() && !confirmDiscardUnsavedReportChanges(dirty)) event.preventDefault();
 }
 
 function Navigation({ dirty, mobile = false }: { dirty: boolean; mobile?: boolean }) {
@@ -54,6 +55,7 @@ function Navigation({ dirty, mobile = false }: { dirty: boolean; mobile?: boolea
 
 export function AppShell({ children }: { children: ReactNode }) {
   const [reportDirty, setReportDirty] = useState(false);
+  useUnsavedNavigationGuard(reportDirty);
   useEffect(() => {
     const update = (event: Event) => setReportDirty(Boolean((event as CustomEvent<{ dirty?: boolean }>).detail?.dirty));
     window.addEventListener("trace:report-editor-dirty", update);
@@ -84,7 +86,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             <span className="eyebrow">Trace workspace</span>
             <strong>Development activity</strong>
           </div>
-          <SessionControls />
+          <SessionControls reportDirty={reportDirty} />
         </header>
         <div className="data-disclosure">
           <span className="disclosure-icon"><Radio size={14} aria-hidden="true" /></span>

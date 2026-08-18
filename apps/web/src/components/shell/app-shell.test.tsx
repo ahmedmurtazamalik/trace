@@ -35,4 +35,18 @@ describe("AppShell", () => {
     expect(confirm).toHaveBeenCalledTimes(1);
     confirm.mockRestore();
   });
+
+  it("restores browser history when the Navigation API is unavailable and discarding is declined", () => {
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+    const go = vi.spyOn(window.history, "go").mockImplementation(() => undefined);
+    render(<AppShell><h1>Report editor</h1></AppShell>);
+    act(() => window.dispatchEvent(new CustomEvent("trace:report-editor-dirty", { detail: { dirty: true } })));
+
+    act(() => window.dispatchEvent(new PopStateEvent("popstate", { state: { __traceUnsavedNavigationPoint: -1 } })));
+
+    expect(confirm).toHaveBeenCalledTimes(1);
+    expect(go).toHaveBeenCalledWith(1);
+    go.mockRestore();
+    confirm.mockRestore();
+  });
 });
