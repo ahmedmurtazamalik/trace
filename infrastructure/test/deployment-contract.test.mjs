@@ -177,6 +177,63 @@ test('production-like backend Compose gates startup on migration and dependency 
   });
 });
 
+test('release automation pins actions and enforces pnpm supply-chain policy', async () => {
+  const [workflow, workspace, packageJsonText, apiDockerfile, workerDockerfile] = await Promise.all([
+    read('.github/workflows/ci.yml'),
+    read('pnpm-workspace.yaml'),
+    read('package.json'),
+    read('apps/api/Dockerfile'),
+    read('apps/worker/Dockerfile'),
+  ]);
+  const packageJson = JSON.parse(packageJsonText);
+  const expectedActions = new Map([
+    ['actions/checkout', '11d5960a326750d5838078e36cf38b85af677262'],
+    ['actions/setup-node', '49933ea5288caeca8642d1e84afbd3f7d6820020'],
+    ['pnpm/action-setup', 'b906affcce14559ad1aafd4ab0e942779e9f58b1'],
+  ]);
+  const actionReferences = [...workflow.matchAll(/^\s*- uses: ([^@\s]+)@([^\s]+)$/gm)];
+
+  assert.equal(actionReferences.length, 6);
+  for (const [, action, revision] of actionReferences) {
+    assert.equal(revision, expectedActions.get(action), `${action} must use its reviewed full commit SHA`);
+  }
+  assert.equal(packageJson.packageManager, 'pnpm@10.34.5');
+  assert.equal((workflow.match(/version: 10\.34\.5/g) ?? []).length, 2);
+  for (const dockerfile of [apiDockerfile, workerDockerfile]) {
+    assert.match(dockerfile, /corepack prepare pnpm@10\.34\.5 --activate/);
+    assert.doesNotMatch(dockerfile, /pnpm@10\.15\.1/);
+  }
+  assert.match(workspace, /^minimumReleaseAge: 10080$/m);
+  const maturityExclusions = workspace.match(/^minimumReleaseAgeExclude:\n((?:  - .+\n?)*)/m)?.[1]
+    .trim()
+    .split('\n')
+    .map((entry) => entry.trim().replace(/^- /, ''));
+  assert.deepEqual(
+    maturityExclusions,
+    ['"@napi-rs/wasm-runtime@1.2.3"'],
+    'the only maturity exception must remain pinned to the already-locked version',
+  );
+  assert.match(workspace, /^trustPolicy: no-downgrade$/m);
+  assert.match(workspace, /^blockExoticSubdeps: true$/m);
+});
+
+test('backend coverage command builds workspace declarations before coverage', async () => {
+  const packageJson = JSON.parse(await read('package.json'));
+  const scripts = packageJson.scripts ?? {};
+  const coverage = scripts['test:coverage:backend'];
+  const buildLibraries = scripts['build:libraries'];
+
+  assert.equal(
+    buildLibraries,
+    'pnpm --filter @trace/config --filter @trace/database --filter @trace/github --filter @trace/report-storage --filter @trace/shared build',
+  );
+  assert.equal(
+    coverage,
+    'pnpm db:generate && pnpm build:libraries && pnpm --filter @trace/api test:coverage && pnpm --filter @trace/worker test:coverage',
+    'coverage must generate Prisma before building declarations and running backend suites',
+  );
+});
+
 test('backend operations and smoke entrypoints are present', async () => {
   const [operations, github, smoke, drain] = await Promise.all([
     read('docs/backend-operations.md'),

@@ -1,3 +1,9 @@
 packages:
   - "apps/*"
   - "packages/*"
+
+minimumReleaseAge: 10080
+minimumReleaseAgeExclude:
+  - "@napi-rs/wasm-runtime@1.2.3"
+trustPolicy: no-downgrade
+blockExoticSubdeps: true

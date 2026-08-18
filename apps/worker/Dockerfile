@@ -8,7 +8,7 @@ WORKDIR /workspace
 RUN apt-get update \
   && apt-get install --yes --no-install-recommends ca-certificates openssl \
   && rm -rf /var/lib/apt/lists/*
-RUN corepack enable && corepack prepare pnpm@10.15.1 --activate
+RUN corepack enable && corepack prepare pnpm@10.34.5 --activate
 
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json eslint.config.mjs ./
 COPY apps/api/package.json apps/api/package.json
