@@ -243,11 +243,16 @@ test("fallback history guard restores marked jumps and unmarked auth history", a
   await page.goto("/login");
   await anonymousBootstrap;
   await expect(page.getByLabel("Username")).toBeEnabled();
-  await page.getByRole("link", { name: "Create an account" }).click();
-  await page.getByRole("link", { name: "Sign in" }).click();
+  await page.evaluate(() => {
+    history.pushState({}, "", "/register");
+    history.pushState({}, "", "/login");
+  });
   await expect(page).toHaveURL(/\/login$/);
-  authenticated = true;
-  await page.goto("/reports/report-completed");
+  await page.getByLabel("Username").fill("alice.dev");
+  await page.getByLabel("Password").fill("correct-horse-battery-staple");
+  await page.getByRole("button", { name: "Sign in" }).click();
+  await page.getByRole("link", { name: "Reports" }).first().click();
+  await page.getByRole("link", { name: "View and download report for August 12, 2026" }).click();
   await page.getByLabel("Executive summary").fill("Preserve fallback history prose.");
 
   page.once("dialog", (dialog) => dialog.dismiss());
