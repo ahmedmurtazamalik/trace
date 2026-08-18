@@ -158,6 +158,14 @@ export class GithubService {
     if (account === null || account.unlinkedAt !== null) {
       throw new HttpException({ code: 'GITHUB_RECONNECT_REQUIRED', message: 'Reconnect GitHub before installing the App.' }, HttpStatus.CONFLICT);
     }
+    try {
+      const existingInstallation = await this.adapter.installationForUser(account.githubUserId);
+      if (existingInstallation !== null && await this.persistInstallation(userId, existingInstallation)) {
+        return { installationUrl: this.redirect({ result: 'connected' }) };
+      }
+    } catch {
+      // Fall back to GitHub's setup flow when inventory discovery is unavailable.
+    }
     const state = randomBytes(32).toString('base64url');
     let installationUrl: string;
     try {
@@ -177,7 +185,6 @@ export class GithubService {
     if (state === null) return this.redirect({ result: 'error', reason: session === null ? 'session_expired' : 'state_invalid' });
     try {
       const installationId = BigInt(query.installation_id);
-      await this.adapter.installation(installationId);
       const verificationState = randomBytes(32).toString('base64url');
       await this.storeState(state.userId, state.sessionId, verificationState, 'INSTALLATION_VERIFY', installationId.toString());
       return this.adapter.authorizationUrl({ state: verificationState, callbackUrl: this.callbackUrl() });

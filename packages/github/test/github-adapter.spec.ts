@@ -60,6 +60,27 @@ describe('GitHub authorization adapters', () => {
     expect(url.toString()).not.toContain('client-secret');
   });
 
+  it('finds an existing personal installation by stable GitHub account id', async () => {
+    const adapter = new RealGithubAuthorizationAdapter({
+      clientId: 'client-id', clientSecret: 'client-secret', appId: '123', privateKey: appPrivateKey,
+    });
+    const originalFetch = global.fetch;
+    try {
+      global.fetch = jest.fn().mockResolvedValueOnce(new Response(JSON.stringify([
+        { id: 90, account: { id: 700, login: 'fixture-org', type: 'Organization' }, suspended_at: null },
+        { id: 91, account: { id: 583231, login: 'fake-octocat', type: 'User' }, suspended_at: null },
+        { id: 92, account: { id: 800, login: 'other-user', type: 'User' }, suspended_at: null },
+      ]), { status: 200 })) as typeof fetch;
+      const discover = adapter as unknown as { installationForUser: (githubUserId: bigint) => Promise<unknown> };
+      await expect(discover.installationForUser(583_231n)).resolves.toEqual({
+        id: 91n, accountType: 'USER', accountLogin: 'fake-octocat', suspended: false,
+      });
+      expect(global.fetch).toHaveBeenCalledWith('https://api.github.com/app/installations?per_page=100&page=1', expect.any(Object));
+    } finally {
+      global.fetch = originalFetch;
+    }
+  });
+
   it('bounds GitHub response bytes and projected identity fields', async () => {
     const adapter = new RealGithubAuthorizationAdapter({
       clientId: 'client-id', clientSecret: 'client-secret', appId: '123', privateKey: 'invalid-test-key',
