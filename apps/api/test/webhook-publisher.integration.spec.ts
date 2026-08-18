@@ -173,6 +173,46 @@ describe('GitHub webhook publisher fairness', () => {
     await prisma.githubInstallation.update({ where: { id: installationId }, data: { suspendedAt: null } });
   }, 10_000);
 
+  it('releases its database transaction before an aborted request publication returns', async () => {
+    const deliveryId = `request-abort-${randomUUID()}`;
+    await prisma.githubWebhookDelivery.create({
+      data: {
+        id: deliveryId,
+        githubDeliveryId: randomUUID(),
+        eventName: 'push',
+        githubInstallationId,
+        githubRepositoryId,
+        installationId,
+        repositoryId,
+        payloadHash: 'a'.repeat(64),
+        payload: {},
+      },
+    });
+    let releaseQueue!: () => void;
+    const queueRelease = new Promise<void>((resolve) => { releaseQueue = resolve; });
+    const publisher = new GithubWebhookPublisher(prisma as unknown as PrismaService, {
+      enqueue: jest.fn(async (_id: string, signal?: AbortSignal) => {
+        await queueRelease;
+        signal?.throwIfAborted();
+      }),
+    } as never);
+
+    await publisher.publishOneBounded(deliveryId);
+    const authorityUpdate = prisma.githubInstallation.update({
+      where: { id: installationId },
+      data: { suspendedAt: new Date() },
+    });
+    const authorityUpdateSettled = await Promise.race([
+      authorityUpdate.then(() => true),
+      new Promise<false>((resolve) => setTimeout(() => resolve(false), 500)),
+    ]);
+    releaseQueue();
+    await authorityUpdate;
+
+    expect(authorityUpdateSettled).toBe(true);
+    await prisma.githubInstallation.update({ where: { id: installationId }, data: { suspendedAt: null } });
+  });
+
   it('waits for in-flight reconciliation during module destruction', async () => {
     let finish: (() => void) | undefined;
     const reconciliation = new Promise<void>((resolve) => { finish = resolve; });
