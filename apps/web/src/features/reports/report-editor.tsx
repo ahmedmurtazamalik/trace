@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Button, Card } from "@trace/ui";
 import { reportRevisionUpdateRequestSchema, type ReportContent, type ReportDetail, type ReportRevisionUpdateRequest, type ReportRevisionUpdateResponse } from "@trace/shared";
+import { useReportDraftRecovery } from "@/components/shell/report-draft-recovery";
 
 export type SaveReportRevision = (reportId: string, request: ReportRevisionUpdateRequest, signal?: AbortSignal) => Promise<ReportRevisionUpdateResponse>;
 export type ReportRevisionSaved = (report: ReportDetail) => void;
@@ -60,8 +61,11 @@ export function ReportEditor({ report, saveRevision, contributorLabels = {}, onR
   return <ReportEditorReady report={editableReport} saveRevision={saveRevision} contributorLabels={contributorLabels} onReloadLatest={onReloadLatest} onDirtyChange={onDirtyChange} onSaved={onSaved} editable={["completed", "failed"].includes(report.status)} />;
 }
 function ReportEditorReady({ report, saveRevision, contributorLabels, onReloadLatest, onDirtyChange, onSaved, editable }: { report: EditableReport; saveRevision: SaveReportRevision; contributorLabels: Record<string, string>; onReloadLatest?: () => void; onDirtyChange?: (dirty: boolean) => void; onSaved?: ReportRevisionSaved; editable: boolean }) {
+  const { consume, publishActive, recoveryGeneration } = useReportDraftRecovery();
   const [current, setCurrent] = useState(report);
-  const [draft, setDraft] = useState(() => cloneContent(report.content));
+  const [draft, setDraft] = useState(() => cloneContent(
+    typeof window === "undefined" ? report.content : consume(report.id, report.revision, window.location.href) ?? report.content,
+  ));
   const [notice, setNotice] = useState<string>();
   const [error, setError] = useState<string>();
   const [saving, setSaving] = useState(false);
@@ -74,10 +78,20 @@ function ReportEditorReady({ report, saveRevision, contributorLabels, onReloadLa
   useEffect(() => { currentRef.current = current; draftRef.current = draft; }, [current, draft]);
   useEffect(() => { onDirtyChange?.(dirty); }, [dirty, onDirtyChange]);
   useEffect(() => () => onDirtyChange?.(false), [onDirtyChange]);
+  useLayoutEffect(() => {
+    publishActive(dirty ? { content: cloneContent(draft), reportId: current.id, revision: current.revision } : undefined);
+    window.dispatchEvent(new CustomEvent("trace:report-editor-dirty", {
+      detail: { dirty },
+    }));
+  }, [current.id, current.revision, dirty, draft, publishActive]);
+  useEffect(() => () => {
+    publishActive(undefined, true);
+    window.dispatchEvent(new CustomEvent("trace:report-editor-dirty", { detail: { dirty: false } }));
+  }, [publishActive]);
   useEffect(() => {
-    window.dispatchEvent(new CustomEvent("trace:report-editor-dirty", { detail: { dirty } }));
-    return () => { window.dispatchEvent(new CustomEvent("trace:report-editor-dirty", { detail: { dirty: false } })); };
-  }, [dirty]);
+    const recovered = consume(currentRef.current.id, currentRef.current.revision, window.location.href);
+    if (recovered) setDraft(cloneContent(recovered));
+  }, [consume, recoveryGeneration]);
 
   useEffect(() => {
     if (report.id === currentRef.current.id && report.revision === currentRef.current.revision) return;

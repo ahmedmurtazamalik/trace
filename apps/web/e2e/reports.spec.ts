@@ -202,6 +202,35 @@ test("unsaved report edits guard browser Forward until discarding is accepted", 
   await expect(page).toHaveURL(/\/dashboard$/);
 });
 
+test("fallback history guard restores marked jumps and unmarked auth history", async ({ page }) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(window, "navigation", { configurable: true, value: undefined });
+  });
+  await page.unrouteAll();
+  await interceptReportsApi(page);
+  await interceptEditableReport(page);
+  await page.route("**/api/v1/auth/login", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(session) }));
+  await page.goto("/login");
+  await page.getByRole("link", { name: "Create an account" }).click();
+  await page.getByRole("link", { name: "Sign in" }).click();
+  await page.getByLabel("Username").fill("alice.dev");
+  await page.getByLabel("Password").fill("correct-horse-battery-staple");
+  await page.getByRole("button", { name: "Sign in" }).click();
+  await page.getByRole("link", { name: "Reports" }).first().click();
+  await page.getByRole("link", { name: "View and download report for August 12, 2026" }).click();
+  await page.getByLabel("Executive summary").fill("Preserve fallback history prose.");
+
+  page.once("dialog", (dialog) => dialog.dismiss());
+  await page.evaluate(() => history.go(-2));
+  await expect(page).toHaveURL(/\/reports\/report-completed$/);
+  await expect(page.getByLabel("Executive summary")).toHaveValue("Preserve fallback history prose.");
+
+  page.once("dialog", (dialog) => dialog.dismiss());
+  await page.evaluate(() => history.go(-3));
+  await expect(page).toHaveURL(/\/reports\/report-completed$/);
+  await expect(page.getByLabel("Executive summary")).toHaveValue("Preserve fallback history prose.");
+});
+
 test("unsaved report edits guard sign-out before the session is revoked", async ({ page }) => {
   await page.unrouteAll();
   await interceptReportsApi(page);

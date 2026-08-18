@@ -49,4 +49,38 @@ describe("AppShell", () => {
     go.mockRestore();
     confirm.mockRestore();
   });
+
+  it("restores the exact fallback history distance after a multi-entry traversal is declined", () => {
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+    const go = vi.spyOn(window.history, "go").mockImplementation(() => undefined);
+    render(<AppShell><h1>Report editor</h1></AppShell>);
+    window.history.pushState({}, "", "#one");
+    window.history.pushState({}, "", "#two");
+    window.history.pushState({}, "", "#three");
+    const currentPoint = window.history.state.__traceUnsavedNavigationPoint as number;
+    act(() => window.dispatchEvent(new CustomEvent("trace:report-editor-dirty", { detail: { dirty: true } })));
+
+    act(() => window.dispatchEvent(new PopStateEvent("popstate", { state: { __traceUnsavedNavigationPoint: currentPoint - 2 } })));
+
+    expect(confirm).toHaveBeenCalledTimes(1);
+    expect(go).toHaveBeenCalledWith(2);
+    go.mockRestore();
+    confirm.mockRestore();
+  });
+
+  it("recreates the dirty report entry when a declined fallback traversal reaches unmarked history", () => {
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+    const pushState = vi.spyOn(window.history, "pushState");
+    render(<AppShell><h1>Report editor</h1></AppShell>);
+    pushState.mockClear();
+    act(() => window.dispatchEvent(new CustomEvent("trace:report-editor-dirty", { detail: { dirty: true } })));
+
+    act(() => window.dispatchEvent(new PopStateEvent("popstate", { state: {} })));
+
+    expect(confirm).toHaveBeenCalledTimes(1);
+    expect(pushState).toHaveBeenCalledTimes(1);
+    expect(pushState.mock.calls[0]?.[2]).toBe(window.location.href);
+    pushState.mockRestore();
+    confirm.mockRestore();
+  });
 });

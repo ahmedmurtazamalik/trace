@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useState, type MouseEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useState, type MouseEvent, type ReactNode } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { SessionControls } from "./session-controls";
+import { useReportDraftRecovery } from "./report-draft-recovery";
 import { confirmDiscardUnsavedReportChanges, useUnsavedNavigationGuard } from "./unsaved-navigation";
 import {
   Activity,
@@ -24,16 +25,16 @@ const items = [
   { href: "/settings", label: "Settings", icon: Settings },
 ];
 
-function guardUnsavedNavigation(event: MouseEvent<HTMLAnchorElement>, dirty: boolean, approveDestination: (url: string) => void) {
+function guardUnsavedNavigation(event: MouseEvent<HTMLAnchorElement>, dirty: boolean, onDiscard: () => void) {
   if (!dirty) return;
   if (!confirmDiscardUnsavedReportChanges(true)) {
     event.preventDefault();
     return;
   }
-  approveDestination(event.currentTarget.href);
+  onDiscard();
 }
 
-function Navigation({ approveDestination, dirty, mobile = false }: { approveDestination: (url: string) => void; dirty: boolean; mobile?: boolean }) {
+function Navigation({ dirty, mobile = false, onDiscard }: { dirty: boolean; mobile?: boolean; onDiscard: () => void }) {
   const path = usePathname();
 
   return (
@@ -48,7 +49,7 @@ function Navigation({ approveDestination, dirty, mobile = false }: { approveDest
           aria-current={path === href ? "page" : undefined}
           className={path === href ? "nav-link active" : "nav-link"}
           style={{ "--nav-index": index } as React.CSSProperties}
-          onClick={(event) => guardUnsavedNavigation(event, dirty, approveDestination)}
+          onClick={(event) => guardUnsavedNavigation(event, dirty, onDiscard)}
         >
           <span className="nav-icon"><Icon aria-hidden="true" size={18} /></span>
           <span>{label}</span>
@@ -60,16 +61,30 @@ function Navigation({ approveDestination, dirty, mobile = false }: { approveDest
 
 export function AppShell({ children }: { children: ReactNode }) {
   const [reportDirty, setReportDirty] = useState(false);
-  const { approveDestination, clearGuard: clearUnsavedNavigationGuard } = useUnsavedNavigationGuard(reportDirty);
+  const { discardActive, restorePending, stageActive } = useReportDraftRecovery();
+  const preserveDraftForRecovery = useCallback((url: string) => {
+    stageActive(url);
+  }, [stageActive]);
+  const { clearGuard: clearUnsavedNavigationGuard } = useUnsavedNavigationGuard(
+    reportDirty,
+    preserveDraftForRecovery,
+    discardActive,
+    restorePending,
+  );
   const discardUnsavedReport = () => {
     clearUnsavedNavigationGuard();
+    discardActive();
     setReportDirty(false);
   };
   useEffect(() => {
-    const update = (event: Event) => setReportDirty(Boolean((event as CustomEvent<{ dirty?: boolean }>).detail?.dirty));
+    const update = (event: Event) => {
+      const detail = (event as CustomEvent<{ dirty?: boolean }>).detail;
+      setReportDirty(Boolean(detail?.dirty));
+    };
     window.addEventListener("trace:report-editor-dirty", update);
     return () => window.removeEventListener("trace:report-editor-dirty", update);
   }, []);
+
 
   return (
     <div className="app-frame">
@@ -78,12 +93,12 @@ export function AppShell({ children }: { children: ReactNode }) {
         <div data-testid="ambient-grid" className="sidebar-ambient" aria-hidden="true">
           <span /><span /><span />
         </div>
-        <Link className="brand" href="/dashboard" aria-label="Trace Workspace" onClick={(event) => guardUnsavedNavigation(event, reportDirty, approveDestination)}>
+        <Link className="brand" href="/dashboard" aria-label="Trace Workspace" onClick={(event) => guardUnsavedNavigation(event, reportDirty, discardUnsavedReport)}>
           <span className="brand-mark"><Radio size={18} aria-hidden="true" /></span>
           <span className="brand-type">Trace<small>Workspace</small></span>
         </Link>
         <p className="workspace-label">Command center</p>
-        <Navigation approveDestination={approveDestination} dirty={reportDirty} />
+        <Navigation dirty={reportDirty} onDiscard={discardUnsavedReport} />
         <div className="connection-card">
           <span className="status-orbit"><span className="status-dot" /></span>
           <div><strong>Integration workspace</strong><small>Contract-validated frontend</small></div>
@@ -103,7 +118,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           <span className="preview-pill">Integration environment</span>
         </div>
         <main id="main-content" tabIndex={-1}>{children}</main>
-        <Navigation approveDestination={approveDestination} dirty={reportDirty} mobile />
+        <Navigation dirty={reportDirty} mobile onDiscard={discardUnsavedReport} />
       </div>
     </div>
   );

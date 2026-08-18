@@ -32,19 +32,23 @@ export function confirmDiscardUnsavedReportChanges(dirty: boolean): boolean {
   return !dirty || window.confirm(UNSAVED_REPORT_MESSAGE);
 }
 
-export function useUnsavedNavigationGuard(dirty: boolean): {
-  approveDestination: (url: string) => void;
+export function useUnsavedNavigationGuard(
+  dirty: boolean,
+  preserveDraftForRecovery: (url: string) => void,
+  clearDraftRecovery: () => void,
+  restoreDraftAfterTraversal: () => void,
+): {
   clearGuard: () => void;
 } {
   const dirtyRef = useRef(dirty);
-  const approvedDestinationRef = useRef<{ timeout: ReturnType<typeof setTimeout>; url: string }>();
-  useEffect(() => { dirtyRef.current = dirty; }, [dirty]);
+  const dirtyEntryRef = useRef<{ point?: number; state: unknown; url: string }>();
+  useEffect(() => {
+    dirtyRef.current = dirty;
+    dirtyEntryRef.current = dirty
+      ? { point: pointFrom(window.history.state), state: window.history.state, url: window.location.href }
+      : undefined;
+  }, [dirty]);
   const clearGuard = useCallback(() => { dirtyRef.current = false; }, []);
-  const approveDestination = useCallback((url: string) => {
-    if (approvedDestinationRef.current) clearTimeout(approvedDestinationRef.current.timeout);
-    const timeout = setTimeout(() => { approvedDestinationRef.current = undefined; }, 1000);
-    approvedDestinationRef.current = { timeout, url };
-  }, []);
 
   useEffect(() => {
     const navigation = navigationApi();
@@ -53,54 +57,78 @@ export function useUnsavedNavigationGuard(dirty: boolean): {
       if (!dirtyRef.current) return;
       const event = rawEvent as NavigationEventLike;
       if (!event.canIntercept || event.downloadRequest !== null || event.hashChange) return;
-      if (approvedDestinationRef.current?.url === event.destination.url) {
-        clearTimeout(approvedDestinationRef.current.timeout);
-        approvedDestinationRef.current = undefined;
-        return;
-      }
       if (!confirmDiscardUnsavedReportChanges(true)) event.preventDefault();
+      else {
+        dirtyRef.current = false;
+        clearDraftRecovery();
+      }
     };
     navigation.addEventListener("navigate", guard);
-    return () => {
-      navigation.removeEventListener("navigate", guard);
-      if (approvedDestinationRef.current) clearTimeout(approvedDestinationRef.current.timeout);
-      approvedDestinationRef.current = undefined;
-    };
-  }, []);
+    return () => navigation.removeEventListener("navigate", guard);
+  }, [clearDraftRecovery]);
 
   useEffect(() => {
     if (navigationApi()) return;
     const originalPushState = window.history.pushState.bind(window.history);
     const originalReplaceState = window.history.replaceState.bind(window.history);
     let currentPoint = pointFrom(window.history.state) ?? 0;
+    let currentState = withPoint(window.history.state, currentPoint);
+    let currentUrl = window.location.href;
     let restoringDeclinedTraversal = false;
 
-    originalReplaceState(withPoint(window.history.state, currentPoint), "", window.location.href);
+    originalReplaceState(currentState, "", currentUrl);
     window.history.pushState = (state, unused, url) => {
       currentPoint += 1;
-      originalPushState(withPoint(state, currentPoint), unused, url);
+      currentState = withPoint(state, currentPoint);
+      originalPushState(currentState, unused, url);
+      currentUrl = window.location.href;
     };
     window.history.replaceState = (state, unused, url) => {
-      originalReplaceState(withPoint(state, currentPoint), unused, url);
+      currentState = withPoint(state, currentPoint);
+      originalReplaceState(currentState, unused, url);
+      currentUrl = window.location.href;
     };
 
     const guardHistory = (event: PopStateEvent) => {
       const nextPoint = pointFrom(event.state);
-      if (nextPoint === undefined) return;
       if (restoringDeclinedTraversal) {
         restoringDeclinedTraversal = false;
+        if (nextPoint !== undefined) currentPoint = nextPoint;
+        currentState = withPoint(event.state, currentPoint);
+        currentUrl = window.location.href;
+        return;
+      }
+      if (dirtyRef.current) {
+        const dirtyEntry = dirtyEntryRef.current;
+        const sourcePoint = dirtyEntry?.point ?? currentPoint;
+        const sourceState = dirtyEntry?.state ?? currentState;
+        const sourceUrl = dirtyEntry?.url ?? currentUrl;
+        preserveDraftForRecovery(sourceUrl);
+        if (!confirmDiscardUnsavedReportChanges(true)) {
+          event.stopImmediatePropagation();
+          if (nextPoint === undefined) {
+            originalPushState(sourceState, "", sourceUrl);
+            restoringDeclinedTraversal = true;
+            window.dispatchEvent(new PopStateEvent("popstate", { state: sourceState }));
+          } else {
+            restoringDeclinedTraversal = true;
+            window.history.go(sourcePoint - nextPoint);
+          }
+          restoreDraftAfterTraversal();
+          return;
+        }
+        clearDraftRecovery();
+        dirtyRef.current = false;
+      }
+      if (nextPoint === undefined) {
+        currentPoint = 0;
+        currentState = withPoint(event.state, currentPoint);
+        originalReplaceState(currentState, "", window.location.href);
+      } else {
         currentPoint = nextPoint;
-        event.stopImmediatePropagation();
-        return;
+        currentState = withPoint(event.state, currentPoint);
       }
-      if (dirtyRef.current && !confirmDiscardUnsavedReportChanges(true)) {
-        const restoreDirection = nextPoint < currentPoint ? 1 : -1;
-        restoringDeclinedTraversal = true;
-        event.stopImmediatePropagation();
-        window.history.go(restoreDirection);
-        return;
-      }
-      currentPoint = nextPoint;
+      currentUrl = window.location.href;
     };
     window.addEventListener("popstate", guardHistory, true);
     return () => {
@@ -108,7 +136,7 @@ export function useUnsavedNavigationGuard(dirty: boolean): {
       window.history.pushState = originalPushState;
       window.history.replaceState = originalReplaceState;
     };
-  }, []);
+  }, [clearDraftRecovery, preserveDraftForRecovery, restoreDraftAfterTraversal]);
 
-  return { approveDestination, clearGuard };
+  return { clearGuard };
 }
