@@ -229,7 +229,16 @@ test("fallback history guard restores marked jumps and unmarked auth history", a
   await page.unrouteAll();
   await interceptReportsApi(page);
   await interceptEditableReport(page);
-  await page.route("**/api/v1/auth/login", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(session) }));
+  let authenticated = false;
+  await page.route("**/api/v1/auth/me", (route) => route.fulfill({
+    status: authenticated ? 200 : 401,
+    contentType: "application/json",
+    body: JSON.stringify(authenticated ? session : { code: "UNAUTHORIZED", message: "Authentication is required.", requestId: "req_auth" }),
+  }));
+  await page.route("**/api/v1/auth/login", (route) => {
+    authenticated = true;
+    return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(session) });
+  });
   await page.goto("/login");
   await page.getByRole("link", { name: "Create an account" }).click();
   await page.getByRole("link", { name: "Sign in" }).click();
