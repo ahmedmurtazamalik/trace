@@ -15,7 +15,7 @@ export class ReportQueue implements OnModuleDestroy {
       connection: {
         url: config.redisUrl,
         maxRetriesPerRequest: 1,
-        retryStrategy: (attempts): number | null => attempts > 2 ? null : 100,
+        retryStrategy: (attempts): number => Math.min(attempts * 100, 1_000),
       },
       defaultJobOptions: {
         attempts: 3,
