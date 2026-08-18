@@ -22,6 +22,7 @@ const rawEnvironmentSchema = z
     GITHUB_CALLBACK_URL: optionalEnvironmentValue(z.url()),
     GITHUB_INSTALLATION_CALLBACK_URL: optionalEnvironmentValue(z.url()),
     GITHUB_WEBHOOK_SECRET: optionalEnvironmentValue(z.string().min(1)),
+    PASSWORD_RESET_OUTBOX_DIRECTORY: optionalEnvironmentValue(z.string().min(1)),
     LLM_API_KEY: optionalEnvironmentValue(z.string().min(1)),
     STORAGE_BUCKET: optionalEnvironmentValue(z.string().min(1)),
     STORAGE_ENDPOINT: optionalEnvironmentValue(z.url()),
@@ -76,6 +77,9 @@ export interface TraceConfig {
     installationCallbackUrl?: string;
     webhookSecret?: string;
   };
+  passwordReset: {
+    outboxDirectory?: string;
+  };
   llmApiKey?: string;
   storage: {
     bucket?: string;
@@ -107,12 +111,15 @@ export function loadConfig(environment: NodeJS.ProcessEnv | Record<string, strin
     github: {
       appId: value.GITHUB_APP_ID,
       appSlug: value.GITHUB_APP_SLUG,
-      privateKey: value.GITHUB_APP_PRIVATE_KEY,
+      privateKey: value.GITHUB_APP_PRIVATE_KEY?.replace(/\\n/g, '\n'),
       clientId: value.GITHUB_APP_CLIENT_ID,
       clientSecret: value.GITHUB_APP_CLIENT_SECRET,
       callbackUrl: value.GITHUB_CALLBACK_URL,
       installationCallbackUrl: value.GITHUB_INSTALLATION_CALLBACK_URL,
       webhookSecret: value.GITHUB_WEBHOOK_SECRET,
+    },
+    passwordReset: {
+      outboxDirectory: value.PASSWORD_RESET_OUTBOX_DIRECTORY,
     },
     llmApiKey: value.LLM_API_KEY,
     storage: {

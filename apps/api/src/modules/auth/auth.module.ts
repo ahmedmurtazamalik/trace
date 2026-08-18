@@ -6,6 +6,7 @@ import { AuthRateLimitService } from './auth-rate-limit.service';
 import { AuthService } from './auth.service';
 import { CsrfGuard } from './csrf.guard';
 import {
+  DevelopmentPasswordResetDelivery,
   InMemoryPasswordResetDelivery,
   PASSWORD_RESET_DELIVERY,
   UnavailablePasswordResetDelivery,
@@ -22,9 +23,13 @@ import { SessionAuthGuard } from './session-auth.guard';
     {
       provide: PASSWORD_RESET_DELIVERY,
       inject: [TRACE_CONFIG],
-      useFactory: (config: TraceConfig) => config.nodeEnv === 'test'
-        ? new InMemoryPasswordResetDelivery()
-        : new UnavailablePasswordResetDelivery(),
+      useFactory: (config: TraceConfig) => {
+        if (config.nodeEnv === 'test') return new InMemoryPasswordResetDelivery();
+        if (config.nodeEnv === 'development' && config.passwordReset.outboxDirectory !== undefined) {
+          return new DevelopmentPasswordResetDelivery(config.passwordReset.outboxDirectory, config.frontendOrigin);
+        }
+        return new UnavailablePasswordResetDelivery();
+      },
     },
   ],
   exports: [AuthService, AuthRateLimitService, SessionAuthGuard, CsrfGuard],
