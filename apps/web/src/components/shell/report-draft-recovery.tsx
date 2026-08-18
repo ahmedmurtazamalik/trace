@@ -3,6 +3,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import type { ReportContent } from "@trace/shared";
+import { useOptionalAuthSession } from "@/auth/session-provider";
 
 export interface ReportDraftRecovery {
   content: ReportContent;
@@ -40,6 +41,8 @@ const ReportDraftRecoveryContext = createContext<ReportDraftRecoveryContextValue
 
 export function ReportDraftRecoveryProvider({ children }: { children: ReactNode }) {
   const router = useRouter();
+  const authSession = useOptionalAuthSession();
+  const lastSessionEpochRef = useRef(authSession?.sessionEpoch);
   const activeRef = useRef<PendingRecovery>();
   const pendingRef = useRef<PendingRecovery>();
   const expiryRef = useRef<ReturnType<typeof setTimeout>>();
@@ -70,6 +73,11 @@ export function ReportDraftRecoveryProvider({ children }: { children: ReactNode 
     if (expiryRef.current) clearTimeout(expiryRef.current);
     clearRouteRetries();
   }, [clearRouteRetries]);
+  useEffect(() => {
+    if (lastSessionEpochRef.current === authSession?.sessionEpoch) return;
+    lastSessionEpochRef.current = authSession?.sessionEpoch;
+    discardActive();
+  }, [authSession?.sessionEpoch, discardActive]);
   const clearActive = useCallback((reportId: string, url: string) => {
     const active = activeRef.current;
     if (!active || active.reportId !== reportId || active.url !== url) return;

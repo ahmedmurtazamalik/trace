@@ -65,8 +65,10 @@ describe('report queue producer recovery', () => {
 
     for (const resolve of pending) resolve(undefined);
     await destruction;
-    await expect(Promise.all(admitted)).resolves.toEqual(Array(100).fill(undefined));
-    expect(mockAdd).toHaveBeenCalledTimes(100);
+    const settled = await Promise.all(admitted);
+    expect(settled).toHaveLength(100);
+    expect(settled.every((value) => value instanceof Error)).toBe(true);
+    expect(mockAdd).not.toHaveBeenCalled();
   });
 
   it('fences new admission as soon as shutdown starts', async () => {
@@ -84,7 +86,12 @@ describe('report queue producer recovery', () => {
   it('force-disconnects to settle admitted work when graceful close cannot end an outage', async () => {
     jest.useFakeTimers();
     try {
-      mockGetJob.mockImplementation(() => new Promise<undefined>(() => undefined));
+      let rejectGetJob: ((reason: Error) => void) | undefined;
+      mockGetJob.mockImplementation(() => new Promise<undefined>((_resolve, reject) => { rejectGetJob = reject; }));
+      mockDisconnect.mockImplementation(() => {
+        rejectGetJob?.(new Error('connection closed'));
+        return Promise.resolve();
+      });
       const queue = new ReportQueue({ redisUrl: 'redis://127.0.0.1:6379' } as TraceConfig);
       const publication = queue.enqueue('during-outage').catch((error: unknown) => error);
 
@@ -94,6 +101,69 @@ describe('report queue producer recovery', () => {
 
       await expect(publication).resolves.toBeInstanceOf(Error);
       expect(mockDisconnect).toHaveBeenCalledTimes(1);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('fails shutdown when forced disconnect fails instead of reporting false success', async () => {
+    jest.useFakeTimers();
+    try {
+      mockGetJob.mockImplementation(() => new Promise<undefined>(() => undefined));
+      mockDisconnect.mockRejectedValue(new Error('disconnect failed'));
+      const queue = new ReportQueue({ redisUrl: 'redis://127.0.0.1:6379' } as TraceConfig);
+      const publication = queue.enqueue('disconnect-failure').catch((error: unknown) => error);
+
+      const destruction = queue.onModuleDestroy();
+      const rejected = expect(destruction).rejects.toThrow('disconnect failed');
+      await jest.advanceTimersByTimeAsync(1_500);
+      await rejected;
+      await expect(publication).resolves.toBeInstanceOf(Error);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('fails boundedly when forced disconnect itself never settles', async () => {
+    jest.useFakeTimers();
+    try {
+      mockGetJob.mockImplementation(() => new Promise<undefined>(() => undefined));
+      mockDisconnect.mockImplementation(() => new Promise<void>(() => undefined));
+      const queue = new ReportQueue({ redisUrl: 'redis://127.0.0.1:6379' } as TraceConfig);
+      const publication = queue.enqueue('disconnect-hang').catch((error: unknown) => error);
+
+      const destruction = queue.onModuleDestroy();
+      const rejected = expect(destruction).rejects.toThrow('disconnect did not settle');
+      await jest.advanceTimersByTimeAsync(2_500);
+      await rejected;
+      await expect(publication).resolves.toBeInstanceOf(Error);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('fails boundedly and prevents late queue mutation when an operation survives disconnect', async () => {
+    jest.useFakeTimers();
+    try {
+      let finishGetJob: ((value: { getState: jest.Mock; retry: jest.Mock }) => void) | undefined;
+      const getState = jest.fn().mockResolvedValue('failed');
+      const retry = jest.fn().mockResolvedValue(undefined);
+      mockGetJob.mockImplementation(() => new Promise((resolve) => { finishGetJob = resolve; }));
+      const queue = new ReportQueue({ redisUrl: 'redis://127.0.0.1:6379' } as TraceConfig);
+      const publication = queue.enqueue('survivor').catch((error: unknown) => error);
+
+      const destruction = queue.onModuleDestroy();
+      const rejected = expect(destruction).rejects.toThrow('did not settle');
+      await jest.advanceTimersByTimeAsync(3_000);
+      await rejected;
+      await expect(publication).resolves.toBeInstanceOf(Error);
+
+      finishGetJob?.({ getState, retry });
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(getState).not.toHaveBeenCalled();
+      expect(retry).not.toHaveBeenCalled();
+      expect(mockAdd).not.toHaveBeenCalled();
     } finally {
       jest.useRealTimers();
     }

@@ -19,6 +19,7 @@ type RevokeSession = typeof logout;
 
 interface AuthSessionValue {
   status: SessionStatus;
+  sessionEpoch: number;
   user?: PublicUser;
   csrfToken?: string;
   error?: string;
@@ -48,6 +49,7 @@ export function AuthSessionProvider({
 }: AuthSessionProviderProps) {
   const [session, setSession] = useState<AuthSessionResponse | undefined>(initialSession);
   const [status, setStatus] = useState<SessionStatus>(initialSession ? "authenticated" : "loading");
+  const [sessionEpoch, setSessionEpoch] = useState(initialSession ? 1 : 0);
   const [error, setError] = useState<string>();
   const [isSigningOut, setIsSigningOut] = useState(false);
   const bootstrapController = useRef<AbortController>();
@@ -62,6 +64,7 @@ export function AuthSessionProvider({
       .then((loaded) => {
         if (generation !== sessionGeneration.current) return;
         setSession(loaded);
+        setSessionEpoch((current) => current + 1);
         setStatus("authenticated");
       })
       .catch((reason: unknown) => {
@@ -86,6 +89,7 @@ export function AuthSessionProvider({
     bootstrapController.current = undefined;
     setIsSigningOut(false);
     setSession(nextSession);
+    setSessionEpoch((current) => current + 1);
     setError(undefined);
     setStatus("authenticated");
   }, []);
@@ -97,6 +101,7 @@ export function AuthSessionProvider({
       if (session?.csrfToken) await revokeSession(session.csrfToken);
       if (generation !== sessionGeneration.current) return false;
       setSession(undefined);
+      setSessionEpoch((current) => current + 1);
       setError(undefined);
       setStatus("anonymous");
       return true;
@@ -109,13 +114,14 @@ export function AuthSessionProvider({
 
   const value = useMemo<AuthSessionValue>(() => ({
     status,
+    sessionEpoch,
     user: session?.user,
     csrfToken: session?.csrfToken,
     error,
     isSigningOut,
     establishSession,
     signOut,
-  }), [error, establishSession, isSigningOut, session?.csrfToken, session?.user, signOut, status]);
+  }), [error, establishSession, isSigningOut, session?.csrfToken, session?.user, sessionEpoch, signOut, status]);
 
   return <AuthSessionContext.Provider value={value}>{children}</AuthSessionContext.Provider>;
 }

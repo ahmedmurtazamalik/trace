@@ -7,9 +7,11 @@ export const REPORT_QUEUE = 'report-generation';
 export const GENERATE_REPORT_JOB = 'generate-report';
 const MAX_PENDING_PUBLICATIONS = 100;
 const FORCE_DISCONNECT_AFTER_MS = 1_500;
+const FORCE_CLEANUP_STEP_MS = 1_000;
 
 interface PendingPublication {
   cancel: (error: Error) => void;
+  operation: Promise<void>;
   promise: Promise<void>;
 }
 
@@ -46,8 +48,9 @@ export class ReportQueue implements OnModuleDestroy {
     let cancel: PendingPublication['cancel'] | undefined;
     const cancellation = new Promise<never>((_resolve, reject) => { cancel = reject; });
     if (cancel === undefined) throw new Error('Failed to initialize report publication cancellation.');
-    const entry: PendingPublication = { cancel, promise: Promise.resolve() };
-    entry.promise = Promise.race([this.publish(reportId), cancellation]).finally(() => {
+    const operation = this.publish(reportId);
+    const entry: PendingPublication = { cancel, operation, promise: Promise.resolve() };
+    entry.promise = Promise.race([operation, cancellation]).finally(() => {
       this.publications.delete(entry);
     });
     this.publications.add(entry);
@@ -57,16 +60,23 @@ export class ReportQueue implements OnModuleDestroy {
   private async publish(reportId: string): Promise<void> {
     const jobId = `report-${reportId}`;
     const existing = await this.queue.getJob(jobId);
+    this.assertPublishingOpen();
     if (existing !== undefined) {
       const state = await existing.getState();
+      this.assertPublishingOpen();
       if (state === 'failed') await existing.retry('failed', { resetAttemptsMade: true, resetAttemptsStarted: true });
       else if (state === 'completed') {
         await existing.remove();
+        this.assertPublishingOpen();
         await this.queue.add(GENERATE_REPORT_JOB, { reportId }, { jobId });
       }
       return;
     }
     await this.queue.add(GENERATE_REPORT_JOB, { reportId }, { jobId });
+  }
+
+  private assertPublishingOpen(): void {
+    if (this.closing) throw new Error('Report queue is shutting down.');
   }
 
   onModuleDestroy(): Promise<void> {
@@ -79,25 +89,73 @@ export class ReportQueue implements OnModuleDestroy {
 
   private async closeAndSettle(publications: PendingPublication[]): Promise<void> {
     let forceDisconnect: NodeJS.Timeout | undefined;
-    const graceful = Promise.allSettled([this.queue.close(), ...publications.map(({ promise }) => promise)]);
+    let closeFailure: unknown;
+    const close = this.queue.close().catch((error: unknown) => {
+      closeFailure = error;
+      throw error;
+    });
+    const graceful = Promise.allSettled([close, ...publications.map(({ operation }) => operation)]);
     const forced = new Promise<'forced'>((resolve) => {
       forceDisconnect = setTimeout(() => {
         const error = new Error('Report queue shut down before publication completed.');
         for (const publication of publications) publication.cancel(error);
-        void this.queue.disconnect().catch(() => undefined);
         resolve('forced');
       }, FORCE_DISCONNECT_AFTER_MS);
     });
     try {
       const result = await Promise.race([graceful, forced]);
       if (result === 'forced') {
+        const disconnect = await this.disconnectWithinDeadline();
+        if (!disconnect.settled) throw new Error('Report queue disconnect did not settle.');
+        if (disconnect.error !== undefined) throw disconnect.error;
+        const settled = await this.settleOperationsWithin(publications.map(({ operation }) => operation));
+        if (!settled) throw new Error('Report queue publications did not settle after forced disconnect.');
         await Promise.allSettled(publications.map(({ promise }) => promise));
+        if (closeFailure !== undefined) {
+          throw closeFailure instanceof Error ? closeFailure : new Error('Report queue close failed.');
+        }
         return;
       }
       const [closeResult] = result;
       if (closeResult?.status === 'rejected') throw closeResult.reason;
     } finally {
       if (forceDisconnect !== undefined) clearTimeout(forceDisconnect);
+    }
+  }
+
+  private async settleOperationsWithin(operations: Promise<void>[]): Promise<boolean> {
+    let timeout: NodeJS.Timeout | undefined;
+    const expired = new Promise<false>((resolve) => {
+      timeout = setTimeout(() => resolve(false), FORCE_CLEANUP_STEP_MS);
+    });
+    try {
+      return await Promise.race([
+        Promise.allSettled(operations).then(() => true as const),
+        expired,
+      ]);
+    } finally {
+      if (timeout !== undefined) clearTimeout(timeout);
+    }
+  }
+
+  private async disconnectWithinDeadline(): Promise<{ settled: boolean; error?: Error }> {
+    let timeout: NodeJS.Timeout | undefined;
+    const expired = new Promise<{ settled: false }>((resolve) => {
+      timeout = setTimeout(() => resolve({ settled: false }), FORCE_CLEANUP_STEP_MS);
+    });
+    try {
+      return await Promise.race([
+        this.queue.disconnect().then(
+          () => ({ settled: true } as const),
+          (reason: unknown) => ({
+            settled: true as const,
+            error: reason instanceof Error ? reason : new Error('Report queue disconnect failed.'),
+          }),
+        ),
+        expired,
+      ]);
+    } finally {
+      if (timeout !== undefined) clearTimeout(timeout);
     }
   }
 }

@@ -1,7 +1,8 @@
-import { act, render } from "@testing-library/react";
+import { act, render, waitFor } from "@testing-library/react";
 import { useRouter } from "next/navigation";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ReportContent } from "@trace/shared";
+import { AuthSessionProvider, useAuthSession } from "@/auth/session-provider";
 import { ReportDraftRecoveryProvider, useReportDraftRecovery } from "./report-draft-recovery";
 
 const content = (executiveSummary: string): ReportContent => ({
@@ -68,5 +69,29 @@ describe("ReportDraftRecoveryProvider", () => {
 
     expect(recovery.hasActiveDraft).toBe(false);
     expect(recovery.consume("report-1", 1, window.location.href)).toBeUndefined();
+  });
+
+  it("discards recovery when a fresh session is established, even for the same user", async () => {
+    const initialSession = {
+      user: { id: "usr-1", username: "alice", displayName: "Alice", email: null, createdAt: "2026-08-18T00:00:00.000Z" },
+      csrfToken: "old-csrf",
+    };
+    let recovery!: ReturnType<typeof useReportDraftRecovery>;
+    let establishSession!: ReturnType<typeof useAuthSession>["establishSession"];
+    function Harness() {
+      recovery = useReportDraftRecovery();
+      establishSession = useAuthSession().establishSession;
+      return null;
+    }
+    render(
+      <AuthSessionProvider initialSession={initialSession}>
+        <ReportDraftRecoveryProvider><Harness /></ReportDraftRecoveryProvider>
+      </AuthSessionProvider>,
+    );
+    act(() => recovery.publishActive({ content: content("private draft"), reportId: "report-1", revision: 1 }));
+    expect(recovery.hasActiveDraft).toBe(true);
+
+    act(() => establishSession({ ...initialSession, csrfToken: "fresh-csrf" }));
+    await waitFor(() => expect(recovery.hasActiveDraft).toBe(false));
   });
 });
