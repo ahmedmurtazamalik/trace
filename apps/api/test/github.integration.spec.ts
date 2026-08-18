@@ -14,10 +14,14 @@ const password = 'correct-horse-battery-staple';
 async function removeTestUser(prisma: PrismaService): Promise<void> {
   const users = await prisma.user.findMany({ where: { username: { startsWith: username } }, include: { githubAccount: { include: { installations: true } } } });
   for (const user of users) {
+    await prisma.report.deleteMany({ where: { userId: user.id } });
     if (user.githubAccount !== null) {
       const installationIds = user.githubAccount.installations.map((installation) => installation.id);
       const repositoryIds = (await prisma.repository.findMany({ where: { githubInstallationId: { in: installationIds } }, select: { id: true } })).map((repository) => repository.id);
       await prisma.activityEvent.deleteMany({ where: { repositoryId: { in: repositoryIds } } });
+      await prisma.commitFile.deleteMany({ where: { commit: { repositoryId: { in: repositoryIds } } } });
+      await prisma.commit.deleteMany({ where: { repositoryId: { in: repositoryIds } } });
+      await prisma.pushEvent.deleteMany({ where: { repositoryId: { in: repositoryIds } } });
       await prisma.userRepository.deleteMany({ where: { repositoryId: { in: repositoryIds } } });
       await prisma.repository.deleteMany({ where: { id: { in: repositoryIds } } });
       await prisma.githubInstallation.deleteMany({ where: { githubAccountId: user.githubAccount.id } });
@@ -25,6 +29,7 @@ async function removeTestUser(prisma: PrismaService): Promise<void> {
     }
   }
   await prisma.user.deleteMany({ where: { username: { startsWith: username } } });
+  await prisma.contributor.deleteMany({ where: { username: { startsWith: username } } });
 }
 
 function cookie(response: request.Response): string {
@@ -136,6 +141,62 @@ describe('GitHub connection API', () => {
       },
     });
     await prisma.userRepository.create({ data: { userId: actorUserId, repositoryId: repository.id, trackingEnabled: true } });
+    const contributor = await prisma.contributor.create({
+      data: { githubUserId: 71_002n, username: `${username}.contributor`, displayName: 'Retained Contributor' },
+    });
+    const push = await prisma.pushEvent.create({
+      data: {
+        repositoryId: repository.id,
+        githubDeliveryId: 'day14-disconnect-retained-delivery',
+        ref: 'refs/heads/main',
+        beforeSha: 'a'.repeat(40),
+        afterSha: 'b'.repeat(40),
+        senderContributorId: contributor.id,
+      },
+    });
+    const commit = await prisma.commit.create({
+      data: {
+        repositoryId: repository.id,
+        sha: 'b'.repeat(40),
+        message: 'Retained after disconnect',
+        authorName: 'Retained Contributor',
+        authorEmail: 'retained@example.test',
+        authorUsername: contributor.username,
+        committerName: 'Retained Contributor',
+        committerEmail: 'retained@example.test',
+        committerUsername: contributor.username,
+        authorContributorId: contributor.id,
+        committerContributorId: contributor.id,
+        authoredAt: new Date('2026-08-17T08:00:00.000Z'),
+        committedAt: new Date('2026-08-17T08:01:00.000Z'),
+        branch: 'main',
+        additions: 4,
+        deletions: 1,
+        changedFiles: 1,
+      },
+    });
+    const file = await prisma.commitFile.create({
+      data: { commitId: commit.id, path: 'src/retained.ts', status: 'modified', additions: 4, deletions: 1 },
+    });
+    const activity = await prisma.activityEvent.create({
+      data: {
+        sourceKey: 'github:disconnect-retained',
+        repositoryId: repository.id,
+        contributorId: contributor.id,
+        source: 'github',
+        type: 'commit',
+        occurredAt: new Date('2026-08-17T08:01:00.000Z'),
+        metadata: { sha: commit.sha },
+      },
+    });
+    const report = await prisma.report.create({
+      data: {
+        userId: actorUserId,
+        reportDate: new Date('2026-08-17T00:00:00.000Z'),
+        timezone: 'UTC',
+        inputSnapshot: { repositoryIds: [repository.id], activityIds: [activity.id] },
+      },
+    });
 
     await request(server).delete('/api/v1/github/connection').set('Cookie', sessionCookie).expect(403);
     await request(server)
@@ -147,6 +208,15 @@ describe('GitHub connection API', () => {
     await expect(prisma.userRepository.findUniqueOrThrow({
       where: { userId_repositoryId: { userId: actorUserId, repositoryId: repository.id } },
     })).resolves.toMatchObject({ trackingEnabled: false });
+    await expect(prisma.contributor.findUnique({ where: { id: contributor.id } })).resolves.not.toBeNull();
+    await expect(prisma.pushEvent.findUnique({ where: { id: push.id } })).resolves.toMatchObject({ repositoryId: repository.id });
+    await expect(prisma.commit.findUnique({ where: { id: commit.id } })).resolves.toMatchObject({ repositoryId: repository.id });
+    await expect(prisma.commitFile.findUnique({ where: { id: file.id } })).resolves.toMatchObject({ commitId: commit.id });
+    await expect(prisma.activityEvent.findUnique({ where: { id: activity.id } })).resolves.toMatchObject({ repositoryId: repository.id });
+    await expect(prisma.report.findUnique({ where: { id: report.id } })).resolves.toMatchObject({
+      userId: actorUserId,
+      inputSnapshot: { repositoryIds: [repository.id], activityIds: [activity.id] },
+    });
 
     const disconnected = await request(server).get('/api/v1/github/status').set('Cookie', sessionCookie).expect(200);
     expect(disconnected.body).toMatchObject({ accountConnection: { status: 'RECONNECT_REQUIRED', account: { username: 'fake-octocat' } } });

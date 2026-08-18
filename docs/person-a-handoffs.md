@@ -535,3 +535,86 @@ Final recorded results:
 
 - READY.
 - Reason: Day 13 backend deployment/operations behavior, documentation, fresh migration, health/readiness, real compiler execution, shutdown, full repository acceptance, and ownership boundaries are proven; external-provider and production-operational acceptance remain explicit Day 14/release gates.
+
+---
+
+## Day 14 — Person A
+
+### Done
+
+- Completed the final backend definition-of-done matrix against the integrated Person A + Person B Day 13 base `0ffbf32914be8ebe7c0abf4a79d8dba04f033278` without adding product scope or changing frontend/UI files.
+- Found and fixed a clean-checkout QA defect test-first: `pnpm test:coverage:backend` previously depended on warm generated Prisma/internal-library declarations. The root command now generates Prisma, runs the same five-package internal-library build used by hosted CI, and then runs API/worker coverage; a deployment contract prevents ordering regression.
+- Extended the actual CSRF-protected GitHub disconnect integration scenario to prove contributor, push, commit, commit-file, generic activity, repository membership, and immutable report input history all remain present while tracking authority is disabled. Production disconnect behavior was already non-destructive, so no production code changed.
+- Pinned all six GitHub Action uses to reviewed full commit SHAs rather than mutable `v4` tags.
+- Upgraded the pinned pnpm 10 toolchain from `10.15.1` to `10.34.5` across root metadata, hosted CI, and both production Docker build stages; enabled a seven-day minimum release age, no-downgrade trust policy, and exotic transitive dependency blocking. Frozen install passed without changing the lockfile.
+- Ran dependency, secret, static-analysis, and misconfiguration scanners with digest-pinned Gitleaks `8.28.0`, Semgrep `1.136.0`, and Trivy `0.66.0` containers. The final tracked tree has zero undispositioned blocker/high/medium scanner findings.
+- Changed no endpoint contract, shared DTO, database schema, migration, API/worker production behavior, `apps/web/**`, `packages/ui/**`, frontend documentation, Person B handoff, or root README.
+
+### Contracts published or changed
+
+- Endpoint/schema: none.
+- Contract version: unchanged.
+- Backward-compatible impact: QA/release tooling only; the existing disconnect response and retained-history behavior are now covered more completely.
+- Fixture path: existing integration fixtures; the direct disconnect history proof is in `apps/api/test/github.integration.spec.ts`.
+
+### Database/migrations
+
+- Migration: none.
+- Data implications: none.
+- All 18 migrations apply from an empty PostgreSQL database; deterministic seed runs with its explicit `ALLOW_DEMO_SEED=true` safety gate.
+
+### Configuration
+
+- Root package manager: `pnpm@10.34.5`.
+- `pnpm-workspace.yaml`: `minimumReleaseAge: 10080`, `trustPolicy: no-downgrade`, and `blockExoticSubdeps: true`.
+- The maturity policy has one version-specific exception, `@napi-rs/wasm-runtime@1.2.3`, because that version was already locked five days after publication and pnpm's legacy deployment-artifact resolver otherwise rejected it. The release contract forbids broadening this to a package-wide wildcard.
+- CI action revisions:
+  - `actions/checkout@11d5960a326750d5838078e36cf38b85af677262`
+  - `actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020`
+  - `pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1`
+- `apps/api/Dockerfile` and `apps/worker/Dockerfile` activate pnpm `10.34.5`, matching root and hosted CI policy enforcement.
+- No application environment variable changed.
+
+### Tests and builds actually run
+
+- Clean TDD RED: the new coverage-order contract failed because `test:coverage:backend` did not build internal libraries. GREEN: the focused contract and `pnpm build:libraries` passed.
+- Strengthened TDD RED: the contract then failed because the referenced root `build:libraries` command did not exist. GREEN: the canonical five-package command was added and executed successfully.
+- Independent candidate-2 review reproduced one remaining medium clean-checkout gap: `build:libraries` still required a generated Prisma client. RED/GREEN remediation made `test:coverage:backend` execute `db:generate` before the library build and strengthened the contract to require the exact sequence.
+- Candidate-3 production smoke exposed stale pnpm `10.15.1` pins in both production Dockerfiles. A focused RED/GREEN deployment contract now requires `10.34.5` in root metadata, hosted CI, API image builds, and worker image builds.
+- Security TDD RED: the release automation contract failed on mutable `actions/checkout@v4`. GREEN: all six action references, pnpm version, and workspace policy assertions passed.
+- First immutable candidate acceptance correctly failed when pnpm `10.34.5` applied the seven-day maturity policy while resolving the migration deployment artifact. A focused RED/GREEN contract added the exact locked-version exclusion above; the deployed artifact then executed Prisma CLI `6.19.3` successfully.
+- Frozen install: `pnpm 10.34.5`, no lockfile mutation.
+- Focused real disconnect history gate: 1/1 passed against disposable PostgreSQL/Redis after all 18 migrations and deterministic seed.
+- Backend coverage against disposable PostgreSQL/Redis:
+  - API: 18 suites, 108/108; 89.19% statements, 77.54% branches, 89.97% functions, 93.24% lines.
+  - Worker: 13 suites passed with one Docker-only suite skipped; 98 passed and two skipped; 80.88% statements, 73.59% branches, 79.37% functions, 86.91% lines.
+  - The intentionally lower parent-process coverage in `latex-compiler.ts` remains exercised by the separate real-container gate.
+- Deployment contracts: 8/8, including executable Prisma CLI packaging, generated client payload, immutable images, non-root runtime/Compose, pinned automation, clean coverage prebuild, and operations entrypoints.
+- Complete exact-tree acceptance: frozen install; 18 migrations; deterministic seed; 167 workspace tests collected, 165 passed and two intentional Docker-only skips; database integration 10/10; API integration 88/88; lint; strict typecheck; 14-route production build; full and production dependency audits; real Docker/XeLaTeX 2/2; standard Playwright 68/68; credential-free mock/axe Playwright 2/2; clean diff/ownership checks.
+- Production-like backend smoke: migration image, API/worker startup, `/health`, `/ready`, UID 1000, real PDF compilation, active webhook/report queue drain, bounded SIGTERM shutdown, and run-token cleanup passed.
+- Scanner results on the materialized tracked release tree:
+  - Gitleaks: one inherited false positive in `docs/plans/PERSON_B_IMPLEMENTATION_PLAN.md:326`; the line is ordinary registration-form prose with no credential/token/assignment and was not suppressed or edited across ownership boundaries. Zero real leaks.
+  - Semgrep TypeScript + OWASP rules: initial nine findings were six mutable CI action tags and three missing pnpm policies; all nine were remediated. Final undispositioned blocker/high/medium findings: zero.
+  - Trivy filesystem vulnerability/misconfiguration/secret scan at HIGH/CRITICAL: zero findings.
+  - `pnpm audit --prod` and full `pnpm audit`: no known vulnerabilities.
+- Evidence logs: `/tmp/trace-day14-coverage-day14-coverage-2450285-1787011837.log`, `/tmp/trace-day14-scans-final/`, and the final acceptance log directory reported by the release harness.
+
+### Person B integration notes
+
+- No same-day implementation dependency and no Person B-owned file changed.
+- Frontend behavior, shared HTTP contracts, fixtures, and browser routes remain unchanged.
+- `docs/frontend-setup.md` already permits a compatible pnpm 10 release; no frontend documentation edit is required for pnpm `10.34.5`.
+
+### Risks
+
+- Live GitHub OAuth, App installation ownership, and provider webhook delivery require real provider credentials and remain an external operational acceptance gate.
+- A real configured LLM response plus provider retention/region/deletion guarantees require operator credentials and policy acceptance; deterministic fake and bounded configured-provider behavior are repository-tested.
+- Production backup restoration, secret injection, networking, persistent report volume permissions, and target-platform Docker/socket policy require the actual deployment environment.
+- Password-reset delivery remains intentionally fail-closed until an approved bounded delivery provider is configured.
+- Docker socket access remains host-root-equivalent; restrict deployment access or replace that boundary before stronger multi-tenant operation.
+- Gitleaks' inherited plan-prose false positive is retained with an explicit line-level disposition rather than a broad allowlist.
+
+### Next-day joint gate
+
+- READY for repository-local Person A definition of done.
+- Reason: all core backend lifecycle, authorization, persistence, queue, report, controlled-rendering, real-image, build, audit, scanner, and production-like smoke gates are objectively covered. External-provider and target-production operations are explicitly not represented as repository-local proof.
