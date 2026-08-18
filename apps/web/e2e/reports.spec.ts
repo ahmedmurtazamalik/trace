@@ -258,13 +258,13 @@ test("fallback recovery keeps newer edits through retries and cannot override ac
   await page.unrouteAll();
   await interceptEditableReport(page);
   await page.goto("/reports/report-completed");
+  await page.getByLabel("Executive summary").fill("First fallback snapshot.");
+  await expect(page.getByText("Unsaved changes")).toBeVisible();
   await page.evaluate(() => {
     history.pushState({}, "", "#one");
     history.pushState({}, "", "#two");
     history.pushState({}, "", "#three");
   });
-  await page.getByLabel("Executive summary").fill("First fallback snapshot.");
-  await expect(page.getByText("Unsaved changes")).toBeVisible();
   await expect(page).toHaveURL(/\/reports\/report-completed#three$/);
 
   const firstDecline = page.waitForEvent("dialog");
@@ -281,13 +281,13 @@ test("fallback recovery keeps newer edits through retries and cannot override ac
   await expect(page).toHaveURL(/\/dashboard$/);
 
   await page.goto("/reports/report-completed");
+  await page.getByLabel("Executive summary").fill("First fallback snapshot.");
+  await expect(page.getByText("Unsaved changes")).toBeVisible();
   await page.evaluate(() => {
     history.pushState({}, "", "#one");
     history.pushState({}, "", "#two");
     history.pushState({}, "", "#three");
   });
-  await page.getByLabel("Executive summary").fill("First fallback snapshot.");
-  await expect(page.getByText("Unsaved changes")).toBeVisible();
   await expect(page).toHaveURL(/\/reports\/report-completed#three$/);
   const secondDecline = page.waitForEvent("dialog");
   await page.evaluate(() => history.go(-2));

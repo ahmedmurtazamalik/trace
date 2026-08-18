@@ -92,11 +92,21 @@ export function useUnsavedNavigationGuard(
       currentState = withPoint(state, currentPoint);
       originalPushState(currentState, unused, url);
       currentUrl = window.location.href;
+      if (
+        dirtyRef.current
+        && dirtyEntryRef.current
+        && new URL(currentUrl).pathname === new URL(dirtyEntryRef.current.url).pathname
+      ) dirtyEntryRef.current = { point: currentPoint, state: currentState, url: currentUrl };
     };
     window.history.replaceState = (state, unused, url) => {
       currentState = withPoint(state, currentPoint);
       originalReplaceState(currentState, unused, url);
       currentUrl = window.location.href;
+      if (
+        dirtyRef.current
+        && dirtyEntryRef.current
+        && new URL(currentUrl).pathname === new URL(dirtyEntryRef.current.url).pathname
+      ) dirtyEntryRef.current = { point: currentPoint, state: currentState, url: currentUrl };
     };
 
     const guardHistory = (event: PopStateEvent) => {
