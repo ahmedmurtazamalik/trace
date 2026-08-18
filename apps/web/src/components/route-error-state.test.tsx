@@ -14,4 +14,18 @@ describe("RouteErrorState", () => {
     await userEvent.click(screen.getByRole("button", { name: "Try again" }));
     expect(reset).toHaveBeenCalledOnce();
   });
+
+  it("hard reloads a stale client bundle without retrying the stale tree or exposing details", async () => {
+    const reset = vi.fn();
+    const reload = vi.fn();
+    const error = Object.assign(new Error("Loading chunk 842 failed with private URL details"), { name: "ChunkLoadError" });
+    const props = { reset, reload, error } as unknown as React.ComponentProps<typeof RouteErrorState>;
+
+    render(<RouteErrorState {...props} />);
+
+    expect(screen.queryByText(/private URL details/)).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Reload view" }));
+    expect(reload).toHaveBeenCalledOnce();
+    expect(reset).not.toHaveBeenCalled();
+  });
 });
