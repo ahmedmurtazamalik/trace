@@ -71,7 +71,7 @@ export class GithubService {
         if (account === null || account.unlinkedAt !== null || account.githubUserId !== verified.user.id) {
           return this.redirect({ result: 'error', reason: 'callback_failed' });
         }
-        const persisted = await this.persistInstallation(state.userId, verified.installation);
+        const persisted = await this.persistInstallation(state.userId, verified.user.id, verified.installation);
         return this.redirect(persisted ? { result: 'connected' } : { result: 'error', reason: 'callback_failed' });
       }
       const authorized = (await this.adapter.authorize(query.code)).user;
@@ -160,7 +160,7 @@ export class GithubService {
     }
     try {
       const existingInstallation = await this.adapter.installationForUser(account.githubUserId);
-      if (existingInstallation !== null && await this.persistInstallation(userId, existingInstallation)) {
+      if (existingInstallation !== null && await this.persistInstallation(userId, account.githubUserId, existingInstallation)) {
         return { installationUrl: this.redirect({ result: 'connected' }) };
       }
     } catch {
@@ -241,11 +241,11 @@ export class GithubService {
     if (!disconnected) throw new HttpException({ code: 'GITHUB_NOT_CONNECTED', message: 'GitHub is not connected.' }, HttpStatus.CONFLICT);
   }
 
-  private async persistInstallation(userId: string, installation: GithubInstallationAccess): Promise<boolean> {
+  private async persistInstallation(userId: string, expectedGithubUserId: bigint, installation: GithubInstallationAccess): Promise<boolean> {
     return this.prisma.$transaction(async (transaction) => {
       await transaction.$queryRaw`SELECT id FROM users WHERE id = ${userId} FOR UPDATE`;
       const account = await transaction.githubAccount.findUnique({ where: { userId } });
-      if (account === null || account.unlinkedAt !== null) return false;
+      if (account === null || account.unlinkedAt !== null || account.githubUserId !== expectedGithubUserId) return false;
       const owner = await transaction.githubInstallation.findUnique({ where: { githubInstallationId: installation.id }, select: { githubAccountId: true } });
       if (owner !== null && owner.githubAccountId !== account.id) return false;
       const persisted = await transaction.githubInstallation.upsert({

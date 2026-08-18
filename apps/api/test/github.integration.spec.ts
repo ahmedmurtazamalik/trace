@@ -355,6 +355,49 @@ describe('GitHub connection API', () => {
     });
   });
 
+  it('rejects stale installation discovery after a concurrent GitHub identity switch', async () => {
+    const identity = await registerIdentity({ username, email });
+    const oauthState = await connectState(identity.cookie, identity.csrfToken);
+    await request(server).get('/api/v1/github/callback').query({ code: 'fake-success-code', state: oauthState }).set('Cookie', identity.cookie).expect(302);
+    const switchOauthState = await switchState(identity.cookie, identity.csrfToken);
+
+    const adapterWithDiscovery = githubAdapter as GithubAuthorizationAdapter & {
+      installationForUser: (githubUserId: bigint) => Promise<{ id: bigint; accountType: 'USER'; accountLogin: string; suspended: boolean } | null>;
+    };
+    let signalDiscoveryStarted!: () => void;
+    const discoveryStarted = new Promise<void>((resolve) => { signalDiscoveryStarted = resolve; });
+    let releaseDiscovery!: () => void;
+    const discoveryRelease = new Promise<void>((resolve) => { releaseDiscovery = resolve; });
+    adapterWithDiscovery.installationForUser = async (githubUserId) => {
+      signalDiscoveryStarted();
+      await discoveryRelease;
+      return githubUserId === 583_231n
+        ? { id: 91n, accountType: 'USER', accountLogin: 'fake-octocat', suspended: false }
+        : null;
+    };
+
+    try {
+      const installationRequest = Promise.resolve(request(server).post('/api/v1/github/installation')
+        .set('Cookie', identity.cookie).set('X-CSRF-Token', identity.csrfToken).expect(200));
+      await discoveryStarted;
+      const switched = await request(server).get('/api/v1/github/callback')
+        .query({ code: 'fake-switch-code', state: switchOauthState }).set('Cookie', identity.cookie).expect(302);
+      expect(switched.headers.location).toBe('http://localhost:3000/github?result=connected');
+      releaseDiscovery();
+      const installation = await installationRequest;
+
+      expect((installation.body as { installationUrl: string }).installationUrl)
+        .not.toBe('http://localhost:3000/github?result=connected');
+      const user = await prisma.user.findUniqueOrThrow({ where: { username } });
+      const account = await prisma.githubAccount.findUniqueOrThrow({ where: { userId: user.id } });
+      expect(account).toMatchObject({ githubUserId: 583_232n, githubUsername: 'fake-switcher' });
+      await expect(prisma.githubInstallation.findUnique({ where: { githubInstallationId: 91n } })).resolves.toBeNull();
+    } finally {
+      releaseDiscovery();
+      delete (adapterWithDiscovery as Partial<typeof adapterWithDiscovery>).installationForUser;
+    }
+  });
+
   it('rejects a substituted installation id unless the linked GitHub user can access it', async () => {
     const identity = await registerIdentity({ username, email });
     const oauthState = await connectState(identity.cookie, identity.csrfToken);
