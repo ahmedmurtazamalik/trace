@@ -61,7 +61,7 @@ export function ReportEditor({ report, saveRevision, contributorLabels = {}, onR
   return <ReportEditorReady report={editableReport} saveRevision={saveRevision} contributorLabels={contributorLabels} onReloadLatest={onReloadLatest} onDirtyChange={onDirtyChange} onSaved={onSaved} editable={["completed", "failed"].includes(report.status)} />;
 }
 function ReportEditorReady({ report, saveRevision, contributorLabels, onReloadLatest, onDirtyChange, onSaved, editable }: { report: EditableReport; saveRevision: SaveReportRevision; contributorLabels: Record<string, string>; onReloadLatest?: () => void; onDirtyChange?: (dirty: boolean) => void; onSaved?: ReportRevisionSaved; editable: boolean }) {
-  const { consume, publishActive, recoveryGeneration } = useReportDraftRecovery();
+  const { clearActive, consume, publishActive, recoveryGeneration } = useReportDraftRecovery();
   const [current, setCurrent] = useState(report);
   const [draft, setDraft] = useState(() => cloneContent(
     typeof window === "undefined" ? report.content : consume(report.id, report.revision, window.location.href) ?? report.content,
@@ -79,15 +79,15 @@ function ReportEditorReady({ report, saveRevision, contributorLabels, onReloadLa
   useEffect(() => { onDirtyChange?.(dirty); }, [dirty, onDirtyChange]);
   useEffect(() => () => onDirtyChange?.(false), [onDirtyChange]);
   useLayoutEffect(() => {
-    publishActive(dirty ? { content: cloneContent(draft), reportId: current.id, revision: current.revision } : undefined);
+    if (dirty) publishActive({ content: cloneContent(draft), reportId: current.id, revision: current.revision });
+    else clearActive(current.id, current.revision, window.location.href);
     window.dispatchEvent(new CustomEvent("trace:report-editor-dirty", {
       detail: { dirty },
     }));
-  }, [current.id, current.revision, dirty, draft, publishActive]);
+  }, [clearActive, current.id, current.revision, dirty, draft, publishActive]);
   useEffect(() => () => {
-    publishActive(undefined, true);
     window.dispatchEvent(new CustomEvent("trace:report-editor-dirty", { detail: { dirty: false } }));
-  }, [publishActive]);
+  }, []);
   useEffect(() => {
     const recovered = consume(currentRef.current.id, currentRef.current.revision, window.location.href);
     if (recovered) setDraft(cloneContent(recovered));

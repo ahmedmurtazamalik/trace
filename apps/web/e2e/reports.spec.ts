@@ -231,6 +231,34 @@ test("fallback history guard restores marked jumps and unmarked auth history", a
   await expect(page.getByLabel("Executive summary")).toHaveValue("Preserve fallback history prose.");
 });
 
+test("fallback recovery keeps newer edits through retries and cannot override accepted discard", async ({ page }) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(window, "navigation", { configurable: true, value: undefined });
+  });
+  await page.unrouteAll();
+  await interceptEditableReport(page);
+  await page.goto("/reports/report-completed");
+  await page.evaluate(() => {
+    history.pushState({}, "", "#one");
+    history.pushState({}, "", "#two");
+    history.pushState({}, "", "#three");
+  });
+  await page.getByLabel("Executive summary").fill("First fallback snapshot.");
+
+  page.once("dialog", (dialog) => dialog.dismiss());
+  await page.evaluate(() => history.go(-2));
+  await expect(page).toHaveURL(/\/reports\/report-completed#three$/);
+  await page.getByLabel("Executive summary").fill("Newest fallback snapshot.");
+  await page.waitForTimeout(1_000);
+  await expect(page.getByLabel("Executive summary")).toHaveValue("Newest fallback snapshot.");
+
+  page.once("dialog", (dialog) => dialog.accept());
+  await page.getByRole("link", { name: "Dashboard" }).first().click();
+  await expect(page).toHaveURL(/\/dashboard$/);
+  await page.waitForTimeout(1_000);
+  await expect(page).toHaveURL(/\/dashboard$/);
+});
+
 test("unsaved report edits guard sign-out before the session is revoked", async ({ page }) => {
   await page.unrouteAll();
   await interceptReportsApi(page);

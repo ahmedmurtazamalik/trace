@@ -74,7 +74,17 @@ export function useUnsavedNavigationGuard(
     let currentPoint = pointFrom(window.history.state) ?? 0;
     let currentState = withPoint(window.history.state, currentPoint);
     let currentUrl = window.location.href;
-    let restoringDeclinedTraversal = false;
+    let restoringDeclinedTraversal: { expectedPoint: number; timeout: ReturnType<typeof setTimeout> } | undefined;
+
+    const clearRestoration = () => {
+      if (restoringDeclinedTraversal) clearTimeout(restoringDeclinedTraversal.timeout);
+      restoringDeclinedTraversal = undefined;
+    };
+    const expectRestoration = (expectedPoint: number) => {
+      clearRestoration();
+      const timeout = setTimeout(clearRestoration, 1000);
+      restoringDeclinedTraversal = { expectedPoint, timeout };
+    };
 
     originalReplaceState(currentState, "", currentUrl);
     window.history.pushState = (state, unused, url) => {
@@ -91,13 +101,14 @@ export function useUnsavedNavigationGuard(
 
     const guardHistory = (event: PopStateEvent) => {
       const nextPoint = pointFrom(event.state);
-      if (restoringDeclinedTraversal) {
-        restoringDeclinedTraversal = false;
-        if (nextPoint !== undefined) currentPoint = nextPoint;
+      if (restoringDeclinedTraversal && nextPoint === restoringDeclinedTraversal.expectedPoint) {
+        clearRestoration();
+        currentPoint = nextPoint;
         currentState = withPoint(event.state, currentPoint);
         currentUrl = window.location.href;
         return;
       }
+      clearRestoration();
       if (dirtyRef.current) {
         const dirtyEntry = dirtyEntryRef.current;
         const sourcePoint = dirtyEntry?.point ?? currentPoint;
@@ -108,10 +119,10 @@ export function useUnsavedNavigationGuard(
           event.stopImmediatePropagation();
           if (nextPoint === undefined) {
             originalPushState(sourceState, "", sourceUrl);
-            restoringDeclinedTraversal = true;
+            expectRestoration(sourcePoint);
             window.dispatchEvent(new PopStateEvent("popstate", { state: sourceState }));
           } else {
-            restoringDeclinedTraversal = true;
+            expectRestoration(sourcePoint);
             window.history.go(sourcePoint - nextPoint);
           }
           restoreDraftAfterTraversal();
@@ -132,6 +143,7 @@ export function useUnsavedNavigationGuard(
     };
     window.addEventListener("popstate", guardHistory, true);
     return () => {
+      clearRestoration();
       window.removeEventListener("popstate", guardHistory, true);
       window.history.pushState = originalPushState;
       window.history.replaceState = originalReplaceState;

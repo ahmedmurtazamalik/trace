@@ -27,6 +27,16 @@ const items = [
 
 function guardUnsavedNavigation(event: MouseEvent<HTMLAnchorElement>, dirty: boolean, onDiscard: () => void) {
   if (!dirty) return;
+  const target = event.currentTarget.target;
+  if (
+    event.button !== 0
+    || event.metaKey
+    || event.ctrlKey
+    || event.shiftKey
+    || event.altKey
+    || (target !== "" && target !== "_self")
+    || event.currentTarget.hasAttribute("download")
+  ) return;
   if (!confirmDiscardUnsavedReportChanges(true)) {
     event.preventDefault();
     return;
@@ -60,8 +70,9 @@ function Navigation({ dirty, mobile = false, onDiscard }: { dirty: boolean; mobi
 }
 
 export function AppShell({ children }: { children: ReactNode }) {
-  const [reportDirty, setReportDirty] = useState(false);
-  const { discardActive, restorePending, stageActive } = useReportDraftRecovery();
+  const [reportedDirty, setReportedDirty] = useState(false);
+  const { discardActive, hasActiveDraft, restorePending, stageActive } = useReportDraftRecovery();
+  const reportDirty = reportedDirty || hasActiveDraft;
   const preserveDraftForRecovery = useCallback((url: string) => {
     stageActive(url);
   }, [stageActive]);
@@ -74,12 +85,12 @@ export function AppShell({ children }: { children: ReactNode }) {
   const discardUnsavedReport = () => {
     clearUnsavedNavigationGuard();
     discardActive();
-    setReportDirty(false);
+    setReportedDirty(false);
   };
   useEffect(() => {
     const update = (event: Event) => {
       const detail = (event as CustomEvent<{ dirty?: boolean }>).detail;
-      setReportDirty(Boolean(detail?.dirty));
+      setReportedDirty(Boolean(detail?.dirty));
     };
     window.addEventListener("trace:report-editor-dirty", update);
     return () => window.removeEventListener("trace:report-editor-dirty", update);

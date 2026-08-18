@@ -36,6 +36,22 @@ describe("AppShell", () => {
     confirm.mockRestore();
   });
 
+  it("does not disarm the current dirty editor for modified clicks that open another context", () => {
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
+    render(<AppShell><h1>Report editor</h1></AppShell>);
+    act(() => window.dispatchEvent(new CustomEvent("trace:report-editor-dirty", { detail: { dirty: true } })));
+    const dashboard = screen.getAllByRole("link", { name: "Dashboard" })[0];
+
+    dashboard?.addEventListener("click", (event) => event.preventDefault(), { once: true });
+    dashboard?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, ctrlKey: true }));
+    expect(confirm).not.toHaveBeenCalled();
+
+    dashboard?.addEventListener("click", (event) => event.preventDefault(), { once: true });
+    dashboard?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+    expect(confirm).toHaveBeenCalledTimes(1);
+    confirm.mockRestore();
+  });
+
   it("restores browser history when the Navigation API is unavailable and discarding is declined", () => {
     const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
     const go = vi.spyOn(window.history, "go").mockImplementation(() => undefined);
@@ -64,6 +80,22 @@ describe("AppShell", () => {
 
     expect(confirm).toHaveBeenCalledTimes(1);
     expect(go).toHaveBeenCalledWith(2);
+    go.mockRestore();
+    confirm.mockRestore();
+  });
+
+  it("does not bypass a later traversal when the compensating popstate never arrives", () => {
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+    const go = vi.spyOn(window.history, "go").mockImplementation(() => undefined);
+    render(<AppShell><h1>Report editor</h1></AppShell>);
+    window.history.pushState({}, "", "#source");
+    const currentPoint = window.history.state.__traceUnsavedNavigationPoint as number;
+    act(() => window.dispatchEvent(new CustomEvent("trace:report-editor-dirty", { detail: { dirty: true } })));
+
+    act(() => window.dispatchEvent(new PopStateEvent("popstate", { state: { __traceUnsavedNavigationPoint: currentPoint - 1 } })));
+    act(() => window.dispatchEvent(new PopStateEvent("popstate", { state: { __traceUnsavedNavigationPoint: currentPoint + 1 } })));
+
+    expect(confirm).toHaveBeenCalledTimes(2);
     go.mockRestore();
     confirm.mockRestore();
   });
