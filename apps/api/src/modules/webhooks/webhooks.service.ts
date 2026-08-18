@@ -137,7 +137,7 @@ export class WebhooksService {
         },
       });
       return { deliveryId: delivery.id, shouldEnqueue: true };
-    });
+    }, { maxWait: 10_000, timeout: 30_000 });
     if (durableDeliveryId.deliveryId === null) {
       return { accepted: false, reason: 'untracked' };
     }

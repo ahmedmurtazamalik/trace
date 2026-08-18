@@ -4,7 +4,8 @@ import { GithubWebhookQueue } from './github-webhook.queue';
 
 const PUBLISH_INTERVAL_MS = 5_000;
 const REQUEST_PUBLISH_TIMEOUT_MS = 1_000;
-const PUBLICATION_TRANSACTION_TIMEOUT_MS = REQUEST_PUBLISH_TIMEOUT_MS + 500;
+const RECONCILIATION_PUBLISH_TIMEOUT_MS = 3_000;
+const PUBLICATION_TRANSACTION_TIMEOUT_MS = 2_500;
 const PUBLISH_BATCH_SIZE = 100;
 
 @Injectable()
@@ -82,7 +83,7 @@ export class GithubWebhookPublisher implements OnApplicationBootstrap, OnModuleD
         data: { publishedAt: new Date() },
       });
       return true;
-    });
+    }, { maxWait: 10_000, timeout: 30_000 });
   }
 
   private async publishAttempt(deliveryId: string, parentSignal?: AbortSignal): Promise<void> {
@@ -93,7 +94,7 @@ export class GithubWebhookPublisher implements OnApplicationBootstrap, OnModuleD
         signal.throwIfAborted();
         await this.queue.enqueue(deliveryId, signal);
       }, {
-        maxWait: REQUEST_PUBLISH_TIMEOUT_MS,
+        maxWait: RECONCILIATION_PUBLISH_TIMEOUT_MS,
         timeout: PUBLICATION_TRANSACTION_TIMEOUT_MS,
       });
     };
@@ -101,7 +102,7 @@ export class GithubWebhookPublisher implements OnApplicationBootstrap, OnModuleD
       await operation(parentSignal);
       return;
     }
-    await this.withTimeout(operation, REQUEST_PUBLISH_TIMEOUT_MS);
+    await this.withTimeout(operation, RECONCILIATION_PUBLISH_TIMEOUT_MS);
   }
 
   private async lockCurrentAuthority(transaction: Prisma.TransactionClient, deliveryId: string): Promise<boolean> {
