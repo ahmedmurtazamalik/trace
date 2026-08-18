@@ -72,6 +72,7 @@ async function interceptReportsApi(page: Page) {
 test.beforeEach(async ({ page }) => { await interceptReportsApi(page); });
 
 test("live report HTTP lifecycle is understandable and routes to report details", async ({ page }) => {
+  await page.route("**/api/v1/reports/report-completed", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ report: editableReport }) }));
   const listRequest = page.waitForRequest((request) => request.method() === "GET" && new URL(request.url()).pathname === "/api/v1/reports");
   await page.goto("/reports");
   await listRequest;
@@ -89,7 +90,15 @@ test("live report HTTP lifecycle is understandable and routes to report details"
   expect(created.headers()["x-csrf-token"]).toBe(session.csrfToken);
   await expect(page.getByRole("status")).toContainText("Report requested for August 13, 2026");
 
-  await expect(page.getByRole("link", { name: "View and download report for August 12, 2026" })).toHaveAttribute("href", "/reports/report-completed");
+  const openReport = page.getByRole("link", { name: "View and download report for August 12, 2026" });
+  await expect(openReport).toHaveAttribute("href", "/reports/report-completed");
+  const detailResponsePromise = page.waitForResponse((response) => response.request().method() === "GET" && new URL(response.url()).pathname === "/api/v1/reports/report-completed");
+  await openReport.click();
+  const detailResponse = await detailResponsePromise;
+  expect(detailResponse.status()).toBe(200);
+  await expect(page).toHaveURL(/\/reports\/report-completed$/);
+  await expect(page.getByRole("heading", { name: "Structured report editor" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Trace could not load this view." })).toHaveCount(0);
 });
 
 test("Day 9 editor exposes only narrative fields and supports cancel", async ({ page }) => {
