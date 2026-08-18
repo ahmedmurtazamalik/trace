@@ -239,7 +239,9 @@ test("fallback history guard restores marked jumps and unmarked auth history", a
     authenticated = true;
     return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(session) });
   });
+  const anonymousBootstrap = page.waitForResponse((response) => new URL(response.url()).pathname === "/api/v1/auth/me");
   await page.goto("/login");
+  await anonymousBootstrap;
   await page.getByRole("link", { name: "Create an account" }).click();
   await page.getByRole("link", { name: "Sign in" }).click();
   await page.getByLabel("Username").fill("alice.dev");
