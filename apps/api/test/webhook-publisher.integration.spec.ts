@@ -213,6 +213,72 @@ describe('GitHub webhook publisher fairness', () => {
     await prisma.githubInstallation.update({ where: { id: installationId }, data: { suspendedAt: null } });
   });
 
+  it('waits for request-path publication during module destruction', async () => {
+    const deliveryId = `request-shutdown-${randomUUID()}`;
+    await prisma.githubWebhookDelivery.create({
+      data: {
+        id: deliveryId,
+        githubDeliveryId: randomUUID(),
+        eventName: 'push',
+        githubInstallationId,
+        githubRepositoryId,
+        installationId,
+        repositoryId,
+        payloadHash: 'b'.repeat(64),
+        payload: {},
+      },
+    });
+    let signalQueueStarted!: () => void;
+    const queueStarted = new Promise<void>((resolve) => { signalQueueStarted = resolve; });
+    let releaseQueue!: () => void;
+    const queueRelease = new Promise<void>((resolve) => { releaseQueue = resolve; });
+    const publisher = new GithubWebhookPublisher(prisma as unknown as PrismaService, {
+      enqueue: jest.fn(async () => {
+        signalQueueStarted();
+        await queueRelease;
+      }),
+    } as never);
+
+    const requestPublication = publisher.publishOneBounded(deliveryId);
+    await queueStarted;
+    let destructionSettled = false;
+    const destruction = publisher.onModuleDestroy().then(() => { destructionSettled = true; });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    expect(destructionSettled).toBe(false);
+    releaseQueue();
+    await Promise.all([requestPublication, destruction]);
+  });
+
+  it('does not start request-path publication after module destruction', async () => {
+    const deliveryId = `request-after-shutdown-${randomUUID()}`;
+    await prisma.githubWebhookDelivery.create({
+      data: {
+        id: deliveryId,
+        githubDeliveryId: randomUUID(),
+        eventName: 'push',
+        githubInstallationId,
+        githubRepositoryId,
+        installationId,
+        repositoryId,
+        payloadHash: 'c'.repeat(64),
+        payload: {},
+      },
+    });
+    const enqueue = jest.fn(() => Promise.resolve());
+    const publisher = new GithubWebhookPublisher(
+      prisma as unknown as PrismaService,
+      { enqueue } as never,
+    );
+
+    await publisher.onModuleDestroy();
+    await publisher.publishOneBounded(deliveryId);
+
+    const delivery = await prisma.githubWebhookDelivery.findUniqueOrThrow({ where: { id: deliveryId } });
+    expect(delivery.publishedAt).toBeNull();
+    expect(enqueue).not.toHaveBeenCalled();
+  });
+
   it('waits for in-flight reconciliation during module destruction', async () => {
     let finish: (() => void) | undefined;
     const reconciliation = new Promise<void>((resolve) => { finish = resolve; });

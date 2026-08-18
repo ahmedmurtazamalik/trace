@@ -12,6 +12,8 @@ const PUBLISH_BATCH_SIZE = 100;
 export class GithubWebhookPublisher implements OnApplicationBootstrap, OnModuleDestroy {
   private interval: NodeJS.Timeout | undefined;
   private reconciliation: Promise<void> | undefined;
+  private readonly requestPublications = new Set<Promise<void>>();
+  private shuttingDown = false;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -27,13 +29,21 @@ export class GithubWebhookPublisher implements OnApplicationBootstrap, OnModuleD
   }
 
   async publishOneBounded(deliveryId: string): Promise<void> {
-    await this.withTimeout(
+    if (this.shuttingDown) return;
+    const publication = this.withTimeout(
       (signal) => this.publishOne(deliveryId, signal),
       REQUEST_PUBLISH_TIMEOUT_MS,
     ).catch(() => undefined);
+    this.requestPublications.add(publication);
+    try {
+      await publication;
+    } finally {
+      this.requestPublications.delete(publication);
+    }
   }
 
   async publishOwed(): Promise<void> {
+    if (this.shuttingDown) return;
     if (this.reconciliation !== undefined) return this.reconciliation;
     this.reconciliation = this.reconcile();
     try {
@@ -65,9 +75,11 @@ export class GithubWebhookPublisher implements OnApplicationBootstrap, OnModuleD
   }
 
   async onModuleDestroy(): Promise<void> {
+    this.shuttingDown = true;
     if (this.interval !== undefined) clearInterval(this.interval);
     this.interval = undefined;
     await this.reconciliation?.catch(() => undefined);
+    await Promise.allSettled([...this.requestPublications]);
   }
 
   private async publishOne(deliveryId: string, signal: AbortSignal): Promise<void> {
