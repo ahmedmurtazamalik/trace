@@ -1,6 +1,6 @@
-import { render, screen } from "@testing-library/react";
+import { act, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { AppShell } from "./app-shell";
 
 describe("AppShell", () => {
@@ -23,5 +23,16 @@ describe("AppShell", () => {
   it("keeps ambient brand visuals hidden from assistive technology", () => {
     render(<AppShell><h1>Dashboard</h1></AppShell>);
     expect(screen.getByTestId("ambient-grid")).toHaveAttribute("aria-hidden", "true");
+  });
+
+  it("cancels same-app navigation when report edits are unsaved and discarding is declined", () => {
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+    render(<AppShell><h1>Report editor</h1></AppShell>);
+    act(() => window.dispatchEvent(new CustomEvent("trace:report-editor-dirty", { detail: { dirty: true } })));
+
+    const click = new MouseEvent("click", { bubbles: true, cancelable: true });
+    expect(screen.getAllByRole("link", { name: "Dashboard" })[0]?.dispatchEvent(click)).toBe(false);
+    expect(confirm).toHaveBeenCalledTimes(1);
+    confirm.mockRestore();
   });
 });

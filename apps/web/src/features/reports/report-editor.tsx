@@ -74,6 +74,10 @@ function ReportEditorReady({ report, saveRevision, contributorLabels, onReloadLa
   useEffect(() => { currentRef.current = current; draftRef.current = draft; }, [current, draft]);
   useEffect(() => { onDirtyChange?.(dirty); }, [dirty, onDirtyChange]);
   useEffect(() => () => onDirtyChange?.(false), [onDirtyChange]);
+  useEffect(() => {
+    window.dispatchEvent(new CustomEvent("trace:report-editor-dirty", { detail: { dirty } }));
+    return () => { window.dispatchEvent(new CustomEvent("trace:report-editor-dirty", { detail: { dirty: false } })); };
+  }, [dirty]);
 
   useEffect(() => {
     if (report.id === currentRef.current.id && report.revision === currentRef.current.revision) return;

@@ -1,6 +1,6 @@
 "use client";
 
-import type { ReactNode } from "react";
+import { useEffect, useState, type MouseEvent, type ReactNode } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { SessionControls } from "./session-controls";
@@ -23,7 +23,11 @@ const items = [
   { href: "/settings", label: "Settings", icon: Settings },
 ];
 
-function Navigation({ mobile = false }: { mobile?: boolean }) {
+function guardUnsavedNavigation(event: MouseEvent<HTMLAnchorElement>, dirty: boolean) {
+  if (dirty && !window.confirm("You have unsaved report changes. Discard them and leave this page?")) event.preventDefault();
+}
+
+function Navigation({ dirty, mobile = false }: { dirty: boolean; mobile?: boolean }) {
   const path = usePathname();
 
   return (
@@ -38,6 +42,7 @@ function Navigation({ mobile = false }: { mobile?: boolean }) {
           aria-current={path === href ? "page" : undefined}
           className={path === href ? "nav-link active" : "nav-link"}
           style={{ "--nav-index": index } as React.CSSProperties}
+          onClick={(event) => guardUnsavedNavigation(event, dirty)}
         >
           <span className="nav-icon"><Icon aria-hidden="true" size={18} /></span>
           <span>{label}</span>
@@ -48,6 +53,13 @@ function Navigation({ mobile = false }: { mobile?: boolean }) {
 }
 
 export function AppShell({ children }: { children: ReactNode }) {
+  const [reportDirty, setReportDirty] = useState(false);
+  useEffect(() => {
+    const update = (event: Event) => setReportDirty(Boolean((event as CustomEvent<{ dirty?: boolean }>).detail?.dirty));
+    window.addEventListener("trace:report-editor-dirty", update);
+    return () => window.removeEventListener("trace:report-editor-dirty", update);
+  }, []);
+
   return (
     <div className="app-frame">
       <a className="skip-link" href="#main-content">Skip to content</a>
@@ -55,12 +67,12 @@ export function AppShell({ children }: { children: ReactNode }) {
         <div data-testid="ambient-grid" className="sidebar-ambient" aria-hidden="true">
           <span /><span /><span />
         </div>
-        <Link className="brand" href="/dashboard">
+        <Link className="brand" href="/dashboard" onClick={(event) => guardUnsavedNavigation(event, reportDirty)}>
           <span className="brand-mark"><Radio size={18} aria-hidden="true" /></span>
           <span className="brand-type">Trace<small>Workspace</small></span>
         </Link>
         <p className="workspace-label">Command center</p>
-        <Navigation />
+        <Navigation dirty={reportDirty} />
         <div className="connection-card">
           <span className="status-orbit"><span className="status-dot" /></span>
           <div><strong>Integration workspace</strong><small>Contract-validated frontend</small></div>
@@ -80,7 +92,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           <span className="preview-pill">Integration environment</span>
         </div>
         <main id="main-content" tabIndex={-1}>{children}</main>
-        <Navigation mobile />
+        <Navigation dirty={reportDirty} mobile />
       </div>
     </div>
   );
