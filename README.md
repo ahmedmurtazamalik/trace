@@ -191,6 +191,10 @@ The development stack binds both dependencies to loopback:
 ### 4. Prepare the database
 
 ```bash
+# Prisma config does not load the repository-root .env automatically.
+set -a
+. ./.env
+set +a
 corepack pnpm db:generate
 corepack pnpm db:migrate
 ```
@@ -198,10 +202,10 @@ corepack pnpm db:migrate
 Optional fictional development data:
 
 ```bash
-ALLOW_DEMO_SEED=true corepack pnpm db:seed
+NODE_ENV=development ALLOW_DEMO_SEED=true corepack pnpm db:seed
 ```
 
-The seed is blocked in production and must not be enabled in a shared environment.
+The seed accepts only explicit `development` or `test` modes, is blocked for missing or unknown modes, and must not be enabled in a shared environment.
 
 ### 5. Build workspace packages and the LaTeX image
 

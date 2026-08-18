@@ -74,10 +74,10 @@ corepack pnpm --filter @trace/database db:migrate:dev -- --name descriptive_name
 The deterministic seed is blocked in production and requires an explicit opt-in:
 
 ```bash
-ALLOW_DEMO_SEED=true corepack pnpm db:seed
+NODE_ENV=development ALLOW_DEMO_SEED=true corepack pnpm db:seed
 ```
 
-It creates only fictional `.test` users and fake GitHub identifiers. The development-only password is `TraceDevOnly!2026`. Never enable the demo seed in a shared or production environment. The seed addresses records only through reserved `seed_*` IDs. Reruns leave existing records unchanged, and natural-key collisions fail rather than overwriting unrelated data.
+The seed accepts only explicit `development` or `test` modes and fails closed when the mode is missing or unknown. It creates only fictional `.test` users and fake GitHub identifiers. The development-only password is `TraceDevOnly!2026`. Never enable the demo seed in a shared or production environment. The seed addresses records only through reserved `seed_*` IDs. Reruns leave existing records unchanged, and natural-key collisions fail rather than overwriting unrelated data.
 
 ## API
 

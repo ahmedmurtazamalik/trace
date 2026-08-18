@@ -44,6 +44,14 @@ const composeEnvironment = () => {
   };
 };
 
+test('public development seed commands set an explicit safe environment', async () => {
+  const [readme, backendSetup] = await Promise.all([read('README.md'), read('docs/backend-setup.md')]);
+  const command = 'NODE_ENV=development ALLOW_DEMO_SEED=true corepack pnpm db:seed';
+  assert.match(readme, /set -a\n\. \.\/\.env\nset \+a/);
+  assert.match(readme, new RegExp(command));
+  assert.match(backendSetup, new RegExp(command));
+});
+
 test('migration production bundle contains an executable pinned Prisma CLI', async () => {
   const target = await mkdtemp(join(tmpdir(), 'trace-migration-deploy-'));
   try {
