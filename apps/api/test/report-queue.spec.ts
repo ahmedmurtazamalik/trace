@@ -1,13 +1,14 @@
 import type { TraceConfig } from '@trace/config';
 
 const mockClose = jest.fn().mockResolvedValue(undefined);
+const mockGetJob = jest.fn();
 interface CapturedQueueOptions {
   connection: { maxRetriesPerRequest: number; retryStrategy: (attempts: number) => number | null };
 }
 let capturedOptions: CapturedQueueOptions | undefined;
 const mockQueueConstructor = jest.fn().mockImplementation((_name: string, options: CapturedQueueOptions) => {
   capturedOptions = options;
-  return { close: mockClose };
+  return { close: mockClose, getJob: mockGetJob };
 });
 
 jest.mock('bullmq', () => ({ Queue: mockQueueConstructor }));
@@ -18,6 +19,7 @@ describe('report queue producer recovery', () => {
   beforeEach(() => {
     mockClose.mockClear();
     mockQueueConstructor.mockClear();
+    mockGetJob.mockReset();
     capturedOptions = undefined;
   });
 
@@ -34,5 +36,21 @@ describe('report queue producer recovery', () => {
 
     await queue.onModuleDestroy();
     expect(mockClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('admits only one underlying command while Redis initialization is pending', async () => {
+    mockGetJob.mockImplementation(() => new Promise(() => undefined));
+    const queue = new ReportQueue({ redisUrl: 'redis://127.0.0.1:6379' } as TraceConfig);
+
+    void queue.enqueue('first');
+    const followers = Array.from({ length: 100 }, (_, index) =>
+      queue.enqueue(`follower-${index}`).catch((error: unknown) => error));
+    await Promise.resolve();
+
+    expect(mockGetJob).toHaveBeenCalledTimes(1);
+    const outcomes = await Promise.all(followers);
+    expect(outcomes).toHaveLength(100);
+    expect(outcomes.every((outcome) => outcome instanceof Error)).toBe(true);
+    await queue.onModuleDestroy();
   });
 });

@@ -9,6 +9,7 @@ export const GENERATE_REPORT_JOB = 'generate-report';
 @Injectable()
 export class ReportQueue implements OnModuleDestroy {
   private readonly queue: Queue<{ reportId: string }>;
+  private publication: Promise<void> | undefined;
 
   constructor(@Inject(TRACE_CONFIG) config: TraceConfig) {
     this.queue = new Queue(REPORT_QUEUE, {
@@ -26,7 +27,16 @@ export class ReportQueue implements OnModuleDestroy {
     });
   }
 
-  async enqueue(reportId: string): Promise<void> {
+  enqueue(reportId: string): Promise<void> {
+    if (this.publication !== undefined) return Promise.reject(new Error('Report queue publication is already in progress.'));
+    const publication = this.publish(reportId).finally(() => {
+      if (this.publication === publication) this.publication = undefined;
+    });
+    this.publication = publication;
+    return publication;
+  }
+
+  private async publish(reportId: string): Promise<void> {
     const jobId = `report-${reportId}`;
     const existing = await this.queue.getJob(jobId);
     if (existing !== undefined) {
