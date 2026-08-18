@@ -27,11 +27,12 @@ describe("SessionControls", () => {
 
   it("does not revoke the session when discarding unsaved report edits is declined", async () => {
     const revokeSession = vi.fn().mockResolvedValue({ success: true });
+    const discardUnsavedReport = vi.fn();
     const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
     const user = userEvent.setup();
     render(
       <AuthSessionProvider initialSession={session} revokeSession={revokeSession}>
-        <SessionControls reportDirty />
+        <SessionControls reportDirty onDiscardUnsavedReport={discardUnsavedReport} />
       </AuthSessionProvider>,
     );
 
@@ -39,7 +40,25 @@ describe("SessionControls", () => {
 
     expect(confirm).toHaveBeenCalledTimes(1);
     expect(revokeSession).not.toHaveBeenCalled();
+    expect(discardUnsavedReport).not.toHaveBeenCalled();
     expect(replace).not.toHaveBeenCalled();
+    confirm.mockRestore();
+  });
+
+  it("clears the mounted navigation guard only after successful sign-out", async () => {
+    const discardUnsavedReport = vi.fn();
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
+    const user = userEvent.setup();
+    render(
+      <AuthSessionProvider initialSession={session} revokeSession={vi.fn().mockResolvedValue({ success: true })}>
+        <SessionControls reportDirty onDiscardUnsavedReport={discardUnsavedReport} />
+      </AuthSessionProvider>,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Sign out" }));
+
+    expect(discardUnsavedReport).toHaveBeenCalledTimes(1);
+    expect(discardUnsavedReport.mock.invocationCallOrder[0]).toBeLessThan(replace.mock.invocationCallOrder[0]);
     confirm.mockRestore();
   });
 

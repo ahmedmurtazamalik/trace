@@ -4,9 +4,15 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { LogOut } from "lucide-react";
 import { useOptionalAuthSession } from "@/auth/session-provider";
-import { approveNextUnsavedNavigation, confirmDiscardUnsavedReportChanges } from "./unsaved-navigation";
+import { confirmDiscardUnsavedReportChanges } from "./unsaved-navigation";
 
-export function SessionControls({ reportDirty = false }: { reportDirty?: boolean }) {
+export function SessionControls({
+  reportDirty = false,
+  onDiscardUnsavedReport,
+}: {
+  reportDirty?: boolean;
+  onDiscardUnsavedReport?: () => void;
+}) {
   const session = useOptionalAuthSession();
   const router = useRouter();
   const [error, setError] = useState<string>();
@@ -18,7 +24,7 @@ export function SessionControls({ reportDirty = false }: { reportDirty?: boolean
     try {
       const didSignOut = await session?.signOut();
       if (didSignOut) {
-        approveNextUnsavedNavigation();
+        onDiscardUnsavedReport?.();
         router.replace("/login");
       }
     } catch (reason) {

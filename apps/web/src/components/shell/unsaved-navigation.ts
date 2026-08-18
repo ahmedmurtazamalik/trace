@@ -1,18 +1,17 @@
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef } from "react";
 
 export const UNSAVED_REPORT_MESSAGE = "You have unsaved report changes. Discard them and leave this page?";
 const HISTORY_POINT = "__traceUnsavedNavigationPoint";
 
 interface NavigationEventLike extends Event {
   canIntercept: boolean;
+  destination: { url: string };
   downloadRequest: string | null;
   hashChange: boolean;
 }
 
 type NavigationLike = EventTarget;
 type PointState = Record<string, unknown> & { [HISTORY_POINT]: number };
-
-let approvedNavigations = 0;
 
 function navigationApi(): NavigationLike | undefined {
   return (window as Window & { navigation?: NavigationLike }).navigation;
@@ -33,17 +32,19 @@ export function confirmDiscardUnsavedReportChanges(dirty: boolean): boolean {
   return !dirty || window.confirm(UNSAVED_REPORT_MESSAGE);
 }
 
-export function approveNextUnsavedNavigation(): void {
-  approvedNavigations += 1;
-}
-
-export function browserGuardsUnsavedNavigation(): boolean {
-  return navigationApi() !== undefined;
-}
-
-export function useUnsavedNavigationGuard(dirty: boolean): void {
+export function useUnsavedNavigationGuard(dirty: boolean): {
+  approveDestination: (url: string) => void;
+  clearGuard: () => void;
+} {
   const dirtyRef = useRef(dirty);
+  const approvedDestinationRef = useRef<{ timeout: ReturnType<typeof setTimeout>; url: string }>();
   useEffect(() => { dirtyRef.current = dirty; }, [dirty]);
+  const clearGuard = useCallback(() => { dirtyRef.current = false; }, []);
+  const approveDestination = useCallback((url: string) => {
+    if (approvedDestinationRef.current) clearTimeout(approvedDestinationRef.current.timeout);
+    const timeout = setTimeout(() => { approvedDestinationRef.current = undefined; }, 1000);
+    approvedDestinationRef.current = { timeout, url };
+  }, []);
 
   useEffect(() => {
     const navigation = navigationApi();
@@ -52,14 +53,19 @@ export function useUnsavedNavigationGuard(dirty: boolean): void {
       if (!dirtyRef.current) return;
       const event = rawEvent as NavigationEventLike;
       if (!event.canIntercept || event.downloadRequest !== null || event.hashChange) return;
-      if (approvedNavigations > 0) {
-        approvedNavigations -= 1;
+      if (approvedDestinationRef.current?.url === event.destination.url) {
+        clearTimeout(approvedDestinationRef.current.timeout);
+        approvedDestinationRef.current = undefined;
         return;
       }
       if (!confirmDiscardUnsavedReportChanges(true)) event.preventDefault();
     };
     navigation.addEventListener("navigate", guard);
-    return () => navigation.removeEventListener("navigate", guard);
+    return () => {
+      navigation.removeEventListener("navigate", guard);
+      if (approvedDestinationRef.current) clearTimeout(approvedDestinationRef.current.timeout);
+      approvedDestinationRef.current = undefined;
+    };
   }, []);
 
   useEffect(() => {
@@ -103,4 +109,6 @@ export function useUnsavedNavigationGuard(dirty: boolean): void {
       window.history.replaceState = originalReplaceState;
     };
   }, []);
+
+  return { approveDestination, clearGuard };
 }

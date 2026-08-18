@@ -204,7 +204,9 @@ test("unsaved report edits guard browser Forward until discarding is accepted", 
 
 test("unsaved report edits guard sign-out before the session is revoked", async ({ page }) => {
   await page.unrouteAll();
+  await interceptReportsApi(page);
   await interceptEditableReport(page);
+  await page.route("**/api/v1/auth/login", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(session) }));
   let logoutRequests = 0;
   await page.route("**/api/v1/auth/logout", (route) => {
     logoutRequests += 1;
@@ -223,4 +225,22 @@ test("unsaved report edits guard sign-out before the session is revoked", async 
   await page.getByRole("button", { name: "Sign out" }).click();
   await expect.poll(() => logoutRequests).toBe(1);
   await expect(page).toHaveURL(/\/login$/);
+
+  await page.getByLabel("Username").fill("alice.dev");
+  await page.getByLabel("Password").fill("correct-horse-battery-staple");
+  await page.getByRole("button", { name: "Sign in" }).click();
+  await expect(page).toHaveURL(/\/dashboard$/);
+  await page.getByRole("link", { name: "Reports" }).first().click();
+  await page.getByRole("link", { name: "View and download report for August 12, 2026" }).click();
+  await page.getByLabel("Executive summary").fill("Guard a new edit after signing in again.");
+
+  let postLoginNavigationPrompts = 0;
+  page.on("dialog", async (dialog) => {
+    postLoginNavigationPrompts += 1;
+    await dialog.dismiss();
+  });
+  await page.getByRole("link", { name: "Dashboard" }).first().click();
+  await expect.poll(() => postLoginNavigationPrompts).toBe(1);
+  await expect(page).toHaveURL(/\/reports\/report-completed$/);
+  await expect(page.getByLabel("Executive summary")).toHaveValue("Guard a new edit after signing in again.");
 });

@@ -4,7 +4,7 @@ import { useEffect, useState, type MouseEvent, type ReactNode } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { SessionControls } from "./session-controls";
-import { browserGuardsUnsavedNavigation, confirmDiscardUnsavedReportChanges, useUnsavedNavigationGuard } from "./unsaved-navigation";
+import { confirmDiscardUnsavedReportChanges, useUnsavedNavigationGuard } from "./unsaved-navigation";
 import {
   Activity,
   BookOpen,
@@ -24,11 +24,16 @@ const items = [
   { href: "/settings", label: "Settings", icon: Settings },
 ];
 
-function guardUnsavedNavigation(event: MouseEvent<HTMLAnchorElement>, dirty: boolean) {
-  if (!browserGuardsUnsavedNavigation() && !confirmDiscardUnsavedReportChanges(dirty)) event.preventDefault();
+function guardUnsavedNavigation(event: MouseEvent<HTMLAnchorElement>, dirty: boolean, approveDestination: (url: string) => void) {
+  if (!dirty) return;
+  if (!confirmDiscardUnsavedReportChanges(true)) {
+    event.preventDefault();
+    return;
+  }
+  approveDestination(event.currentTarget.href);
 }
 
-function Navigation({ dirty, mobile = false }: { dirty: boolean; mobile?: boolean }) {
+function Navigation({ approveDestination, dirty, mobile = false }: { approveDestination: (url: string) => void; dirty: boolean; mobile?: boolean }) {
   const path = usePathname();
 
   return (
@@ -43,7 +48,7 @@ function Navigation({ dirty, mobile = false }: { dirty: boolean; mobile?: boolea
           aria-current={path === href ? "page" : undefined}
           className={path === href ? "nav-link active" : "nav-link"}
           style={{ "--nav-index": index } as React.CSSProperties}
-          onClick={(event) => guardUnsavedNavigation(event, dirty)}
+          onClick={(event) => guardUnsavedNavigation(event, dirty, approveDestination)}
         >
           <span className="nav-icon"><Icon aria-hidden="true" size={18} /></span>
           <span>{label}</span>
@@ -55,7 +60,11 @@ function Navigation({ dirty, mobile = false }: { dirty: boolean; mobile?: boolea
 
 export function AppShell({ children }: { children: ReactNode }) {
   const [reportDirty, setReportDirty] = useState(false);
-  useUnsavedNavigationGuard(reportDirty);
+  const { approveDestination, clearGuard: clearUnsavedNavigationGuard } = useUnsavedNavigationGuard(reportDirty);
+  const discardUnsavedReport = () => {
+    clearUnsavedNavigationGuard();
+    setReportDirty(false);
+  };
   useEffect(() => {
     const update = (event: Event) => setReportDirty(Boolean((event as CustomEvent<{ dirty?: boolean }>).detail?.dirty));
     window.addEventListener("trace:report-editor-dirty", update);
@@ -69,12 +78,12 @@ export function AppShell({ children }: { children: ReactNode }) {
         <div data-testid="ambient-grid" className="sidebar-ambient" aria-hidden="true">
           <span /><span /><span />
         </div>
-        <Link className="brand" href="/dashboard" onClick={(event) => guardUnsavedNavigation(event, reportDirty)}>
+        <Link className="brand" href="/dashboard" aria-label="Trace Workspace" onClick={(event) => guardUnsavedNavigation(event, reportDirty, approveDestination)}>
           <span className="brand-mark"><Radio size={18} aria-hidden="true" /></span>
           <span className="brand-type">Trace<small>Workspace</small></span>
         </Link>
         <p className="workspace-label">Command center</p>
-        <Navigation dirty={reportDirty} />
+        <Navigation approveDestination={approveDestination} dirty={reportDirty} />
         <div className="connection-card">
           <span className="status-orbit"><span className="status-dot" /></span>
           <div><strong>Integration workspace</strong><small>Contract-validated frontend</small></div>
@@ -86,7 +95,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             <span className="eyebrow">Trace workspace</span>
             <strong>Development activity</strong>
           </div>
-          <SessionControls reportDirty={reportDirty} />
+          <SessionControls reportDirty={reportDirty} onDiscardUnsavedReport={discardUnsavedReport} />
         </header>
         <div className="data-disclosure">
           <span className="disclosure-icon"><Radio size={14} aria-hidden="true" /></span>
@@ -94,7 +103,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           <span className="preview-pill">Integration environment</span>
         </div>
         <main id="main-content" tabIndex={-1}>{children}</main>
-        <Navigation dirty={reportDirty} mobile />
+        <Navigation approveDestination={approveDestination} dirty={reportDirty} mobile />
       </div>
     </div>
   );
