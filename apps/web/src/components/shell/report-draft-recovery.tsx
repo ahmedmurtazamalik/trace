@@ -44,6 +44,7 @@ export function ReportDraftRecoveryProvider({ children }: { children: ReactNode 
   const router = useRouter();
   const authSession = useOptionalAuthSession();
   const sessionEpoch = authSession?.sessionEpoch;
+  const sessionBoundary = authSession?.sessionBoundary;
   const lastSessionEpochRef = useRef(sessionEpoch);
   const activeRef = useRef<PendingRecovery>();
   const pendingRef = useRef<PendingRecovery>();
@@ -146,7 +147,7 @@ export function ReportDraftRecoveryProvider({ children }: { children: ReactNode 
     restorePending,
     stageActive,
   ]);
-  return <ReportDraftRecoveryContext.Provider key={sessionEpoch ?? "isolated"} value={value}>{children}</ReportDraftRecoveryContext.Provider>;
+  return <ReportDraftRecoveryContext.Provider key={sessionBoundary ?? "isolated"} value={value}>{children}</ReportDraftRecoveryContext.Provider>;
 }
 
 export function useReportDraftRecovery(): ReportDraftRecoveryContextValue {

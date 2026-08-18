@@ -19,6 +19,7 @@ type RevokeSession = typeof logout;
 
 interface AuthSessionValue {
   status: SessionStatus;
+  sessionBoundary: number;
   sessionEpoch: number;
   user?: PublicUser;
   csrfToken?: string;
@@ -50,6 +51,7 @@ export function AuthSessionProvider({
   const [session, setSession] = useState<AuthSessionResponse | undefined>(initialSession);
   const [status, setStatus] = useState<SessionStatus>(initialSession ? "authenticated" : "loading");
   const [sessionEpoch, setSessionEpoch] = useState(initialSession ? 1 : 0);
+  const [sessionBoundary, setSessionBoundary] = useState(initialSession ? 1 : 0);
   const [error, setError] = useState<string>();
   const [isSigningOut, setIsSigningOut] = useState(false);
   const bootstrapController = useRef<AbortController>();
@@ -90,6 +92,7 @@ export function AuthSessionProvider({
     setIsSigningOut(false);
     setSession(nextSession);
     setSessionEpoch((current) => current + 1);
+    setSessionBoundary((current) => current + 1);
     setError(undefined);
     setStatus("authenticated");
   }, []);
@@ -102,6 +105,7 @@ export function AuthSessionProvider({
       if (generation !== sessionGeneration.current) return false;
       setSession(undefined);
       setSessionEpoch((current) => current + 1);
+      setSessionBoundary((current) => current + 1);
       setError(undefined);
       setStatus("anonymous");
       return true;
@@ -114,6 +118,7 @@ export function AuthSessionProvider({
 
   const value = useMemo<AuthSessionValue>(() => ({
     status,
+    sessionBoundary,
     sessionEpoch,
     user: session?.user,
     csrfToken: session?.csrfToken,
@@ -121,7 +126,7 @@ export function AuthSessionProvider({
     isSigningOut,
     establishSession,
     signOut,
-  }), [error, establishSession, isSigningOut, session?.csrfToken, session?.user, sessionEpoch, signOut, status]);
+  }), [error, establishSession, isSigningOut, session?.csrfToken, session?.user, sessionBoundary, sessionEpoch, signOut, status]);
 
   return <AuthSessionContext.Provider value={value}>{children}</AuthSessionContext.Provider>;
 }

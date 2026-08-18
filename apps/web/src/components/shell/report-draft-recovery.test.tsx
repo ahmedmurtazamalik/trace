@@ -72,6 +72,29 @@ describe("ReportDraftRecoveryProvider", () => {
     expect(recovery.consume("report-1", 1, window.location.href)).toBeUndefined();
   });
 
+  it("does not remount report consumers when initial session bootstrap completes", async () => {
+    const initialSession = {
+      user: { id: "usr-1", username: "alice", displayName: "Alice", email: null, createdAt: "2026-08-18T00:00:00.000Z" },
+      csrfToken: "csrf",
+    };
+    let finishBootstrap!: (value: typeof initialSession) => void;
+    const loadSession = vi.fn().mockReturnValue(new Promise<typeof initialSession>((resolve) => { finishBootstrap = resolve; }));
+    let mounts = 0;
+    function Harness() {
+      useState(() => { mounts += 1; return mounts; });
+      return null;
+    }
+    render(
+      <AuthSessionProvider loadSession={loadSession}>
+        <ReportDraftRecoveryProvider><Harness /></ReportDraftRecoveryProvider>
+      </AuthSessionProvider>,
+    );
+    expect(mounts).toBe(1);
+
+    await act(async () => finishBootstrap(initialSession));
+    await waitFor(() => expect(mounts).toBe(1));
+  });
+
   it("discards recovery when a fresh session is established, even for the same user", async () => {
     const initialSession = {
       user: { id: "usr-1", username: "alice", displayName: "Alice", email: null, createdAt: "2026-08-18T00:00:00.000Z" },
