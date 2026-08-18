@@ -8,8 +8,10 @@ describe('password reset delivery boundary', () => {
     const delivery = new InMemoryPasswordResetDelivery();
 
     expect(delivery.available).toBe(true);
+    expect(delivery.supportsUsernameRecipient).toBe(true);
     await expect(delivery.deliver({
-      email: 'test@example.com',
+      recipient: 'test@example.com',
+      recipientType: 'email',
       token: 'opaque-test-token',
       expiresAt: new Date('2026-08-12T00:00:00.000Z'),
     })).resolves.toBeUndefined();
@@ -20,8 +22,10 @@ describe('password reset delivery boundary', () => {
     const delivery = new DevelopmentPasswordResetDelivery(directory, 'http://localhost:3000');
 
     expect(delivery.available).toBe(true);
+    expect(delivery.supportsUsernameRecipient).toBe(true);
     await delivery.deliver({
-      email: 'test@example.com',
+      recipient: 'local-user',
+      recipientType: 'username',
       token: 'opaque token/with unsafe URL characters',
       expiresAt: new Date('2026-08-12T00:00:00.000Z'),
     });
@@ -33,7 +37,8 @@ describe('password reset delivery boundary', () => {
     expect((await stat(path)).mode & 0o777).toBe(0o600);
     const message = JSON.parse(await readFile(path, 'utf8')) as Record<string, string>;
     expect(message).toEqual({
-      email: 'test@example.com',
+      recipient: 'local-user',
+      recipientType: 'username',
       expiresAt: '2026-08-12T00:00:00.000Z',
       resetUrl: 'http://localhost:3000/reset-password?token=opaque%20token%2Fwith%20unsafe%20URL%20characters',
     });
@@ -43,8 +48,10 @@ describe('password reset delivery boundary', () => {
     const delivery = new UnavailablePasswordResetDelivery();
 
     expect(delivery.available).toBe(false);
+    expect(delivery.supportsUsernameRecipient).toBe(false);
     await expect(delivery.deliver({
-      email: 'test@example.com',
+      recipient: 'test@example.com',
+      recipientType: 'email',
       token: 'opaque-test-token',
       expiresAt: new Date('2026-08-12T00:00:00.000Z'),
     })).rejects.toThrow('Password reset delivery is not configured');

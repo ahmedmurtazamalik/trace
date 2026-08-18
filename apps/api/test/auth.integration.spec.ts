@@ -258,6 +258,20 @@ describe('authentication API', () => {
     expect(replay.body).toEqual(expect.objectContaining({ code: 'INVALID_OR_EXPIRED_RESET_TOKEN' }));
   });
 
+  it('issues a development-capable reset token for an account without email', async () => {
+    await request(server).post('/api/v1/auth/register').send({ username, password }).expect(201);
+
+    const response = await request(server)
+      .post('/api/v1/auth/password/forgot')
+      .send({ identifier: username })
+      .expect(202);
+    expect(response.body).toEqual({ message: 'If the account exists, password reset instructions have been sent.' });
+
+    const user = await prisma.user.findUniqueOrThrow({ where: { username } });
+    expect(user.email).toBeNull();
+    await expect(prisma.passwordResetToken.count({ where: { userId: user.id, consumedAt: null } })).resolves.toBe(1);
+  });
+
   it('persists security-relevant audit events without raw credentials or tokens', async () => {
     const registered = await request(server).post('/api/v1/auth/register').send({ username, email, password }).expect(201);
     const registeredBody = authSessionResponseSchema.parse(registered.body as unknown);
