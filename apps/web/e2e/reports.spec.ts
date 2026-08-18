@@ -264,13 +264,18 @@ test("fallback recovery keeps newer edits through retries and cannot override ac
     history.pushState({}, "", "#three");
   });
   await page.getByLabel("Executive summary").fill("First fallback snapshot.");
-
-  page.once("dialog", (dialog) => dialog.dismiss());
-  await page.evaluate(() => history.go(-2));
+  await expect(page.getByText("Unsaved changes")).toBeVisible();
   await expect(page).toHaveURL(/\/reports\/report-completed#three$/);
 
-  page.once("dialog", (dialog) => dialog.accept());
-  await page.getByRole("link", { name: "Dashboard" }).first().click();
+  const firstDecline = page.waitForEvent("dialog");
+  await page.evaluate(() => history.go(-2));
+  await (await firstDecline).dismiss();
+  await expect(page).toHaveURL(/\/reports\/report-completed#three$/);
+
+  const acceptedDiscard = page.waitForEvent("dialog");
+  const dashboardNavigation = page.getByRole("link", { name: "Dashboard" }).first().click();
+  await (await acceptedDiscard).accept();
+  await dashboardNavigation;
   await expect(page).toHaveURL(/\/dashboard$/);
   await page.waitForTimeout(1_000);
   await expect(page).toHaveURL(/\/dashboard$/);
@@ -282,8 +287,11 @@ test("fallback recovery keeps newer edits through retries and cannot override ac
     history.pushState({}, "", "#three");
   });
   await page.getByLabel("Executive summary").fill("First fallback snapshot.");
-  page.once("dialog", (dialog) => dialog.dismiss());
+  await expect(page.getByText("Unsaved changes")).toBeVisible();
+  await expect(page).toHaveURL(/\/reports\/report-completed#three$/);
+  const secondDecline = page.waitForEvent("dialog");
   await page.evaluate(() => history.go(-2));
+  await (await secondDecline).dismiss();
   await expect(page).toHaveURL(/\/reports\/report-completed#three$/);
   await page.getByLabel("Executive summary").fill("Newest fallback snapshot.");
   await page.waitForTimeout(1_000);
