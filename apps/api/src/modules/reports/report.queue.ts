@@ -43,8 +43,9 @@ export class ReportQueue implements OnModuleDestroy {
     if (this.publications.size >= MAX_PENDING_PUBLICATIONS) {
       return Promise.reject(new Error('Report queue publication capacity is exhausted.'));
     }
-    let cancel = (_error: Error): void => undefined;
+    let cancel: PendingPublication['cancel'] | undefined;
     const cancellation = new Promise<never>((_resolve, reject) => { cancel = reject; });
+    if (cancel === undefined) throw new Error('Failed to initialize report publication cancellation.');
     const entry: PendingPublication = { cancel, promise: Promise.resolve() };
     entry.promise = Promise.race([this.publish(reportId), cancellation]).finally(() => {
       this.publications.delete(entry);
