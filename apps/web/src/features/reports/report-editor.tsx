@@ -80,7 +80,7 @@ function ReportEditorReady({ report, saveRevision, contributorLabels, onReloadLa
   useEffect(() => () => onDirtyChange?.(false), [onDirtyChange]);
   useLayoutEffect(() => {
     if (dirty) publishActive({ content: cloneContent(draft), reportId: current.id, revision: current.revision });
-    else clearActive(current.id, current.revision, window.location.href);
+    else clearActive(current.id, window.location.href);
     window.dispatchEvent(new CustomEvent("trace:report-editor-dirty", {
       detail: { dirty },
     }));

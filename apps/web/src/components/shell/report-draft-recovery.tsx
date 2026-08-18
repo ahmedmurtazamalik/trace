@@ -15,7 +15,7 @@ interface PendingRecovery extends ReportDraftRecovery {
 }
 
 interface ReportDraftRecoveryContextValue {
-  clearActive: (reportId: string, revision: number, url: string) => void;
+  clearActive: (reportId: string, url: string) => void;
   consume: (reportId: string, revision: number, url: string) => ReportContent | undefined;
   discardActive: () => void;
   hasActiveDraft: boolean;
@@ -70,9 +70,9 @@ export function ReportDraftRecoveryProvider({ children }: { children: ReactNode 
     if (expiryRef.current) clearTimeout(expiryRef.current);
     clearRouteRetries();
   }, [clearRouteRetries]);
-  const clearActive = useCallback((reportId: string, revision: number, url: string) => {
+  const clearActive = useCallback((reportId: string, url: string) => {
     const active = activeRef.current;
-    if (!active || active.reportId !== reportId || active.revision !== revision || active.url !== url) return;
+    if (!active || active.reportId !== reportId || active.url !== url) return;
     activeRef.current = undefined;
     setHasActiveDraft(false);
     pendingRef.current = undefined;

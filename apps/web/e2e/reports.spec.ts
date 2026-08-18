@@ -151,6 +151,26 @@ test("Day 10 verifies downloads and regenerates only a saved current revision", 
   await expect(page.getByText("Building your report")).toBeVisible();
 });
 
+test("successful save clears the dirty guard after the revision advances", async ({ page }) => {
+  await page.unrouteAll();
+  await interceptReportsApi(page);
+  await interceptEditableReport(page);
+  await page.goto("/reports/report-completed");
+
+  await page.getByLabel("Executive summary").fill("Updated in the browser with <special> & safe text.");
+  await page.getByRole("button", { name: "Save revision" }).click();
+  await expect(page.getByText("Revision 2 · Manually edited")).toBeVisible();
+
+  let dialogs = 0;
+  page.on("dialog", async (dialog) => {
+    dialogs += 1;
+    await dialog.dismiss();
+  });
+  await page.getByRole("link", { name: "Reports" }).first().click();
+  await expect(page).toHaveURL(/\/reports$/);
+  expect(dialogs).toBe(0);
+});
+
 test("Day 9 structured editor stays usable without horizontal overflow on mobile", async ({ page }) => {
   await page.unrouteAll();
   await interceptEditableReport(page);
@@ -248,15 +268,26 @@ test("fallback recovery keeps newer edits through retries and cannot override ac
   page.once("dialog", (dialog) => dialog.dismiss());
   await page.evaluate(() => history.go(-2));
   await expect(page).toHaveURL(/\/reports\/report-completed#three$/);
-  await page.getByLabel("Executive summary").fill("Newest fallback snapshot.");
-  await page.waitForTimeout(1_000);
-  await expect(page.getByLabel("Executive summary")).toHaveValue("Newest fallback snapshot.");
 
   page.once("dialog", (dialog) => dialog.accept());
   await page.getByRole("link", { name: "Dashboard" }).first().click();
   await expect(page).toHaveURL(/\/dashboard$/);
   await page.waitForTimeout(1_000);
   await expect(page).toHaveURL(/\/dashboard$/);
+
+  await page.goto("/reports/report-completed");
+  await page.evaluate(() => {
+    history.pushState({}, "", "#one");
+    history.pushState({}, "", "#two");
+    history.pushState({}, "", "#three");
+  });
+  await page.getByLabel("Executive summary").fill("First fallback snapshot.");
+  page.once("dialog", (dialog) => dialog.dismiss());
+  await page.evaluate(() => history.go(-2));
+  await expect(page).toHaveURL(/\/reports\/report-completed#three$/);
+  await page.getByLabel("Executive summary").fill("Newest fallback snapshot.");
+  await page.waitForTimeout(1_000);
+  await expect(page.getByLabel("Executive summary")).toHaveValue("Newest fallback snapshot.");
 });
 
 test("unsaved report edits guard sign-out before the session is revoked", async ({ page }) => {

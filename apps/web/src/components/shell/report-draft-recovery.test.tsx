@@ -27,7 +27,7 @@ describe("ReportDraftRecoveryProvider", () => {
 
     act(() => recovery.publishActive({ content: content("newest"), reportId: "report-1", revision: 1 }));
     expect(recovery.consume("report-1", 1, window.location.href)?.executiveSummary).toBe("newest");
-    act(() => recovery.discardActive());
+    act(() => recovery.clearActive("report-1", window.location.href));
     expect(recovery.hasActiveDraft).toBe(false);
   });
 
