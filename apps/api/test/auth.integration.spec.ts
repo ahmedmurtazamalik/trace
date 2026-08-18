@@ -188,6 +188,39 @@ describe('authentication API', () => {
     expect(disabledLogin.body).toEqual(expect.objectContaining({ code: 'ACCOUNT_DISABLED' }));
   });
 
+  it('rejects and consumes a reset token when its account is disabled', async () => {
+    await request(server).post('/api/v1/auth/register').send({ username, email, password }).expect(201);
+    const user = await prisma.user.findUniqueOrThrow({ where: { username } });
+    const originalPasswordHash = user.passwordHash;
+    const rawToken = 'disabled-account-reset-token-at-least-thirty-two-bytes';
+    const token = await prisma.passwordResetToken.create({
+      data: {
+        userId: user.id,
+        tokenHash: createHash('sha256').update(rawToken).digest('hex'),
+        expiresAt: new Date(Date.now() + 60_000),
+      },
+    });
+    await prisma.user.update({ where: { id: user.id }, data: { disabledAt: new Date() } });
+
+    const rejected = await request(server)
+      .post('/api/v1/auth/password/reset')
+      .send({ token: rawToken, password: replacementPassword })
+      .expect(400);
+    expect(rejected.body).toEqual(expect.objectContaining({ code: 'INVALID_OR_EXPIRED_RESET_TOKEN' }));
+
+    const [afterReset, consumedToken] = await Promise.all([
+      prisma.user.findUniqueOrThrow({ where: { id: user.id } }),
+      prisma.passwordResetToken.findUniqueOrThrow({ where: { id: token.id } }),
+    ]);
+    expect(afterReset.passwordHash).toBe(originalPasswordHash);
+    expect(consumedToken.consumedAt).toBeInstanceOf(Date);
+
+    await prisma.user.update({ where: { id: user.id }, data: { disabledAt: null } });
+    await request(server).post('/api/v1/auth/login').send({ username, password }).expect(200);
+    await request(server).post('/api/v1/auth/login').send({ username, password: replacementPassword }).expect(401);
+    await request(server).post('/api/v1/auth/password/reset').send({ token: rawToken, password: replacementPassword }).expect(400);
+  });
+
   it('keeps forgot-password non-enumerating and rotates credentials atomically', async () => {
     const registered = await request(server).post('/api/v1/auth/register').send({ username, email, password }).expect(201);
     const oldCookie = sessionCookie(registered);
