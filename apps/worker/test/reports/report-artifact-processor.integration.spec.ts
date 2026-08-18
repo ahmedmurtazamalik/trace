@@ -339,15 +339,21 @@ describe('report artifact processor', () => {
   it('isolates stale same-generation attempt objects from a replacement lease holder', async () => {
     let release: (() => void) | undefined;
     const wait = new Promise<void>((resolve) => { release = resolve; });
+    let markCompilerStarted: (() => void) | undefined;
+    const compilerStarted = new Promise<void>((resolve) => { markCompilerStarted = resolve; });
     const storage = new MemoryStorage();
     const stale = new ReportArtifactProcessor(
       prisma,
       new ReportProcessor(prisma, new DeterministicReportProvider()),
-      compiler(async () => { await wait; return pdf; }),
+      compiler(async () => {
+        markCompilerStarted?.();
+        await wait;
+        return pdf;
+      }),
       storage,
     );
     const staleProcessing = stale.process(reportId);
-    await new Promise((resolve) => setTimeout(resolve, 75));
+    await compilerStarted;
     await prisma.report.update({
       where: { id: reportId },
       data: { processingToken: null, processingExpiresAt: null },
