@@ -9,9 +9,9 @@ import { LoginForm } from "./login-form";
 export function LoginRoute() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { establishSession } = useAuthSession();
+  const { establishSession, status } = useAuthSession();
   return <AuthShell title="Welcome back." description="Sign in to review your development activity." note="Your session stays in a secure HTTP-only cookie; Trace never stores it in browser storage.">
-    <LoginForm onAuthenticated={(session) => {
+    <LoginForm sessionReady={status !== "loading"} onAuthenticated={(session) => {
       establishSession(session);
       router.replace(safeReturnPath(searchParams.get("returnTo")));
     }} />

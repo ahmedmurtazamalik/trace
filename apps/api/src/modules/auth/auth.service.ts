@@ -250,12 +250,21 @@ export class AuthService {
     const now = new Date();
 
     try {
-      await this.prisma.$transaction(async (transaction) => {
+      const outcome = await this.prisma.$transaction(async (transaction) => {
         const token = await transaction.passwordResetToken.findUnique({ where: { tokenHash } });
         if (token === null || token.consumedAt !== null || token.expiresAt <= now) {
           throw this.invalidResetToken();
         }
         await transaction.$queryRaw`SELECT "id" FROM "users" WHERE "id" = ${token.userId} FOR UPDATE`;
+        const user = await transaction.user.findUnique({ where: { id: token.userId }, select: { disabledAt: true } });
+        if (user === null) throw this.invalidResetToken();
+        if (user.disabledAt !== null) {
+          await transaction.passwordResetToken.updateMany({
+            where: { userId: token.userId, consumedAt: null },
+            data: { consumedAt: now },
+          });
+          return 'disabled' as const;
+        }
         const consumed = await transaction.passwordResetToken.updateMany({
           where: { id: token.id, consumedAt: null, expiresAt: { gt: now } },
           data: { consumedAt: now },
@@ -281,7 +290,9 @@ export class AuthService {
             requestId: context.requestId,
           },
         });
+        return 'completed' as const;
       });
+      if (outcome === 'disabled') throw this.invalidResetToken();
     } catch (error) {
       if (error instanceof HttpException) {
         throw error;

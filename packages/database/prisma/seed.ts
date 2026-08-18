@@ -6,8 +6,8 @@ const seedDate = new Date('2026-08-11T09:00:00.000Z');
 const reportDate = new Date('2026-08-11T00:00:00.000Z');
 
 export async function seed(client: PrismaClient = prisma): Promise<void> {
-  if (process.env.NODE_ENV === 'production') {
-    throw new Error('Development seed is disabled in production.');
+  if (process.env.NODE_ENV !== 'development' && process.env.NODE_ENV !== 'test') {
+    throw new Error('Development seed requires NODE_ENV=development or test.');
   }
   if (process.env.ALLOW_DEMO_SEED !== 'true') {
     throw new Error('Set ALLOW_DEMO_SEED=true to load deterministic development data.');

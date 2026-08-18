@@ -4,18 +4,29 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { LogOut } from "lucide-react";
 import { useOptionalAuthSession } from "@/auth/session-provider";
+import { confirmDiscardUnsavedReportChanges } from "./unsaved-navigation";
 
-export function SessionControls() {
+export function SessionControls({
+  reportDirty = false,
+  onDiscardUnsavedReport,
+}: {
+  reportDirty?: boolean;
+  onDiscardUnsavedReport?: () => void;
+}) {
   const session = useOptionalAuthSession();
   const router = useRouter();
   const [error, setError] = useState<string>();
   if (!session || session.status !== "authenticated") return <div className="topbar-status"><span className="live-signal" />Interface online</div>;
 
   async function handleSignOut() {
+    if (!confirmDiscardUnsavedReportChanges(reportDirty)) return;
     setError(undefined);
     try {
       const didSignOut = await session?.signOut();
-      if (didSignOut) router.replace("/login");
+      if (didSignOut) {
+        onDiscardUnsavedReport?.();
+        router.replace("/login");
+      }
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Trace could not sign out. Please try again.");
     }

@@ -8,6 +8,7 @@ import { AuthApiError, login } from "@/api/auth";
 interface LoginFormProps {
   onAuthenticated(session: AuthSessionResponse): void;
   authenticate?: typeof login;
+  sessionReady?: boolean;
 }
 
 interface FieldErrors {
@@ -15,7 +16,7 @@ interface FieldErrors {
   password?: string;
 }
 
-export function LoginForm({ onAuthenticated, authenticate = login }: LoginFormProps) {
+export function LoginForm({ onAuthenticated, authenticate = login, sessionReady = true }: LoginFormProps) {
   const [pending, setPending] = useState(false);
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
   const [formError, setFormError] = useState<string>();
@@ -55,7 +56,7 @@ export function LoginForm({ onAuthenticated, authenticate = login }: LoginFormPr
   }
 
   return (
-    <form className="auth-form" onSubmit={handleSubmit} noValidate>
+    <form className="auth-form" onSubmit={handleSubmit} noValidate aria-busy={!sessionReady}>
       {formError && <div className="auth-alert auth-alert-error" role="alert">{formError}</div>}
       {success && <div className="auth-alert auth-alert-success" role="status">Signed in securely.</div>}
       <div className="auth-field">
@@ -66,7 +67,7 @@ export function LoginForm({ onAuthenticated, authenticate = login }: LoginFormPr
           autoComplete="username"
           aria-invalid={Boolean(fieldErrors.username)}
           aria-describedby={fieldErrors.username ? "username-error" : undefined}
-          disabled={pending}
+          disabled={pending || !sessionReady}
         />
         {fieldErrors.username && <p className="field-error" id="username-error">{fieldErrors.username}</p>}
       </div>
@@ -79,11 +80,11 @@ export function LoginForm({ onAuthenticated, authenticate = login }: LoginFormPr
           autoComplete="current-password"
           aria-invalid={Boolean(fieldErrors.password)}
           aria-describedby={fieldErrors.password ? "password-error" : undefined}
-          disabled={pending}
+          disabled={pending || !sessionReady}
         />
         {fieldErrors.password && <p className="field-error" id="password-error">{fieldErrors.password}</p>}
       </div>
-      <button type="submit" disabled={pending}>{pending ? "Signing in…" : "Sign in"}</button>
+      <button type="submit" disabled={pending || !sessionReady}>{pending ? "Signing in…" : "Sign in"}</button>
     </form>
   );
 }
