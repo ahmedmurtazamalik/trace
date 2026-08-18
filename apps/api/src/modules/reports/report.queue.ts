@@ -5,11 +5,12 @@ import { TRACE_CONFIG } from '../../common/config/config.token';
 
 export const REPORT_QUEUE = 'report-generation';
 export const GENERATE_REPORT_JOB = 'generate-report';
+const MAX_PENDING_PUBLICATIONS = 100;
 
 @Injectable()
 export class ReportQueue implements OnModuleDestroy {
   private readonly queue: Queue<{ reportId: string }>;
-  private publication: Promise<void> | undefined;
+  private readonly publications = new Set<Promise<void>>();
 
   constructor(@Inject(TRACE_CONFIG) config: TraceConfig) {
     this.queue = new Queue(REPORT_QUEUE, {
@@ -28,11 +29,13 @@ export class ReportQueue implements OnModuleDestroy {
   }
 
   enqueue(reportId: string): Promise<void> {
-    if (this.publication !== undefined) return Promise.reject(new Error('Report queue publication is already in progress.'));
+    if (this.publications.size >= MAX_PENDING_PUBLICATIONS) {
+      return Promise.reject(new Error('Report queue publication capacity is exhausted.'));
+    }
     const publication = this.publish(reportId).finally(() => {
-      if (this.publication === publication) this.publication = undefined;
+      this.publications.delete(publication);
     });
-    this.publication = publication;
+    this.publications.add(publication);
     return publication;
   }
 

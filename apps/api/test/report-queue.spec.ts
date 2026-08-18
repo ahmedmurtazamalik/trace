@@ -38,19 +38,18 @@ describe('report queue producer recovery', () => {
     expect(mockClose).toHaveBeenCalledTimes(1);
   });
 
-  it('admits only one underlying command while Redis initialization is pending', async () => {
+  it('bounds pending commands to one reconciliation batch while Redis initialization is pending', async () => {
     mockGetJob.mockImplementation(() => new Promise(() => undefined));
     const queue = new ReportQueue({ redisUrl: 'redis://127.0.0.1:6379' } as TraceConfig);
 
-    void queue.enqueue('first');
-    const followers = Array.from({ length: 100 }, (_, index) =>
-      queue.enqueue(`follower-${index}`).catch((error: unknown) => error));
+    const admitted = Array.from({ length: 100 }, (_, index) =>
+      queue.enqueue(`admitted-${index}`).catch((error: unknown) => error));
+    const overflow = queue.enqueue('overflow').catch((error: unknown) => error);
     await Promise.resolve();
 
-    expect(mockGetJob).toHaveBeenCalledTimes(1);
-    const outcomes = await Promise.all(followers);
-    expect(outcomes).toHaveLength(100);
-    expect(outcomes.every((outcome) => outcome instanceof Error)).toBe(true);
+    expect(admitted).toHaveLength(100);
+    expect(mockGetJob).toHaveBeenCalledTimes(100);
+    await expect(overflow).resolves.toBeInstanceOf(Error);
     await queue.onModuleDestroy();
   });
 });
