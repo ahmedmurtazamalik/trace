@@ -418,65 +418,6 @@ Final recorded results:
 - Filesystem report storage requires a persistent shared production volume; multi-host object storage is not claimed.
 - Password-reset delivery remains fail-closed until an approved bounded delivery provider is configured.
 
----
-
-## Day 12 — Person A
-
-### Done
-
-- Audited the backend Day 12 matrix across API unit/integration, database, queue/worker, security, webhook, activity, report, revision, renderer, storage, and download coverage without adding product scope.
-- Fixed integration-test isolation so caller-provided disposable `DATABASE_URL` and `REDIS_URL` values remain authoritative. Four API suites previously overwrote an isolated database URL with the shared local default; they now use one tested helper that supplies local defaults only when the caller did not provide service URLs.
-- Added a focused RED/GREEN regression for the integration-environment helper and included it in the ordinary API unit command.
-- Added reproducible package and root coverage commands: `pnpm --filter @trace/api test:coverage`, `pnpm --filter @trace/worker test:coverage`, and `pnpm test:coverage:backend`.
-- Ran migrations and the deterministic seed from zero against dedicated temporary PostgreSQL and Redis containers. Every temporary service was removed after its gate.
-- Inspected low-coverage files rather than relying only on aggregate percentages. The largest intentional gap is the spawned Docker process path in `latex-compiler.ts`; its child/container execution is covered by the separate real-image acceptance gate and is not attributable to the parent Jest coverage process.
-- Changed no Person B-owned frontend or UI file.
-
-### Contracts published or changed
-
-- Endpoint/schema: none.
-- Contract version: unchanged.
-- Backward-compatible impact: test harness and developer command additions only.
-- Fixture path: unchanged.
-
-### Database/migrations
-
-- No schema or migration changed.
-- All 18 existing migrations applied successfully from an empty PostgreSQL database.
-- The deterministic seed completed and its non-destructive rerun integration remained green.
-
-### Tests and builds actually run
-
-- Focused TDD RED: `pnpm --filter @trace/api exec jest --runInBand test/integration-environment.spec.ts` failed because the helper did not exist.
-- Focused GREEN and ordinary API unit gate: 6 suites, 17/17 passed.
-- Disposable database integration: 10/10 passed.
-- Disposable API integration: 11 suites, 88/88 passed.
-- Isolated API coverage: 17 suites, 105/105 passed; 89.28% statements, 77.51% branches, 90.93% functions, 93.38% lines.
-- Isolated worker coverage: 13 suites passed with one Docker-only suite skipped; 93 passed and 2 skipped; 80.09% statements, 73.53% branches, 79.29% functions, 86.45% lines.
-- Complete service-backed workspace tests: passed; web 161/161, worker 93 passed with 2 Docker-only skips, API unit 17/17, and all package suites green.
-- Workspace lint: passed.
-- Strict TypeScript typecheck: passed.
-- Production build: passed; API and worker compiled, the worker packaged the controlled template, and all 14 frontend routes built.
-- Full and production dependency audits at low severity: no known vulnerabilities.
-- Real candidate Docker/XeLaTeX acceptance: 2/2 passed, including bounded forced-timeout cleanup with no orphan compiler container.
-- `git diff --check`: passed.
-
-### Person B integration notes
-
-- No same-day implementation dependency.
-- No `apps/web/**`, `packages/ui/**`, or Person B documentation was changed.
-- Shared contracts and frontend behavior remain unchanged.
-
-### Risks
-
-- Live GitHub and configured LLM-provider credentials were not required for Day 12's deterministic backend test gate and remain later operational acceptance boundaries.
-- Coverage percentages are inspection evidence, not a substitute for the dedicated real Docker compiler test or lifecycle concurrency tests.
-- The ordinary root test command requires PostgreSQL because worker integration suites are deliberately part of the worker package gate; run Day 12 verification with isolated service URLs rather than suppressing those suites.
-
-### Next-day joint gate
-
-- READY.
-- Reason: clean migrations, seed, backend unit/integration/security/queue/report/storage coverage, workspace static/build gates, dependency audits, and real Docker compilation are green with reproducible coverage commands.
 
 ## Day 13 — Person A
 
@@ -535,7 +476,6 @@ Final recorded results:
 
 - READY.
 - Reason: Day 13 backend deployment/operations behavior, documentation, fresh migration, health/readiness, real compiler execution, shutdown, full repository acceptance, and ownership boundaries are proven; external-provider and production-operational acceptance remain explicit Day 14/release gates.
-
 ---
 
 ## Day 14 — Person A
@@ -618,3 +558,4 @@ Final recorded results:
 
 - READY for repository-local Person A definition of done.
 - Reason: all core backend lifecycle, authorization, persistence, queue, report, controlled-rendering, real-image, build, audit, scanner, and production-like smoke gates are objectively covered. External-provider and target-production operations are explicitly not represented as repository-local proof.
+
