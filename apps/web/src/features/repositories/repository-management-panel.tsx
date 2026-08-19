@@ -206,7 +206,10 @@ export function RepositoryManagementPanel({
         <span className="sr-only">Search repositories</span><Search aria-hidden="true" size={18} />
         <Input type="search" value={search} onChange={(event) => changeSearch(event.target.value)} aria-label="Search repositories" placeholder="Search owner or repository" />
       </label>
-      <div className="repository-summary" aria-live="polite"><strong>{repositories.length}</strong><span>{visibility === "removed" ? "Removed repositories" : repositories.length === 1 ? "repository loaded" : "repositories loaded"}</span></div>
+      <div className="repository-summary" aria-live="polite" aria-label={`${repositories.length} ${visibility === "removed" ? "removed" : "active"} ${repositories.length === 1 ? "repository" : "repositories"} shown`}>
+        <strong>{repositories.length}</strong>
+        <span>{`${visibility === "removed" ? "removed" : "active"} ${repositories.length === 1 ? "repository" : "repositories"} shown`}</span>
+      </div>
       <Button className="trace-button-secondary" onClick={() => setVisibility((current) => current === "active" ? "removed" : "active")}>
         <ArchiveRestore aria-hidden="true" size={16} /> {visibility === "active" ? "View removed repositories" : "View active repositories"}
       </Button>

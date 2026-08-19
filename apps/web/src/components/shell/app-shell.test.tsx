@@ -1,9 +1,14 @@
 import { act, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { AppShell } from "./app-shell";
 
 describe("AppShell", () => {
+  beforeEach(() => {
+    window.localStorage.clear();
+    delete document.documentElement.dataset.theme;
+  });
+
   it("provides accessible navigation without an integration-placeholder disclosure", () => {
     render(<AppShell><h1>Dashboard</h1></AppShell>);
     expect(screen.getByRole("link", { name: "Skip to content" })).toHaveAttribute("href", "#main-content");
@@ -24,6 +29,18 @@ describe("AppShell", () => {
   it("keeps ambient brand visuals hidden from assistive technology", () => {
     render(<AppShell><h1>Dashboard</h1></AppShell>);
     expect(screen.getByTestId("ambient-grid")).toHaveAttribute("aria-hidden", "true");
+  });
+
+  it("persists a terminal night mode and exposes an accessible toggle", async () => {
+    window.localStorage.setItem("trace-theme", "night");
+    const user = userEvent.setup();
+    render(<AppShell><h1>Dashboard</h1></AppShell>);
+
+    const toggle = await screen.findByRole("button", { name: "Use light mode" });
+    expect(document.documentElement).toHaveAttribute("data-theme", "night");
+    await user.click(toggle);
+    expect(document.documentElement).toHaveAttribute("data-theme", "light");
+    expect(window.localStorage.getItem("trace-theme")).toBe("light");
   });
 
   it("cancels same-app navigation when report edits are unsaved and discarding is declined", () => {

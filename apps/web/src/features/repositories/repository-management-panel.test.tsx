@@ -117,10 +117,11 @@ describe("repository management", () => {
 
     expect(updateMembership).toHaveBeenCalledWith("repo_01", true, "csrf-live");
     expect(await screen.findByRole("status")).toHaveTextContent("Removed trace-fixture-org/trace");
+    expect(screen.getByLabelText("1 active repository shown")).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "trace-fixture-org/trace" })).not.toBeInTheDocument();
 
     await userEvent.click(screen.getByRole("button", { name: "View removed repositories" }));
-    expect(await screen.findByText("Removed repositories")).toBeInTheDocument();
+    expect(await screen.findByLabelText("1 removed repository shown")).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Restore trace-fixture-org/trace" }));
     expect(updateMembership).toHaveBeenLastCalledWith("repo_01", false, "csrf-live");
     expect(await screen.findByRole("status")).toHaveTextContent("Restored trace-fixture-org/trace");

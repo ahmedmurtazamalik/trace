@@ -966,3 +966,161 @@ main#main-content { max-width: 1600px; }
   body { background: var(--canvas); }
   .page-heading h1 { font-size: 2.35rem; }
 }
+
+/* Terminal night mode: Preview 01 */
+:root {
+  --night-canvas: #07100b;
+  --night-signal: #4ade80;
+}
+
+.topbar-actions { display: flex; align-items: center; gap: .65rem; }
+.theme-toggle {
+  min-height: 38px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: .45rem;
+  padding: .5rem .75rem;
+  border: 1px solid var(--signal);
+  border-radius: 0;
+  color: var(--signal-deep);
+  background: var(--signal-soft);
+  font: inherit;
+  font-size: .78rem;
+  font-weight: 760;
+  cursor: pointer;
+}
+.theme-toggle:hover { box-shadow: 3px 3px 0 var(--line-strong); transform: translate(-1px, -1px); }
+.theme-toggle:focus-visible { outline: 3px solid var(--signal); outline-offset: 3px; }
+
+/* Product actions use the green signal; danger actions keep their red semantic. */
+.trace-button.trace-button-secondary,
+.trace-button.secondary,
+.session-controls button {
+  border-color: var(--signal);
+  color: var(--signal-deep);
+  background: var(--signal-soft);
+}
+.trace-button.trace-button-secondary:hover:not(:disabled),
+.trace-button.secondary:hover:not(:disabled),
+.session-controls button:hover:not(:disabled) {
+  border-color: var(--signal-deep);
+  color: var(--signal-deep);
+  box-shadow: 3px 3px 0 var(--line-strong);
+}
+
+html[data-theme="night"] {
+  color-scheme: dark;
+  --canvas: var(--night-canvas);
+  --paper: #0d1710;
+  --paper-strong: #111f15;
+  --ink: #e8f5eb;
+  --ink-soft: #cae0cf;
+  --muted: #91a99a;
+  --line: #294333;
+  --line-strong: #3d674b;
+  --signal: var(--night-signal);
+  --signal-deep: #86efac;
+  --signal-soft: #12351f;
+  --editorial-sidebar: #08120c;
+  --editorial-paper: #0d1710;
+  --editorial-line: #294333;
+}
+html[data-theme="night"] body {
+  color: var(--ink);
+  background-color: var(--canvas);
+  background-image: linear-gradient(#17301f55 1px, transparent 1px), linear-gradient(90deg, #17301f55 1px, transparent 1px);
+}
+html[data-theme="night"] .sidebar,
+html[data-theme="night"] .topbar,
+html[data-theme="night"] .trace-card,
+html[data-theme="night"] .page-section,
+html[data-theme="night"] .repository-card,
+html[data-theme="night"] .workspace-card,
+html[data-theme="night"] .report-editor-actions,
+html[data-theme="night"] .report-editor fieldset,
+html[data-theme="night"] .trace-dialog,
+html[data-theme="night"] .mobile-nav,
+html[data-theme="night"] .auth-panel {
+  color: var(--ink);
+  background: var(--paper);
+  border-color: var(--line);
+  box-shadow: 3px 3px 0 #020704;
+}
+html[data-theme="night"] .topbar { background: #08120cf2; }
+html[data-theme="night"] .auth-aside {
+  color: var(--ink);
+  background: linear-gradient(90deg, transparent 49.9%, #17301f 50%, transparent 50.1%), #0a140e;
+}
+html[data-theme="night"] .auth-aside h2,
+html[data-theme="night"] .auth-aside dd { color: var(--ink); }
+html[data-theme="night"] .auth-aside p,
+html[data-theme="night"] .auth-aside dt { color: var(--muted); }
+html[data-theme="night"] .auth-form label { color: #a8c6b2; }
+html[data-theme="night"] .sidebar-ambient,
+html[data-theme="night"] .auth-grid {
+  background-image: linear-gradient(#4ade8020 1px, transparent 1px), linear-gradient(90deg, #4ade8020 1px, transparent 1px);
+}
+html[data-theme="night"] .nav-link { color: var(--ink-soft); }
+html[data-theme="night"] .nav-link:hover { color: var(--signal); background: #102a19; }
+html[data-theme="night"] .nav-link.active { color: #041008; background: var(--signal); }
+html[data-theme="night"] .nav-link.active .nav-icon { color: #041008; border-color: #041008; background: transparent; }
+html[data-theme="night"] .trace-input,
+html[data-theme="night"] .dashboard-toolbar input,
+html[data-theme="night"] .dashboard-toolbar select,
+html[data-theme="night"] .report-editor textarea {
+  color: var(--ink);
+  background: #07100b;
+  border-color: var(--line-strong);
+}
+html[data-theme="night"] .trace-input::placeholder,
+html[data-theme="night"] .report-editor textarea::placeholder { color: #789282; }
+html[data-theme="night"] .trace-button,
+html[data-theme="night"] .auth-form button,
+html[data-theme="night"] .centered-state button {
+  color: #041008;
+  background: var(--signal);
+  border-color: var(--signal);
+  box-shadow: 3px 3px 0 #1c5830;
+}
+html[data-theme="night"] .trace-button.trace-button-secondary,
+html[data-theme="night"] .trace-button.secondary,
+html[data-theme="night"] .session-controls button,
+html[data-theme="night"] .theme-toggle {
+  color: var(--signal);
+  background: var(--signal-soft);
+  border-color: var(--signal);
+  box-shadow: none;
+}
+html[data-theme="night"] .trace-button.trace-button-danger {
+  color: #fff;
+  background: #b91c1c;
+  border-color: #ef4444;
+  box-shadow: 3px 3px 0 #511111;
+}
+html[data-theme="night"] .trace-button.trace-button-secondary:disabled,
+html[data-theme="night"] .trace-button.trace-button-danger:disabled {
+  color: #718278;
+  background: #17221a;
+  border-color: #33463a;
+  box-shadow: none;
+  transform: none;
+}
+html[data-theme="night"] .trace-button:disabled,
+html[data-theme="night"] .session-controls button:disabled {
+  color: #718278;
+  background: #17221a;
+  border-color: #33463a;
+  box-shadow: none;
+}
+html[data-theme="night"] .trace-badge,
+html[data-theme="night"] .status-badge,
+html[data-theme="night"] .repository-label-grid > div,
+html[data-theme="night"] .metric-card,
+html[data-theme="night"] .planned-note { background: #102619; border-color: var(--line-strong); color: var(--ink-soft); }
+html[data-theme="night"] a { color: var(--signal); }
+
+@media (max-width: 680px) {
+  .theme-toggle span { display: none; }
+  .theme-toggle { width: 38px; padding: .5rem; }
+}

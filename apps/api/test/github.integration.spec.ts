@@ -90,7 +90,9 @@ describe('GitHub connection API', () => {
 
   async function switchState(sessionCookie: string, csrfToken: string): Promise<string> {
     const response = await request(server).post('/api/v1/github/switch').set('Cookie', sessionCookie).set('X-CSRF-Token', csrfToken).expect(200);
-    const state = new URL((response.body as { authorizationUrl: string }).authorizationUrl).searchParams.get('state');
+    const authorizationUrl = new URL((response.body as { authorizationUrl: string }).authorizationUrl);
+    expect(authorizationUrl.searchParams.get('prompt')).toBe('select_account');
+    const state = authorizationUrl.searchParams.get('state');
     if (state === null) throw new Error('Expected GitHub OAuth switch state');
     return state;
   }

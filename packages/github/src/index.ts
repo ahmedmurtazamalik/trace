@@ -42,7 +42,7 @@ type GithubInstallationPayload = {
 };
 
 export interface GithubAuthorizationAdapter {
-  authorizationUrl(input: { state: string; callbackUrl: string }): string;
+  authorizationUrl(input: { state: string; callbackUrl: string; selectAccount?: boolean }): string;
   authorize(code: string): Promise<GithubAuthorizationResult>;
   installationUrl(input: { state: string; appSlug: string }): string;
   installationForUser(githubUserId: bigint): Promise<GithubInstallationAccess | null>;
@@ -52,11 +52,12 @@ export interface GithubAuthorizationAdapter {
 }
 
 export class FakeGithubAuthorizationAdapter implements GithubAuthorizationAdapter {
-  authorizationUrl(input: { state: string; callbackUrl: string }): string {
+  authorizationUrl(input: { state: string; callbackUrl: string; selectAccount?: boolean }): string {
     const url = new URL('https://github.com/login/oauth/authorize');
     url.searchParams.set('client_id', 'fake-client-id');
     url.searchParams.set('redirect_uri', input.callbackUrl);
     url.searchParams.set('state', input.state);
+    if (input.selectAccount === true) url.searchParams.set('prompt', 'select_account');
     return url.toString();
   }
 
@@ -105,7 +106,7 @@ export class FakeGithubAuthorizationAdapter implements GithubAuthorizationAdapte
 }
 
 export class UnavailableGithubAuthorizationAdapter implements GithubAuthorizationAdapter {
-  authorizationUrl(input: { state: string; callbackUrl: string }): string { void input; throw new Error('GitHub authorization is not configured'); }
+  authorizationUrl(input: { state: string; callbackUrl: string; selectAccount?: boolean }): string { void input; throw new Error('GitHub authorization is not configured'); }
   authorize(code: string): Promise<GithubAuthorizationResult> { void code; return Promise.reject(new Error('GitHub authorization is not configured')); }
   installationUrl(input: { state: string; appSlug: string }): string { void input; throw new Error('GitHub installation is not configured'); }
   installationForUser(githubUserId: bigint): Promise<GithubInstallationAccess | null> { void githubUserId; return Promise.reject(new Error('GitHub installation is not configured')); }
@@ -117,11 +118,12 @@ export class UnavailableGithubAuthorizationAdapter implements GithubAuthorizatio
 export class RealGithubAuthorizationAdapter implements GithubAuthorizationAdapter {
   constructor(private readonly input: { clientId: string; clientSecret: string; appId: string; privateKey: string }) {}
 
-  authorizationUrl(input: { state: string; callbackUrl: string }): string {
+  authorizationUrl(input: { state: string; callbackUrl: string; selectAccount?: boolean }): string {
     const url = new URL('https://github.com/login/oauth/authorize');
     url.searchParams.set('client_id', this.input.clientId);
     url.searchParams.set('redirect_uri', input.callbackUrl);
     url.searchParams.set('state', input.state);
+    if (input.selectAccount === true) url.searchParams.set('prompt', 'select_account');
     return url.toString();
   }
 

@@ -17,6 +17,14 @@ describe("Editorial Console visual system", () => {
     expect(css).toContain("border-radius: 0;");
   });
 
+  it("adds the terminal night palette and keeps action buttons green", () => {
+    expect(css).toContain('html[data-theme="night"]');
+    expect(css).toContain("--night-canvas: #07100b;");
+    expect(css).toContain("--night-signal: #4ade80;");
+    expect(css).toContain(".trace-button.trace-button-secondary");
+    expect(css).toContain("background: var(--signal-soft);");
+  });
+
   it("publishes completed Workspace navigation without static integration placeholders", () => {
     expect(appShell).toContain('href: "/workspaces"');
     expect(appShell).toContain("UsersRound");

@@ -48,7 +48,11 @@ export class GithubService {
     const state = randomBytes(32).toString('base64url');
     let authorizationUrl: string;
     try {
-      authorizationUrl = this.adapter.authorizationUrl({ state, callbackUrl: this.callbackUrl() });
+      authorizationUrl = this.adapter.authorizationUrl({
+        state,
+        callbackUrl: this.callbackUrl(),
+        selectAccount: purpose === 'OAUTH_SWITCH',
+      });
     } catch {
       throw this.unavailable();
     }

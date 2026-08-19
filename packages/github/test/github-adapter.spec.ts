@@ -57,7 +57,20 @@ describe('GitHub authorization adapters', () => {
     expect(url.origin).toBe('https://github.com');
     expect(url.searchParams.get('client_id')).toBe('client-id');
     expect(url.searchParams.get('state')).toBe('state-value');
+    expect(url.searchParams.get('prompt')).toBeNull();
     expect(url.toString()).not.toContain('client-secret');
+  });
+
+  it('forces GitHub account selection only for an explicit account switch', () => {
+    const adapter = new RealGithubAuthorizationAdapter({
+      clientId: 'client-id', clientSecret: 'client-secret', appId: '123', privateKey: 'invalid-test-key',
+    });
+    const url = new URL(adapter.authorizationUrl({
+      state: 'switch-state',
+      callbackUrl: 'https://trace.example/api/v1/github/callback',
+      selectAccount: true,
+    }));
+    expect(url.searchParams.get('prompt')).toBe('select_account');
   });
 
   it('finds an existing personal installation by stable GitHub account id', async () => {

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState, type MouseEvent, type ReactNode } fro
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { SessionControls } from "./session-controls";
+import { ThemeToggle } from "./theme-toggle";
 import { useReportDraftRecovery } from "./report-draft-recovery";
 import { confirmDiscardUnsavedReportChanges, useUnsavedNavigationGuard } from "./unsaved-navigation";
 import {
@@ -119,7 +120,10 @@ export function AppShell({ children }: { children: ReactNode }) {
             <span className="eyebrow">Trace workspace</span>
             <strong>Development activity</strong>
           </div>
-          <SessionControls reportDirty={reportDirty} onDiscardUnsavedReport={discardUnsavedReport} />
+          <div className="topbar-actions">
+            <ThemeToggle />
+            <SessionControls reportDirty={reportDirty} onDiscardUnsavedReport={discardUnsavedReport} />
+          </div>
         </header>
         <main id="main-content" tabIndex={-1}>{children}</main>
         <Navigation dirty={reportDirty} mobile onDiscard={discardUnsavedReport} />
