@@ -28,11 +28,11 @@ describe("Day 8 report detail", () => {
 
     await act(async () => { await Promise.resolve(); });
     expect(screen.getByText("Processing")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Download PDF — download delivery is not available yet" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Download PDF: download delivery is not available yet" })).toBeDisabled();
 
     await act(async () => { await vi.advanceTimersByTimeAsync(2000); });
     expect(screen.getByText("Completed")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Download PDF — download delivery is not available yet" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Download PDF: download delivery is not available yet" })).toBeDisabled();
     expect(screen.getByText("2 commits")).toBeInTheDocument();
 
     await act(async () => { await vi.advanceTimersByTimeAsync(5000); });

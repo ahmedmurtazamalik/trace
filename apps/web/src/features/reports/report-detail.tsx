@@ -249,7 +249,7 @@ export function ReportDetailView({ reportId, loadReport, saveRevision, regenerat
       <div><span className={`report-status report-status-${report.status}`}>{labels[report.status]}</span><h2>Development activity report</h2><p>{new Date(`${report.reportDate}T12:00:00.000Z`).toLocaleDateString("en-US", { dateStyle: "long", timeZone: "UTC" })} · {report.timezone}</p></div>
       <div className="report-detail-actions">
         {regenerateReport && report.revision ? <Button className="trace-button-secondary" disabled={!["completed", "failed"].includes(report.status) || editorDirty || regenerating} onClick={() => void regenerate()}>{regenerating ? "Regenerating…" : "Regenerate report"}</Button> : null}
-        {currentPdf && downloadArtifact ? <Button disabled={downloadingId !== undefined} onClick={() => void download(currentPdf)}>{downloadingId === currentPdf.id ? "Downloading…" : "Download PDF"}</Button> : <Button disabled aria-label="Download PDF — download delivery is not available yet" title="PDF download delivery is not available yet.">Download PDF</Button>}
+        {currentPdf && downloadArtifact ? <Button disabled={downloadingId !== undefined} onClick={() => void download(currentPdf)}>{downloadingId === currentPdf.id ? "Downloading…" : "Download PDF"}</Button> : <Button disabled aria-label="Download PDF: download delivery is not available yet" title="PDF download delivery is not available yet.">Download PDF</Button>}
       </div>
     </Card>
     {editorDirty && regenerateReport ? <p className="report-action-hint">Save or cancel your narrative changes before regenerating.</p> : null}
