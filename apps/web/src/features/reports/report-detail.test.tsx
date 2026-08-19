@@ -21,12 +21,12 @@ const completed: ReportDetailResponse = { report: {
 afterEach(() => vi.useRealTimers());
 
 describe("Day 8 report detail", () => {
-  it("shows code analysis without executive-summary or internal snapshot jargon", async () => {
+  it("shows the executive summary and code analysis without internal snapshot jargon", async () => {
     const workspaceReport = {
       report: {
         ...completed.report,
         content: {
-          executiveSummary: "Internal summary that should not be shown.",
+          executiveSummary: "Executive summary for workspace members.",
           repositories: [{
             repositoryId: "repo-coachconnect",
             summary: "CoachConnect changed its homepage presentation and supporting styles.",
@@ -56,8 +56,8 @@ describe("Day 8 report detail", () => {
     expect(screen.getByRole("heading", { name: "alimajid266/coachconnect" })).toBeInTheDocument();
     expect(screen.getByText("CoachConnect changed its homepage presentation and supporting styles.")).toBeInTheDocument();
     expect(screen.getByText("Applied the crimson homepage theme.")).toBeInTheDocument();
-    expect(screen.queryByText("Internal summary that should not be shown.")).not.toBeInTheDocument();
-    expect(screen.queryByText("Executive summary")).not.toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Executive summary" })).toBeInTheDocument();
+    expect(screen.getByText("Executive summary for workspace members.")).toBeInTheDocument();
     expect(screen.queryByText("Immutable snapshot")).not.toBeInTheDocument();
     expect(screen.queryByText("Frozen report evidence")).not.toBeInTheDocument();
     expect(screen.queryByText("Scheduled run")).not.toBeInTheDocument();
