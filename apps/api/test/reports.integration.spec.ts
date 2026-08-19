@@ -304,7 +304,7 @@ describe('Reports API', () => {
     });
   });
 
-  it('rejects duplicate report dates and recovers an unpublished pending report exactly once', async () => {
+  it('allows a later immutable snapshot for the same report date and recovers unpublished reports exactly once', async () => {
     const registered = await request(server).post('/api/v1/auth/register').send({ username, email, password }).expect(201);
     const owner = await prisma.user.findUniqueOrThrow({ where: { username } });
     const snapshot = {
@@ -325,15 +325,14 @@ describe('Reports API', () => {
       },
     });
 
-    const duplicate = await request(server).post('/api/v1/reports')
+    const laterSnapshot = await request(server).post('/api/v1/reports')
       .set('Cookie', cookie(registered))
       .set('X-CSRF-Token', csrfToken(registered))
       .send({ reportDate: '2026-08-09', timezone: 'UTC' })
-      .expect(409);
-    expect(duplicate.body).toMatchObject({
-      code: 'REPORT_ALREADY_EXISTS',
-      message: 'A report already exists for this date.',
-    });
+      .expect(201);
+    const laterSnapshotBody = laterSnapshot.body as { report: { id: string } };
+    expect(laterSnapshotBody.report.id).not.toBe(report.id);
+    expect(await prisma.report.count({ where: { userId: owner.id, reportDate: new Date('2026-08-09T00:00:00.000Z') } })).toBe(2);
 
     const publisher = app.get(ReportPublisher);
     await Promise.all([publisher.publishOwed(), publisher.publishOwed()]);

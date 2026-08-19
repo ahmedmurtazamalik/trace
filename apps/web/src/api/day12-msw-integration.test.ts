@@ -147,7 +147,7 @@ describe("Day 12 API clients through the MSW HTTP boundary", () => {
       http.get(`${origin}/api/v1/repositories/repo_01`, () => HttpResponse.json({ repository })),
       http.post(`${origin}/api/v1/repositories/sync`, ({ request }) => {
         csrf.push(request.headers.get("x-csrf-token"));
-        return HttpResponse.json({ accessibleRepositoryCount: 1 });
+        return HttpResponse.json({ accessibleRepositoryCount: 1, activeRepositoryCount: 1, removedRepositoryCount: 0 });
       }),
       http.post(`${origin}/api/v1/repositories/repo_01/tracking`, ({ request }) => {
         csrf.push(request.headers.get("x-csrf-token"));
@@ -165,7 +165,7 @@ describe("Day 12 API clients through the MSW HTTP boundary", () => {
 
     await expect(listRepositories({ search: " web ", cursor: "cursor-1", limit: 25 })).resolves.toMatchObject({ items: [repository] });
     await expect(getRepository("repo_01")).resolves.toEqual({ repository });
-    await expect(synchronizeRepositories("csrf-sync")).resolves.toEqual({ accessibleRepositoryCount: 1 });
+    await expect(synchronizeRepositories("csrf-sync")).resolves.toEqual({ accessibleRepositoryCount: 1, activeRepositoryCount: 1, removedRepositoryCount: 0 });
     await expect(setRepositoryTracking("repo_01", true, "csrf-repository")).resolves.toEqual({ repositoryId: "repo_01", trackingEnabled: true });
     await expect(setRepositoryRemoved("repo_01", true, "csrf-remove")).resolves.toEqual({ repositoryId: "repo_01", trackingEnabled: false, removed: true });
     await expect(setRepositoryRemoved("repo_01", false, "csrf-restore")).resolves.toEqual({ repositoryId: "repo_01", trackingEnabled: false, removed: false });

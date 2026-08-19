@@ -142,6 +142,8 @@ export class ActivityService {
       where: {
         userId,
         trackingEnabled: true,
+        removedAt: null,
+        forgottenAt: null,
         accessRemovedAt: null,
         repository: {
           accessRemovedAt: null,
@@ -165,7 +167,8 @@ export class ActivityService {
       INNER JOIN github_installations gi ON gi.id = r.github_installation_id AND gi.suspended_at IS NULL
       INNER JOIN github_accounts ga ON ga.id = gi.github_account_id AND ga.user_id = ${userId} AND ga.unlinked_at IS NULL
       INNER JOIN user_repositories ur ON ur.repository_id = ae.repository_id AND ur.user_id = ${userId}
-        AND ur.tracking_enabled = true AND ur.access_removed_at IS NULL AND ae.occurred_at >= ur.created_at
+        AND ur.tracking_enabled = true AND ur.removed_at IS NULL AND ur.forgotten_at IS NULL
+        AND ur.access_removed_at IS NULL AND ae.occurred_at >= ur.created_at
       WHERE r.access_removed_at IS NULL
         AND (${repositoryId}::text IS NULL OR ae.repository_id = ${repositoryId})
         AND ae.source::text = 'github' AND ae.type::text IN ('commit', 'push', 'pull_request')
@@ -193,8 +196,10 @@ export class ActivityService {
         receivedAt: { gte: day.start, lt: day.end },
       },
     });
-    if (incompleteDeliveries === 0 && activityCount === 0) return this.emptyDashboard(query, 'NO_ACTIVITY');
-    const recent = activityCount === 0 ? [] : await this.dashboardRecent(userId, query, day);
+    const recent = await this.dashboardRecent(userId);
+    if (incompleteDeliveries === 0 && activityCount === 0) {
+      return { ...this.emptyDashboard(query, 'NO_ACTIVITY'), recentActivity: recent.map((row) => this.summary(row)) };
+    }
     return {
       date: query.date,
       timezone: query.timezone,
@@ -212,7 +217,7 @@ export class ActivityService {
     };
   }
 
-  private async dashboardRecent(userId: string, query: DashboardQuery, day: { start: Date; end: Date }): Promise<ActivityRow[]> {
+  private async dashboardRecent(userId: string): Promise<ActivityRow[]> {
     return this.prisma.$queryRaw<ActivityRow[]>(Prisma.sql`
       SELECT ae.id, ae.source::text AS source, ae.type::text AS type, ae.occurred_at AS "occurredAt", ae.metadata,
         r.id AS "repositoryId", r.full_name AS "repositoryFullName", r.html_url AS "repositoryUrl",
@@ -222,12 +227,11 @@ export class ActivityService {
       INNER JOIN github_installations gi ON gi.id = r.github_installation_id AND gi.suspended_at IS NULL
       INNER JOIN github_accounts ga ON ga.id = gi.github_account_id AND ga.user_id = ${userId} AND ga.unlinked_at IS NULL
       INNER JOIN user_repositories ur ON ur.repository_id = ae.repository_id AND ur.user_id = ${userId}
-        AND ur.tracking_enabled = true AND ur.access_removed_at IS NULL AND ae.occurred_at >= ur.created_at
+        AND ur.tracking_enabled = true AND ur.removed_at IS NULL AND ur.forgotten_at IS NULL
+        AND ur.access_removed_at IS NULL AND ae.occurred_at >= ur.created_at
       LEFT JOIN contributors c ON c.id = ae.contributor_id
-      WHERE (${query.repositoryId ?? null}::text IS NULL OR ae.repository_id = ${query.repositoryId ?? null})
-        AND char_length(r.full_name) BETWEEN 1 AND 512
+      WHERE char_length(r.full_name) BETWEEN 1 AND 512
         AND ae.source::text = 'github' AND ae.type::text IN ('commit', 'push', 'pull_request')
-        AND ae.occurred_at >= ${day.start} AND ae.occurred_at < ${day.end}
       ORDER BY ae.occurred_at DESC, ae.id DESC LIMIT 20
     `);
   }

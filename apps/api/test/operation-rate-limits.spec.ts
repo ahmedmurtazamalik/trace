@@ -36,7 +36,7 @@ describe('expensive authenticated operation rate limits', () => {
   });
 
   it('composes per-user, direct-address, and deployment repository synchronization budgets', async () => {
-    const repositories = { synchronize: jest.fn().mockResolvedValue({ accessibleRepositoryCount: 0 }) } as unknown as RepositoriesService;
+    const repositories = { synchronize: jest.fn().mockResolvedValue({ accessibleRepositoryCount: 0, activeRepositoryCount: 0, removedRepositoryCount: 0 }) } as unknown as RepositoriesService;
     const consume = jest.fn().mockResolvedValue(undefined);
     const rateLimits = { consume } as unknown as AuthRateLimitService;
     const controller = new RepositoriesController(repositories, rateLimits);

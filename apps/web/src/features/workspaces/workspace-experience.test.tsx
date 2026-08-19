@@ -91,6 +91,45 @@ describe('workspace experience', () => {
     expect(screen.getByRole('heading', { name: 'Manager tools' })).toBeInTheDocument();
   });
 
+  it('shows safe repository-analysis run details without exposing source contents', async () => {
+    const completedAnalysis = {
+      ...analysis,
+      status: 'COMPLETED' as const,
+      baselineSha: 'a'.repeat(40),
+      lastAnalyzedSha: 'a'.repeat(40),
+      baselineCompletedAt: '2026-08-18T18:02:00.000Z',
+      lastAnalyzedAt: '2026-08-18T18:02:00.000Z',
+      coverage: { totalFiles: 12, eligibleFiles: 10, analyzedFiles: 10, excludedFiles: 2, totalBytes: 2048, analyzedBytes: 1024, truncatedFiles: 1 },
+      latestRun: {
+        id: 'run_completed', workspaceId: 'workspace_1', repositoryId: 'repo_1', kind: 'BASELINE' as const,
+        fromSha: null, toSha: 'a'.repeat(40), dataCutoffAt: '2026-08-18T18:00:00.000Z', status: 'COMPLETED' as const,
+        coverage: { totalFiles: 12, eligibleFiles: 10, analyzedFiles: 10, excludedFiles: 2, totalBytes: 2048, analyzedBytes: 1024, truncatedFiles: 1 },
+        accessState: 'ACTIVE' as const, startedAt: '2026-08-18T18:00:00.000Z', completedAt: '2026-08-18T18:02:00.000Z', error: null,
+      },
+    };
+    renderExperience({ loadAnalysis: vi.fn().mockResolvedValue({ items: [completedAnalysis] }) });
+    await userEvent.click(await screen.findByRole('button', { name: /Open Product Delivery/i }));
+    await userEvent.click(await screen.findByText('View analysis details'));
+
+    expect(screen.getByText('Baseline run')).toBeInTheDocument();
+    expect(screen.getByText(`Commit ${'a'.repeat(8)}`)).toBeInTheDocument();
+    expect(screen.getByText('10 analyzed · 10 eligible · 2 excluded · 1 truncated')).toBeInTheDocument();
+    expect(screen.getByText('1,024 of 2,048 bytes analyzed')).toBeInTheDocument();
+    expect(screen.getByText('Completed Aug 18, 2026 at 11:02:00 PM PKT')).toBeInTheDocument();
+    expect(screen.queryByText(/source contents/i)).not.toBeInTheDocument();
+  });
+
+  it('offers a clear retry when repository code analysis fails', async () => {
+    const failedAnalysis = { ...analysis, status: 'FAILED' as const, lastError: 'GitHub returned binary content for an eligible source file.' };
+    const props = renderExperience({ loadAnalysis: vi.fn().mockResolvedValue({ items: [failedAnalysis] }) });
+    await userEvent.click(await screen.findByRole('button', { name: /Open Product Delivery/i }));
+
+    expect(await screen.findByText('Code analysis did not complete.')).toBeInTheDocument();
+    expect(screen.queryByText('Coverage is not available yet.')).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Retry code analysis for trace/web' }));
+    expect(props.startBaseline).toHaveBeenCalledWith('workspace_1', 'repo_1', 'csrf-live', { signal: expect.any(AbortSignal) });
+  });
+
   it('fails closed instead of rendering a poisoned stored repository URL', async () => {
     const poisoned = {
       ...managerDetail,

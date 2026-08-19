@@ -41,12 +41,11 @@ describe('workspace report route', () => {
   it('gives Developers completed report content and download without edit or regenerate operations', async () => {
     const clients = renderRoute('DEVELOPER');
     expect(await screen.findByText('No activity recorded')).toBeInTheDocument();
-    expect(screen.getByText(/Current revision 1/)).toBeInTheDocument();
-    expect(screen.getByText('No code activity was recorded.')).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'Frozen report evidence' })).toBeInTheDocument();
-    expect(screen.getByText(/August 17, 2026.*August 18, 2026/)).toBeInTheDocument();
-    expect(screen.getByText('Recovery run')).toBeInTheDocument();
-    expect(screen.getByText('GitHub access unavailable when frozen')).toBeInTheDocument();
+    expect(screen.getByText('Revision 1')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Code analysis' })).toBeInTheDocument();
+    expect(screen.getByText('No repository analysis is available for this report.')).toBeInTheDocument();
+    expect(screen.queryByText('No code activity was recorded.')).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Frozen report evidence' })).not.toBeInTheDocument();
     expect(screen.queryByText(/manager-1|idempotency|provider failure/i)).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Regenerate report' })).not.toBeInTheDocument();
     expect(screen.queryByLabelText('Structured report editor')).not.toBeInTheDocument();
@@ -54,11 +53,11 @@ describe('workspace report route', () => {
     await waitFor(() => expect(clients.downloadArtifact).toHaveBeenCalled());
   });
 
-  it('injects Manager-only optimistic editing and regeneration with the in-memory CSRF boundary', async () => {
+  it('provides Manager-only regeneration without exposing the removed narrative editor', async () => {
     const clients = renderRoute('MANAGER');
-    fireEvent.change(await screen.findByLabelText('Executive summary'), { target: { value: 'Updated workspace report.' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Save revision' }));
-    await waitFor(() => expect(clients.saveRevision).toHaveBeenCalledWith('workspace/1', 'report/1', expect.objectContaining({ expectedRevision: 1 }), 'csrf-live', expect.any(AbortSignal)));
+    await screen.findByRole('heading', { name: 'Code analysis' });
+    expect(screen.queryByLabelText('Executive summary')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Save revision' })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Regenerate report' }));
     await waitFor(() => expect(clients.regenerateReport).toHaveBeenCalledWith('workspace/1', 'report/1', { expectedRevision: 1 }, 'csrf-live', expect.any(AbortSignal)));
   });

@@ -111,6 +111,8 @@ export class WebhooksService {
           users: {
             some: {
               trackingEnabled: true,
+              removedAt: null,
+              forgottenAt: null,
               accessRemovedAt: null,
               user: { disabledAt: null },
             },

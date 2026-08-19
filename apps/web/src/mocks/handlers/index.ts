@@ -171,7 +171,11 @@ export const handlers = [
     return HttpResponse.json({ success: true, historyRetained: true });
   }),
 
-  http.post("*/api/v1/repositories/sync", ({ request }) => csrfError(request) ?? HttpResponse.json({ accessibleRepositoryCount: repositories.filter((item) => item.accessible).length })),
+  http.post("*/api/v1/repositories/sync", ({ request }) => csrfError(request) ?? HttpResponse.json({
+    accessibleRepositoryCount: repositories.filter((item) => item.accessible).length,
+    activeRepositoryCount: repositories.filter((item) => !item.removed).length,
+    removedRepositoryCount: repositories.filter((item) => item.removed).length,
+  })),
   http.post("*/api/v1/repositories/:repositoryId/tracking", ({ params, request }) => setTracking(String(params.repositoryId), request, true)),
   http.delete("*/api/v1/repositories/:repositoryId/tracking", ({ params, request }) => setTracking(String(params.repositoryId), request, false)),
   http.post("*/api/v1/repositories/:repositoryId/restore", ({ params, request }) => {

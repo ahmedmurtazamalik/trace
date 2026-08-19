@@ -19,6 +19,52 @@ describe('workspace report facts', () => {
   });
 });
 
+describe('workspace report evidence freezing', () => {
+  it('includes a retained CoachConnect commit in the deterministic snapshot', async () => {
+    const committedAt = new Date('2026-08-19T09:00:00.000Z');
+    const transaction = {
+      $queryRaw: jest.fn().mockResolvedValue([{ authorized: 1 }]),
+      workspaceRepository: { findMany: jest.fn().mockResolvedValue([{
+        repositoryId: 'coachconnect-repository',
+        repository: { id: 'coachconnect-repository', fullName: 'alimajidneo/CoachConnect' },
+        workspace: { name: "ali's space" },
+      }]) },
+      commit: { findMany: jest.fn().mockResolvedValue([{
+        id: 'coachconnect-commit', repositoryId: 'coachconnect-repository',
+        committedAt, sha: 'a'.repeat(40), message: 'Fix CoachConnect booking flow',
+        authorContributorId: 'ali-contributor', authorEmail: 'ali@example.test',
+        authorUsername: 'alimajidneo', authorName: 'Ali',
+        authorContributor: { username: 'alimajidneo', displayName: 'Ali' },
+        additions: 12, deletions: 3, changedFiles: 2, files: [],
+        repository: { id: 'coachconnect-repository', fullName: 'alimajidneo/CoachConnect' },
+      }]) },
+      workspaceRepositoryAnalysis: { findMany: jest.fn().mockResolvedValue([]) },
+    };
+    const service = new WorkspaceReportsService({} as never, {} as never, {} as never);
+
+    const frozen = await service.freezeEvidence(
+      transaction as never,
+      'workspace-ali',
+      new Date('2026-08-19T00:00:00.000Z'),
+      new Date('2026-08-20T00:00:00.000Z'),
+    );
+    const report = frozen.reportSnapshot as unknown as {
+      facts: { commitCount: number };
+      repositories: Array<{ fullName: string; facts: { commitCount: number }; evidence: Array<{ sha: string; message: string }> }>;
+    };
+
+    expect(report.facts.commitCount).toBe(1);
+    expect(report.repositories).toEqual([
+      expect.objectContaining({
+        fullName: 'alimajidneo/CoachConnect',
+        facts: expect.objectContaining({ commitCount: 1 }) as unknown,
+        evidence: [expect.objectContaining({ sha: 'a'.repeat(40), message: 'Fix CoachConnect booking flow' }) as unknown],
+      }),
+    ]);
+    expect(frozen.noActivity).toBe(false);
+  });
+});
+
 describe('workspace report access', () => {
   const membership = (role: 'MANAGER' | 'DEVELOPER') => ({ role, workspace: { archivedAt: null } });
   const completedReport = {

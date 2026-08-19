@@ -30,7 +30,7 @@ const content = {
   executiveSummary: 'Built \\input{/etc/passwd} & 50% of #1_{x}.\nSecond paragraph.',
   repositories: [{
     repositoryId: 'repo_1',
-    summary: 'Improved $rendering$ with ~safe^ text.',
+    summary: 'Improved $rendering$ with ~safe^ text. Built \\input{/etc/passwd} & 50% of #1_{x}.\nSecond paragraph.',
     contributors: [{
       contributorId: 'contributor_1',
       summary: 'Shipped {renderer} and fixed \\ paths.',
@@ -40,7 +40,7 @@ const content = {
 };
 
 describe('Trace LaTeX report renderer', () => {
-  it('renders the approved midnight-blue/teal report style deterministically', () => {
+  it('renders compact activity facts with bullet-only code analysis', () => {
     const first = renderReportLatex(snapshot, content, 1);
     const second = renderReportLatex(snapshot, content, 1);
 
@@ -50,9 +50,18 @@ describe('Trace LaTeX report renderer', () => {
     expect(first).toContain('\\definecolor{primarycolor}{RGB}{0, 51, 102}');
     expect(first).toContain('\\definecolor{secondarycolor}{RGB}{0, 128, 128}');
     expect(first).toContain('\\usepackage{palatino}');
-    expect(first).toContain('\\begin{titlepage}');
-    expect(first).toContain('Engineering Activity Report');
-    expect(first).toContain('Revision 1');
+    expect(first).not.toContain('\\begin{titlepage}');
+    expect(first).not.toContain('\\tableofcontents');
+    expect(first).not.toContain('\\newpage');
+    expect(first).toContain('Compact Engineering Activity Report');
+    expect(first).toContain('\\textbf{Date:} 2026-08-13');
+    expect(first).toContain('\\textbf{Timezone:} Asia/Karachi');
+    expect(first).toContain('\\textbf{Revision:} 1');
+    expect(first).not.toContain('Gemini Analysis');
+    expect(first).not.toContain('\\item Built \\textbackslash{}input');
+    expect(first).toContain('\\subsection{Code Analysis}');
+    expect(first).toContain('\\item Improved \\$rendering\\$ with');
+    expect(first).toContain('\\item Shipped \\{renderer\\}');
     expect(first).toContain('Repositories & 1');
     expect(first).toContain('Commits & 2');
   });
@@ -68,9 +77,9 @@ describe('Trace LaTeX report renderer', () => {
 
     const rendered = renderReportLatex(snapshot, withoutAccomplishments, 1);
 
-    expect(rendered).toContain('No accomplishments recorded.');
-    expect(rendered).toContain('title={Accomplishments}');
-    expect(rendered).not.toContain('\\begin{itemize}[leftmargin=*]\n\n\\end{itemize}');
+    expect(rendered).toContain('\\item No accomplishments recorded.');
+    expect(rendered).not.toContain('title={Accomplishments}');
+    expect(rendered).not.toContain('\\begin{itemize}\n\n\\end{itemize}');
   });
 
   it('escapes every untrusted LaTeX metacharacter without exposing commands', () => {

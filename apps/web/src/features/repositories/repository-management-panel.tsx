@@ -4,14 +4,16 @@ import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ArchiveRestore, BookOpen, ExternalLink, RefreshCw, Search, ShieldCheck, ShieldX, Trash2 } from "lucide-react";
 import { Badge, Button, Card, Input } from "@trace/ui";
-import type { RepositoryListQuery, RepositoryListResponse, RepositoryMembershipResponse, RepositorySummary, RepositorySynchronizationResponse, RepositoryTrackingResponse } from "@trace/shared";
+import type { RepositoryForgottenResponse, RepositoryListQuery, RepositoryListResponse, RepositoryMembershipResponse, RepositorySummary, RepositorySynchronizationResponse, RepositoryTrackingResponse } from "@trace/shared";
 import { useOptionalAuthSession } from "@/auth/session-provider";
-import { listRepositories, RepositoryApiError, setRepositoryRemoved, setRepositoryTracking, synchronizeRepositories } from "@/api/repositories";
+import { forgetRepository, listRepositories, RepositoryApiError, setRepositoryRemoved, setRepositoryTracking, synchronizeRepositories } from "@/api/repositories";
 import { AccessibleConfirmDialog } from "@/components/accessible-confirm-dialog";
+import { formatPakistanDate } from "@/lib/pakistan-time";
 
 type LoadRepositories = (query: Partial<RepositoryListQuery>, options?: { signal?: AbortSignal }) => Promise<RepositoryListResponse>;
 type UpdateTracking = (repositoryId: string, trackingEnabled: boolean, csrfToken: string) => Promise<RepositoryTrackingResponse>;
 type UpdateMembership = (repositoryId: string, removed: boolean, csrfToken: string) => Promise<RepositoryMembershipResponse>;
+type ForgetMembership = (repositoryId: string, csrfToken: string) => Promise<RepositoryForgottenResponse>;
 type Synchronize = (csrfToken: string) => Promise<RepositorySynchronizationResponse>;
 
 interface RepositoryManagementPanelProps {
@@ -19,6 +21,7 @@ interface RepositoryManagementPanelProps {
   loadRepositories?: LoadRepositories;
   updateTracking?: UpdateTracking;
   updateMembership?: UpdateMembership;
+  forgetMembership?: ForgetMembership;
   synchronize?: Synchronize;
   csrfToken?: string;
   onSearchChange?: (search: string) => void;
@@ -37,6 +40,7 @@ export function RepositoryManagementPanel({
   loadRepositories = listRepositories,
   updateTracking = setRepositoryTracking,
   updateMembership = setRepositoryRemoved,
+  forgetMembership = forgetRepository,
   synchronize = synchronizeRepositories,
   csrfToken: injectedCsrfToken,
   onSearchChange,
@@ -60,6 +64,8 @@ export function RepositoryManagementPanel({
   const [stopTrackingTrigger, setStopTrackingTrigger] = useState<HTMLButtonElement>();
   const [removeTarget, setRemoveTarget] = useState<RepositorySummary>();
   const [removeTrigger, setRemoveTrigger] = useState<HTMLButtonElement>();
+  const [forgetTarget, setForgetTarget] = useState<RepositorySummary>();
+  const [forgetTrigger, setForgetTrigger] = useState<HTMLButtonElement>();
   const authorizationGeneration = useRef(0);
 
   const clearProtectedState = useCallback(() => {
@@ -72,6 +78,7 @@ export function RepositoryManagementPanel({
     setPendingRepositoryId(undefined);
     setStopTrackingTarget(undefined);
     setRemoveTarget(undefined);
+    setForgetTarget(undefined);
   }, []);
 
   useEffect(() => setSearch(initialSearch), [initialSearch]);
@@ -141,7 +148,11 @@ export function RepositoryManagementPanel({
     try {
       const result = await synchronize(csrfToken);
       if (requestGeneration !== authorizationGeneration.current) return;
-      setNotice(`${result.accessibleRepositoryCount} accessible ${result.accessibleRepositoryCount === 1 ? "repository" : "repositories"} synchronized.`);
+      const activeLabel = `${result.activeRepositoryCount} active ${result.activeRepositoryCount === 1 ? "repository" : "repositories"} in Trace`;
+      const removedLabel = result.removedRepositoryCount === 0
+        ? "No removed repositories remain."
+        : `${result.removedRepositoryCount} removed ${result.removedRepositoryCount === 1 ? "repository is" : "repositories are"} hidden from the active list.`;
+      setNotice(`${activeLabel}. ${removedLabel}`);
       await reload();
     } catch (error) {
       if (isAuthorizationFailure(error)) clearProtectedState();
@@ -190,6 +201,25 @@ export function RepositoryManagementPanel({
     }
   }
 
+  async function forget(repository: RepositorySummary) {
+    if (csrfToken === undefined) return;
+    const requestGeneration = authorizationGeneration.current;
+    setPendingRepositoryId(repository.id);
+    setNotice(undefined);
+    setUpdateError(undefined);
+    try {
+      await forgetMembership(repository.id, csrfToken);
+      if (requestGeneration !== authorizationGeneration.current) return;
+      setRepositories((current) => current.filter((item) => item.id !== repository.id));
+      setNotice(`Forgot ${repository.fullName} from Trace. Historical reports remain unchanged.`);
+    } catch (error) {
+      if (isAuthorizationFailure(error)) clearProtectedState();
+      setUpdateError(message(error, `Trace could not forget ${repository.fullName}. Please try again.`));
+    } finally {
+      setPendingRepositoryId(undefined);
+    }
+  }
+
   if (loading && repositories.length === 0) return <Card className="repository-state-card" role="status">Loading repository access…</Card>;
   if (loadError !== undefined && repositories.length === 0) return <Card className="repository-state-card repository-state-error" role="alert">
     <p>{loadError}</p><Button className="trace-button-secondary" onClick={() => void reload()}>Retry</Button>
@@ -233,14 +263,25 @@ export function RepositoryManagementPanel({
         return <Card className={`repository-card${repository.accessible ? "" : " repository-card-historical"}`} key={repository.id}>
           <div className="repository-card-heading"><span className="repository-icon"><BookOpen aria-hidden="true" size={20} /></span><div><span className="eyebrow">{repository.owner}</span><h2><Link href={`/repositories/${repository.id}`}>{repository.fullName}</Link></h2></div><Badge>{repository.private ? "Private" : "Public"}</Badge></div>
           <div className="repository-label-grid"><div>{repository.accessible ? <ShieldCheck aria-hidden="true" size={18} /> : <ShieldX aria-hidden="true" size={18} />}<span><strong>{repository.accessible ? "GitHub access active" : "Historical access only"}</strong><small>{repository.accessible ? "Authorized by the GitHub App" : "No current provider access"}</small></span></div><div><span className={`repository-tracking-dot${repository.trackingEnabled ? " is-active" : ""}`} aria-hidden="true" /><span><strong>{repository.trackingEnabled ? "Tracked by Trace" : "Not tracked by Trace"}</strong><small>Tracking is your separate Trace choice</small></span></div></div>
-          <dl className="repository-metadata"><div><dt>Default branch</dt><dd>{repository.defaultBranch}</dd></div><div><dt>Contributors</dt><dd>{repository.contributorCount}</dd></div><div><dt>Last activity</dt><dd>{repository.lastActivityAt === null ? "None retained" : new Date(repository.lastActivityAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</dd></div></dl>
+          <dl className="repository-metadata"><div><dt>Default branch</dt><dd>{repository.defaultBranch}</dd></div><div><dt>Contributors</dt><dd>{repository.contributorCount}</dd></div><div><dt>Last activity</dt><dd>{repository.lastActivityAt === null ? "None retained" : formatPakistanDate(repository.lastActivityAt, "medium")}</dd></div></dl>
           <div className="repository-actions">
             {repository.url !== null && <a className="repository-link" href={repository.url} target="_blank" rel="noreferrer">Open on GitHub <ExternalLink aria-hidden="true" size={15} /></a>}
-            {repository.removed ? <Button
+            {repository.removed ? <>
+            <Button
               disabled={pending || csrfToken === undefined}
               onClick={() => void changeMembership(repository, false)}
               aria-label={`Restore ${repository.fullName}`}
-            ><ArchiveRestore aria-hidden="true" size={16} /> {pending ? "Restoring…" : "Restore repository"}</Button> : <>
+            ><ArchiveRestore aria-hidden="true" size={16} /> {pending ? "Restoring…" : "Restore repository"}</Button>
+            <Button
+              className="trace-button-danger"
+              disabled={pending || csrfToken === undefined}
+              onClick={(event) => {
+                setForgetTrigger(event.currentTarget);
+                setForgetTarget(repository);
+              }}
+              aria-label={`Forget ${repository.fullName} from Trace`}
+            ><Trash2 aria-hidden="true" size={16} /> Forget from Trace</Button>
+            </> : <>
             <Button
               className={repository.trackingEnabled ? "trace-button-secondary" : undefined}
               disabled={pending || cannotEnable || csrfToken === undefined}
@@ -279,6 +320,15 @@ export function RepositoryManagementPanel({
       returnFocus={removeTrigger ?? null}
       onCancel={() => setRemoveTarget(undefined)}
       onConfirm={() => { const target = removeTarget; setRemoveTarget(undefined); void changeMembership(target, true); }}
+    />}
+    {forgetTarget !== undefined && <AccessibleConfirmDialog
+      title="Forget repository from Trace?"
+      description={<p>Forgetting <strong>{forgetTarget.fullName}</strong> permanently hides it from active and removed repository views and removes its current Workspace assignments. Previously generated historical reports remain unchanged.</p>}
+      confirmLabel={pendingRepositoryId === forgetTarget.id ? "Forgetting…" : "Confirm forget repository"}
+      pending={pendingRepositoryId === forgetTarget.id}
+      returnFocus={forgetTrigger ?? null}
+      onCancel={() => setForgetTarget(undefined)}
+      onConfirm={() => { const target = forgetTarget; setForgetTarget(undefined); void forget(target); }}
     />}
     {stopTrackingTarget !== undefined && <AccessibleConfirmDialog
       title="Stop tracking repository?"

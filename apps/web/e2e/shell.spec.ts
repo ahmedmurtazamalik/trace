@@ -19,7 +19,7 @@ const routes = {
   "/github": "GitHub",
   "/settings": "Settings",
   "/login": "Welcome back.",
-  "/register": "Create your workspace.",
+  "/register": "Account creation is closed.",
   "/forgot-password": "Reset access.",
   "/reset-password": "Choose a new password.",
 } as const;

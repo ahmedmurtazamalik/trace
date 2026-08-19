@@ -94,32 +94,21 @@ export class ReportsService {
     const snapshot = this.snapshot(request, rows);
     const reportDate = new Date(`${request.reportDate}T00:00:00.000Z`);
 
-    let report;
-    try {
-      report = await this.prisma.$transaction(async (transaction) => {
-        const created = await transaction.report.create({
-          data: {
-            userId,
-            reportDate,
-            timezone: request.timezone,
-            status: 'pending',
-            inputSnapshot: snapshot as Prisma.InputJsonValue,
-          },
-        });
-        await transaction.auditLog.create({
-          data: { actorUserId: userId, action: 'report.created', targetType: 'report', targetId: created.id },
-        });
-        return created;
+    const report = await this.prisma.$transaction(async (transaction) => {
+      const created = await transaction.report.create({
+        data: {
+          userId,
+          reportDate,
+          timezone: request.timezone,
+          status: 'pending',
+          inputSnapshot: snapshot as Prisma.InputJsonValue,
+        },
       });
-    } catch (error) {
-      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
-        throw new HttpException(
-          { code: 'REPORT_ALREADY_EXISTS', message: 'A report already exists for this date.' },
-          HttpStatus.CONFLICT,
-        );
-      }
-      throw error;
-    }
+      await transaction.auditLog.create({
+        data: { actorUserId: userId, action: 'report.created', targetType: 'report', targetId: created.id },
+      });
+      return created;
+    });
     await this.publisher.publishOneBounded(report.id);
 
     return {
@@ -537,6 +526,8 @@ export class ReportsService {
         ON ur.repository_id = ae.repository_id
        AND ur.user_id = ${userId}
        AND ur.tracking_enabled = true
+       AND ur.removed_at IS NULL
+       AND ur.forgotten_at IS NULL
        AND ur.access_removed_at IS NULL
        AND ae.occurred_at >= ur.created_at
       LEFT JOIN contributors c ON c.id = ae.contributor_id

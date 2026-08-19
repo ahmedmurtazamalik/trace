@@ -34,6 +34,7 @@ import type {
 } from '@trace/shared';
 import { Building2, FolderGit2, RefreshCw, ShieldCheck, UserPlus, Users } from 'lucide-react';
 import { WorkspaceApiError } from '@/api/workspaces';
+import { formatPakistanDateTime, PAKISTAN_TIMEZONE } from '@/lib/pakistan-time';
 
 interface WorkspaceExperienceProps {
   csrfToken: string;
@@ -156,7 +157,7 @@ export function WorkspaceExperience({
   const [frequency, setFrequency] = useState<WorkspaceReportScheduleRequest['frequency']>('WEEKDAYS');
   const [selectedDays, setSelectedDays] = useState<number[]>([]);
   const [localTime, setLocalTime] = useState('09:00');
-  const [timezone, setTimezone] = useState(() => Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC');
+  const [timezone, setTimezone] = useState(PAKISTAN_TIMEZONE);
   const requestGeneration = useRef(0);
   const idempotencySequence = useRef(0);
   const detailController = useRef<AbortController>();
@@ -555,11 +556,19 @@ export function WorkspaceExperience({
               <h4 id="repository-analysis-title">Repository analysis</h4>
               {analyses.length === 0 ? <p className="muted">No repository analysis is available.</p> : <ul className="analysis-list">{analyses.map((item) => <li className="analysis-card" key={item.repositoryId}>
                 <div className="report-status-row"><strong>{item.repositoryFullName}</strong><Badge>{item.accessState === 'ACCESS_REMOVED' ? 'Access removed' : titleCase(item.status)}</Badge></div>
-                {item.coverage ? <p>{item.coverage.analyzedFiles} of {item.coverage.eligibleFiles} eligible files analyzed · {item.coverage.truncatedFiles} truncated</p> : <p>{item.status === 'UNINITIALIZED' ? 'No baseline has been analyzed yet.' : 'Coverage is not available yet.'}</p>}
-                {item.lastAnalyzedAt ? <p>Last analyzed {new Date(item.lastAnalyzedAt).toLocaleString()}</p> : null}
+                {item.coverage ? <p>{item.coverage.analyzedFiles} of {item.coverage.eligibleFiles} eligible files analyzed · {item.coverage.truncatedFiles} truncated</p> : <p>{item.status === 'UNINITIALIZED' ? 'No baseline has been analyzed yet.' : item.status === 'FAILED' ? 'Code analysis did not complete.' : 'Code analysis is in progress.'}</p>}
+                {item.lastAnalyzedAt ? <p>Last analyzed {formatPakistanDateTime(item.lastAnalyzedAt)}</p> : null}
+                {item.coverage && item.lastAnalyzedSha ? <details className="analysis-details">
+                  <summary>View analysis details</summary>
+                  <p><strong>{item.latestRun?.kind === 'INCREMENTAL' ? 'Incremental run' : 'Baseline run'}</strong></p>
+                  <p>Commit {item.lastAnalyzedSha.slice(0, 8)}</p>
+                  <p>{item.coverage.analyzedFiles} analyzed · {item.coverage.eligibleFiles} eligible · {item.coverage.excludedFiles} excluded · {item.coverage.truncatedFiles} truncated</p>
+                  <p>{item.coverage.analyzedBytes.toLocaleString('en-US')} of {item.coverage.totalBytes.toLocaleString('en-US')} bytes analyzed</p>
+                  {(item.latestRun?.completedAt ?? item.lastAnalyzedAt) ? <p>Completed {formatPakistanDateTime(item.latestRun?.completedAt ?? item.lastAnalyzedAt!)}</p> : null}
+                </details> : null}
                 {item.lastError ? <p className="report-failure">{item.lastError}</p> : null}
                 {detail.workspace.role === 'MANAGER' && detail.workspace.archivedAt === null && item.accessState === 'ACTIVE'
-                  ? <Button className="secondary" type="button" disabled={submitting || activeAnalysisStatuses.has(item.status)} aria-label={`Start baseline for ${item.repositoryFullName}`} onClick={() => void handleBaseline(item.repositoryId)}>{item.baselineSha ? 'Refresh analysis' : 'Start baseline'}</Button>
+                  ? <Button className="secondary" type="button" disabled={submitting || activeAnalysisStatuses.has(item.status)} aria-label={`${item.status === 'FAILED' ? 'Retry code analysis' : item.baselineSha ? 'Refresh analysis' : 'Start baseline'} for ${item.repositoryFullName}`} onClick={() => void handleBaseline(item.repositoryId)}>{item.status === 'FAILED' ? 'Retry code analysis' : item.baselineSha ? 'Refresh analysis' : 'Start baseline'}</Button>
                   : null}
               </li>)}</ul>}
             </section> : null}
@@ -573,7 +582,7 @@ export function WorkspaceExperience({
             <div className="section-heading-row"><h4 id="completed-workspace-reports-title">Completed reports</h4><Badge>{completedReports.length} available</Badge></div>
             {completedReports.length === 0 ? <p className="muted">No completed workspace reports are available yet.</p> : <ul className="occurrence-list">{completedReports.map((report) => {
               const date = new Date(`${report.reportDate}T12:00:00.000Z`).toLocaleDateString('en-US', { dateStyle: 'long', timeZone: 'UTC' });
-              return <li className="occurrence-card" key={report.id}><div className="report-status-row"><div><strong>{date}</strong><p>Revision {report.revision} · Completed {report.completedAt ? new Date(report.completedAt).toLocaleString() : ''}</p></div><Link aria-label={`Open completed report for ${date}`} href={`/workspaces/${encodeURIComponent(detail.workspace.id)}/reports/${encodeURIComponent(report.id)}`}>Open report</Link></div></li>;
+              return <li className="occurrence-card" key={report.id}><div className="report-status-row"><div><strong>{date}</strong><p>Revision {report.revision} · Completed {report.completedAt ? formatPakistanDateTime(report.completedAt) : ''}</p></div><Link aria-label={`Open completed report for ${date}`} href={`/workspaces/${encodeURIComponent(detail.workspace.id)}/reports/${encodeURIComponent(report.id)}`}>Open report</Link></div></li>;
             })}</ul>}
           </section> : null}
 
@@ -605,11 +614,11 @@ export function WorkspaceExperience({
             <div className="section-heading-row"><h4 id="report-occurrences-title">Report status</h4><Badge>{occurrences.length} occurrences</Badge></div>
             {occurrences.length === 0 ? <p className="muted">No workspace reports have been requested.</p> : <ul className="occurrence-list">{occurrences.map((item) => <li key={item.id} className="occurrence-card">
               <div className="report-status-row"><div><Badge>{titleCase(item.trigger)}</Badge> <Badge>{titleCase(item.status)}</Badge></div>{item.reportId ? <Link href={`/workspaces/${encodeURIComponent(detail.workspace.id)}/reports/${encodeURIComponent(item.reportId)}`}>Open report</Link> : null}</div>
-              <p><strong>Window</strong> {new Date(item.windowStart).toLocaleString()} – {new Date(item.windowEnd).toLocaleString()}</p>
-              <p><strong>Data cutoff</strong> {new Date(item.dataCutoffAt).toLocaleString()}</p>
-              {item.scheduledFor ? <p><strong>Scheduled for</strong> {new Date(item.scheduledFor).toLocaleString()}{item.intendedLocalDateTime ? ` (${item.intendedLocalDateTime} local)` : ''}</p> : null}
+              <p><strong>Window</strong> {formatPakistanDateTime(item.windowStart)} – {formatPakistanDateTime(item.windowEnd)}</p>
+              <p><strong>Data cutoff</strong> {formatPakistanDateTime(item.dataCutoffAt)}</p>
+              {item.scheduledFor ? <p><strong>Scheduled for</strong> {formatPakistanDateTime(item.scheduledFor)}{item.intendedLocalDateTime ? ` (${item.intendedLocalDateTime} schedule-local)` : ''}</p> : null}
               {item.noActivity === true ? <p>No activity was found in this report window.</p> : item.noActivity === false ? <p>Activity was found in this report window.</p> : <p>Activity status is pending.</p>}
-              {item.recoveredAt ? <p>Recovered after a missed scheduled run at {new Date(item.recoveredAt).toLocaleString()}.</p> : null}
+              {item.recoveredAt ? <p>Recovered after a missed scheduled run at {formatPakistanDateTime(item.recoveredAt)}.</p> : null}
               {item.error ? <p className="report-failure">{item.error}</p> : null}
             </li>)}</ul>}
           </section> : null}

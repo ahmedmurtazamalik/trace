@@ -21,6 +21,48 @@ const completed: ReportDetailResponse = { report: {
 afterEach(() => vi.useRealTimers());
 
 describe("Day 8 report detail", () => {
+  it("shows code analysis without executive-summary or internal snapshot jargon", async () => {
+    const workspaceReport = {
+      report: {
+        ...completed.report,
+        content: {
+          executiveSummary: "Internal summary that should not be shown.",
+          repositories: [{
+            repositoryId: "repo-coachconnect",
+            summary: "CoachConnect changed its homepage presentation and supporting styles.",
+            contributors: [{ contributorId: "contributor-ali", summary: "Updated the homepage theme.", accomplishments: ["Applied the crimson homepage theme."] }],
+          }],
+        },
+      },
+      workspaceEvidence: {
+        workspaceId: "workspace-1",
+        workspaceName: "Day 16 Workspace",
+        trigger: "SCHEDULED" as const,
+        scheduleVersion: 1,
+        scheduledFor: "2026-08-19T08:19:00.000Z",
+        intendedLocalDateTime: "2026-08-19T13:19:00+05:00",
+        windowStart: "2026-08-12T08:19:00.000Z",
+        windowEnd: "2026-08-19T08:19:00.000Z",
+        dataCutoffAt: "2026-08-19T08:19:00.000Z",
+        recoveredAt: null,
+        noActivity: false,
+        repositories: [{ repositoryId: "repo-coachconnect", fullName: "alimajid266/coachconnect", accessState: "ACTIVE" as const, coverage: null, baselineOnly: false, activityCount: 2 }],
+      },
+    };
+
+    render(<ReportDetailView reportId="report-completed" loadReport={vi.fn().mockResolvedValue(workspaceReport)} resolveContributorLabels={vi.fn().mockResolvedValue({ "contributor-ali": "Ali Majid" })} />);
+
+    expect(await screen.findByRole("heading", { name: "Code analysis" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "alimajid266/coachconnect" })).toBeInTheDocument();
+    expect(screen.getByText("CoachConnect changed its homepage presentation and supporting styles.")).toBeInTheDocument();
+    expect(screen.getByText("Applied the crimson homepage theme.")).toBeInTheDocument();
+    expect(screen.queryByText("Internal summary that should not be shown.")).not.toBeInTheDocument();
+    expect(screen.queryByText("Executive summary")).not.toBeInTheDocument();
+    expect(screen.queryByText("Immutable snapshot")).not.toBeInTheDocument();
+    expect(screen.queryByText("Frozen report evidence")).not.toBeInTheDocument();
+    expect(screen.queryByText("Scheduled run")).not.toBeInTheDocument();
+  });
+
   it("polls processing reports and stops after completion", async () => {
     vi.useFakeTimers();
     const loadReport = vi.fn().mockResolvedValueOnce(processing).mockResolvedValueOnce(processing).mockResolvedValueOnce(completed);

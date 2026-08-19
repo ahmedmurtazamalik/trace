@@ -3,10 +3,44 @@ import { WorkspaceAnalysisProcessor } from '../../src/workspaces/workspace-analy
 
 const prisma = new PrismaClient();
 const slug = 'workspace-analysis-worker-test';
+const fixtureUserId = 'workspace-analysis-worker-owner';
+const fixtureAccessorId = 'workspace-analysis-worker-accessor';
+const fixtureAccountId = 'workspace-analysis-worker-account';
+const fixtureInstallationId = 'workspace-analysis-worker-installation';
+const fixtureRepositoryId = 'workspace-analysis-worker-repository';
+
+async function cleanFixture(): Promise<void> {
+  await prisma.workspace.deleteMany({ where: { OR: [{ slug }, { createdById: { in: [fixtureUserId, fixtureAccessorId] } }] } });
+  await prisma.userRepository.deleteMany({ where: { OR: [{ userId: { in: [fixtureUserId, fixtureAccessorId] } }, { repositoryId: fixtureRepositoryId }] } });
+  await prisma.repository.deleteMany({ where: { id: fixtureRepositoryId } });
+  await prisma.githubInstallation.deleteMany({ where: { id: fixtureInstallationId } });
+  await prisma.githubAccount.deleteMany({ where: { id: fixtureAccountId } });
+  await prisma.user.deleteMany({ where: { id: { in: [fixtureUserId, fixtureAccessorId] } } });
+}
 
 describe('WorkspaceAnalysisProcessor', () => {
+  beforeAll(async () => {
+    await cleanFixture();
+    await prisma.user.createMany({ data: [
+      { id: fixtureUserId, username: 'workspace-analysis-worker-owner', passwordHash: 'not-used', createdAt: new Date('2000-01-01T00:00:00.000Z') },
+      { id: fixtureAccessorId, username: 'workspace-analysis-worker-accessor', passwordHash: 'not-used', createdAt: new Date('2000-01-02T00:00:00.000Z') },
+    ] });
+    await prisma.githubAccount.create({ data: {
+      id: fixtureAccountId, userId: fixtureUserId, githubUserId: 8_888_881n, githubUsername: 'workspace-analysis-worker-owner',
+    } });
+    await prisma.githubInstallation.create({ data: {
+      id: fixtureInstallationId, githubInstallationId: 8_888_882n, githubAccountId: fixtureAccountId,
+      accountType: 'USER', accountLogin: 'workspace-analysis-worker-owner',
+    } });
+    await prisma.repository.create({ data: {
+      id: fixtureRepositoryId, githubRepositoryId: 8_888_883n, githubInstallationId: fixtureInstallationId,
+      owner: 'workspace-analysis-worker-owner', name: 'fixture', fullName: 'workspace-analysis-worker-owner/fixture',
+      private: true, defaultBranch: 'main', createdAt: new Date('2000-01-03T00:00:00.000Z'),
+      users: { create: { userId: fixtureUserId, trackingEnabled: true, createdAt: new Date('2000-01-03T00:00:00.000Z') } },
+    } });
+  });
   afterEach(async () => { await prisma.workspace.deleteMany({ where: { slug } }); });
-  afterAll(async () => { await prisma.$disconnect(); });
+  afterAll(async () => { await cleanFixture(); await prisma.$disconnect(); });
 
   it('claims a durable pending run and makes duplicate delivery a no-op', async () => {
     const user = await prisma.user.findFirstOrThrow({ orderBy: { createdAt: 'asc' } });
@@ -37,6 +71,46 @@ describe('WorkspaceAnalysisProcessor', () => {
     expect(collect).toHaveBeenCalledTimes(1);
     expect(await prisma.workspaceAnalysisRun.findUniqueOrThrow({ where: { id: run.id } })).toMatchObject({ status: 'COMPLETED', toSha: 'a'.repeat(40) });
     expect(await prisma.workspaceRepositoryAnalysis.findUniqueOrThrow({ where: { id: analysis.id } })).toMatchObject({ status: 'COMPLETED', baselineSha: 'a'.repeat(40), lastAnalyzedSha: 'a'.repeat(40) });
+  });
+
+  it('allows a fresh attempt at the same commit after an immutable failed baseline', async () => {
+    const user = await prisma.user.findUniqueOrThrow({ where: { id: fixtureUserId } });
+    const repository = await prisma.repository.findUniqueOrThrow({ where: { id: fixtureRepositoryId } });
+    const workspace = await prisma.workspace.create({ data: {
+      name: 'Analysis retry same target', slug, createdById: user.id,
+      memberships: { create: { userId: user.id, role: 'MANAGER' } },
+      repositories: { create: { repositoryId: repository.id, assignedById: user.id } },
+    } });
+    const target = { toSha: 'c'.repeat(40), dataCutoffAt: new Date('2026-08-18T17:15:00.000Z') };
+    const analysis = await prisma.workspaceRepositoryAnalysis.create({
+      data: { workspaceId: workspace.id, repositoryId: repository.id, status: 'PENDING' },
+    });
+    const failed = await prisma.workspaceAnalysisRun.create({ data: {
+      analysisId: analysis.id, workspaceId: workspace.id, repositoryId: repository.id,
+      kind: 'BASELINE', fromSha: null, toSha: target.toSha, dataCutoffAt: target.dataCutoffAt,
+      status: 'FAILED', evidence: {}, startedAt: new Date('2026-08-18T17:14:00.000Z'),
+      completedAt: new Date('2026-08-18T17:14:30.000Z'), error: 'binary source rejected',
+    } });
+    const retry = await prisma.workspaceAnalysisRun.create({ data: {
+      analysisId: analysis.id, workspaceId: workspace.id, repositoryId: repository.id,
+      kind: 'BASELINE', fromSha: null, toSha: null, dataCutoffAt: target.dataCutoffAt,
+      status: 'PENDING', evidence: {},
+    } });
+    const coverage = { totalFiles: 1, eligibleFiles: 1, analyzedFiles: 1, excludedFiles: 0, totalBytes: 10, analyzedBytes: 10, truncatedFiles: 0 };
+    const evidence = { version: 1 as const, defaultBranch: repository.defaultBranch, baselineOnly: true, files: [], changes: [], exclusions: {} };
+    const processor = new WorkspaceAnalysisProcessor(prisma, {
+      resolveHead: jest.fn().mockResolvedValue(target),
+      collect: jest.fn().mockResolvedValue({ ...target, coverage, evidence }),
+    });
+
+    await processor.process(retry.id);
+
+    expect(await prisma.workspaceAnalysisRun.findUniqueOrThrow({ where: { id: failed.id } })).toMatchObject({
+      status: 'FAILED', toSha: target.toSha, error: 'binary source rejected',
+    });
+    expect(await prisma.workspaceAnalysisRun.findUniqueOrThrow({ where: { id: retry.id } })).toMatchObject({
+      status: 'COMPLETED', toSha: target.toSha, coverage, evidence,
+    });
   });
 
   it('reclaims an expired processing run after a crash without duplicating evidence or regressing the watermark', async () => {

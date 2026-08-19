@@ -49,7 +49,7 @@ test("Developer consumes a completed Workspace report without Manager controls o
   await page.goto("/workspaces/workspace_1/reports/report_1");
 
   await expect(page.getByRole("heading", { level: 1, name: "Workspace report" })).toBeVisible();
-  await expect(page.getByText("Developer access")).toBeVisible();
+
   await expect(page.getByText("No activity recorded")).toBeVisible();
   await expect(page.getByText("No code activity was recorded in this immutable window.")).toBeVisible();
   await expect(page.getByRole("button", { name: "Download PDF" })).toBeEnabled();

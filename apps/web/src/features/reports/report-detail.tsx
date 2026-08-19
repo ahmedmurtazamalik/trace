@@ -6,6 +6,7 @@ import type { ReportArtifact, ReportDetail, ReportDetailResponse, ReportRegenera
 
 import { useReportDraftRecovery } from "@/components/shell/report-draft-recovery";
 import { ReportEditor, type SaveReportRevision } from "./report-editor";
+import { formatPakistanDateTime } from "@/lib/pakistan-time";
 
 export type LoadReport = (reportId: string, signal?: AbortSignal) => Promise<ReportDetailResponse | WorkspaceReportDetailResponse>;
 export type RegenerateReport = (reportId: string, request: ReportRegenerationRequest, signal?: AbortSignal) => Promise<ReportRegenerationResponse>;
@@ -39,16 +40,6 @@ function formatBytes(sizeBytes: number) {
   if (sizeBytes < 1024) return `${sizeBytes} B`;
   if (sizeBytes < 1024 * 1024) return `${(sizeBytes / 1024).toFixed(1)} KB`;
   return `${(sizeBytes / (1024 * 1024)).toFixed(1)} MB`;
-}
-
-function formatEvidenceInstant(value: string) {
-  return new Date(value).toLocaleString("en-US", { dateStyle: "long", timeStyle: "short", timeZone: "UTC" });
-}
-
-function evidenceTriggerLabel(trigger: WorkspaceReportEvidence["trigger"]) {
-  if (trigger === "RECOVERY") return "Recovery run";
-  if (trigger === "SCHEDULED") return "Scheduled run";
-  return "Manual run";
 }
 
 interface Props { reportId: string; loadReport: LoadReport; saveRevision?: SaveReportRevision; regenerateReport?: RegenerateReport; downloadArtifact?: DownloadArtifact; deliverDownload?: DeliverDownload; resolveContributorLabels?: ResolveContributorLabels; pollIntervalMs?: number }
@@ -257,29 +248,21 @@ export function ReportDetailView({ reportId, loadReport, saveRevision, regenerat
     {error ? <div className="report-notice-error" role="alert"><span>{error}</span><Button className="trace-button-secondary" onClick={startPolling}>Retry now</Button></div> : null}
     {report.status === "pending" || report.status === "processing" ? <Card className="report-progress-card" role="status"><strong>{report.status === "pending" ? "Waiting to begin" : "Building your report"}</strong><span>This page refreshes automatically while generation is active.</span></Card> : null}
     {report.status === "failed" && <Card className="report-state-card report-state-error" role="alert"><h3>Report generation failed</h3><p>{report.errorMessage}</p></Card>}
-    {report.status === "completed" && report.revision ? <Card className="report-currentness" aria-label="Report currentness and activity">
-      <div><span>Currentness</span><strong>Current revision {report.revision}</strong><small>Completed {report.completedAt ? new Date(report.completedAt).toLocaleString() : ""} · {report.revisionSource === "manual" ? "Manually edited" : "AI generated"}</small></div>
-      <div><span>Activity evidence</span><strong>{report.facts.commitCount === 0 ? "No activity recorded" : `${report.facts.commitCount} ${report.facts.commitCount === 1 ? "commit" : "commits"} recorded`}</strong><small>Facts are deterministic for this report snapshot.</small></div>
+    {report.status === "completed" && report.revision ? <Card className="report-currentness" aria-label="Report revision and activity">
+      <div><span>Revision</span><strong>Revision {report.revision}</strong><small>Completed {report.completedAt ? formatPakistanDateTime(report.completedAt) : ""}</small></div>
+      <div><span>Activity</span><strong>{report.facts.commitCount === 0 ? "No activity recorded" : `${report.facts.commitCount} ${report.facts.commitCount === 1 ? "commit" : "commits"} recorded`}</strong></div>
     </Card> : null}
-    {workspaceEvidence ? <Card className="workspace-report-evidence" aria-label="Frozen workspace report evidence">
-      <header><div><span>Immutable snapshot</span><h3>Frozen report evidence</h3></div><strong>{evidenceTriggerLabel(workspaceEvidence.trigger)}</strong></header>
-      <dl>
-        <div><dt>Reporting window</dt><dd>{formatEvidenceInstant(workspaceEvidence.windowStart)} – {formatEvidenceInstant(workspaceEvidence.windowEnd)}</dd></div>
-        <div><dt>Data cutoff</dt><dd>{formatEvidenceInstant(workspaceEvidence.dataCutoffAt)}</dd></div>
-        <div><dt>Activity result</dt><dd>{workspaceEvidence.noActivity ? "No activity in this frozen window" : "Activity recorded in this frozen window"}</dd></div>
-      </dl>
-      <ul>{workspaceEvidence.repositories.map((repository) => <li key={repository.repositoryId}>
-        <div><strong>{repository.fullName}</strong><small>{repository.activityCount} {repository.activityCount === 1 ? "activity item" : "activity items"} · {repository.baselineOnly ? "Baseline evidence" : "Incremental evidence"}</small></div>
-        <div><span>{repository.accessState === "ACTIVE" ? "GitHub access active when frozen" : "GitHub access unavailable when frozen"}</span><small>{repository.coverage ? `${repository.coverage.analyzedFiles}/${repository.coverage.eligibleFiles} eligible files analyzed` : "Coverage unavailable for this snapshot"}</small></div>
-      </li>)}</ul>
-    </Card> : null}
-    <section className="report-facts" aria-label="Deterministic report facts">
+
+    <section className="report-facts" aria-label="Report facts">
       {[["Repositories", report.facts.repositoryCount], ["Contributors", report.facts.contributorCount], ["Commits", report.facts.commitCount], ["Files changed", report.facts.filesChanged], ["Additions", report.facts.additions], ["Deletions", report.facts.deletions]].map(([label, value]) => <Card key={label}><span>{label}</span><strong>{value}</strong>{label === "Commits" && <small>{value} {value === 1 ? "commit" : "commits"}</small>}</Card>)}
     </section>
     {currentArtifacts.length ? <Card className="report-artifacts" aria-label="Report files">
       <header><div><span>Verified output</span><h3>Report files</h3></div><small>Files are checked against their recorded type, size, and SHA-256 checksum before download.</small></header>
       <ul>{currentArtifacts.map((artifact) => { const kind = artifact.kind === "pdf" ? "PDF" : "TEX"; return <li key={artifact.id}><div><strong>{artifact.fileName}</strong><small>{kind} · Revision {artifact.revision} · {formatBytes(artifact.sizeBytes)}</small></div>{downloadArtifact ? <Button className="trace-button-secondary" disabled={downloadingId !== undefined} onClick={() => void download(artifact)}>{downloadingId === artifact.id ? "Downloading…" : artifact.kind === "pdf" ? `Download ${artifact.fileName}` : `Download source ${artifact.fileName}`}</Button> : null}</li>; })}</ul>
     </Card> : null}
-    {report.content && saveRevision ? <ReportEditor report={report} saveRevision={saveRevision} contributorLabels={contributorLabels} onReloadLatest={startPolling} onDirtyChange={setEditorDirty} onSaved={acceptSavedRevision} onAuthorizationFailure={invalidateProtectedReport} /> : report.content ? <Card className="report-content-preview"><span>Structured report content</span><h3>Executive summary</h3><p>{report.content.executiveSummary}</p>{report.content.repositories.map((repository, repositoryIndex) => <section key={repository.repositoryId} aria-label={`Repository evidence ${repositoryIndex + 1}`}><h4>Repository evidence {repositoryIndex + 1}</h4><p>{repository.summary}</p>{repository.contributors.map((contributor, contributorIndex) => <div key={contributor.contributorId}><h5>Contributor {contributorIndex + 1}</h5><p>{contributor.summary}</p>{contributor.accomplishments.length ? <ul>{contributor.accomplishments.map((item) => <li key={item}>{item}</li>)}</ul> : <p>No accomplishments recorded.</p>}</div>)}</section>)}</Card> : null}
+    {report.content && saveRevision ? <ReportEditor report={report} saveRevision={saveRevision} contributorLabels={contributorLabels} onReloadLatest={startPolling} onDirtyChange={setEditorDirty} onSaved={acceptSavedRevision} onAuthorizationFailure={invalidateProtectedReport} /> : report.content ? <Card className="report-content-preview report-code-analysis" aria-label="Code analysis"><span>Report findings</span><h3>Code analysis</h3><section aria-label="Executive summary"><h4>Executive summary</h4><p>{report.content.executiveSummary}</p></section>{report.content.repositories.length ? report.content.repositories.map((repository, repositoryIndex) => {
+      const repositoryName = workspaceEvidence?.repositories.find((item) => item.repositoryId === repository.repositoryId)?.fullName ?? `Repository ${repositoryIndex + 1}`;
+      return <section key={repository.repositoryId} aria-label={`${repositoryName} analysis`}><h4>{repositoryName}</h4><p>{repository.summary}</p>{repository.contributors.map((contributor, contributorIndex) => { const contributorName = contributorLabels[contributor.contributorId] ?? `Contributor ${contributorIndex + 1}`; return <div key={contributor.contributorId}><h5>{contributorName}</h5><p>{contributor.summary}</p>{contributor.accomplishments.length ? <ul>{contributor.accomplishments.map((item) => <li key={item}>{item}</li>)}</ul> : <p>No accomplishments recorded.</p>}</div>; })}</section>;
+    }) : <p>No repository analysis is available for this report.</p>}</Card> : null}
   </div>;
 }

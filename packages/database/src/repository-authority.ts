@@ -25,6 +25,7 @@ export async function hasWorkspaceRepositoryAuthority(
      AND ur.repository_id = ${repositoryId}
      AND ur.access_removed_at IS NULL
      AND ur.removed_at IS NULL
+     AND ur.forgotten_at IS NULL
     INNER JOIN github_accounts ga
       ON ga.user_id = wm.user_id
      AND ga.unlinked_at IS NULL

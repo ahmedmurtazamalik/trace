@@ -1,5 +1,5 @@
 import { Controller, Delete, Get, HttpCode, Param, Post, Query, Req, UseGuards } from '@nestjs/common';
-import type { RepositoryDetailResponse, RepositoryListResponse, RepositoryMembershipResponse, RepositoryTrackingResponse } from '@trace/shared';
+import type { RepositoryDetailResponse, RepositoryForgottenResponse, RepositoryListResponse, RepositoryMembershipResponse, RepositorySynchronizationResponse, RepositoryTrackingResponse } from '@trace/shared';
 import type { Request } from 'express';
 import { CurrentSession } from '../auth/current-session.decorator';
 import { CsrfGuard } from '../auth/csrf.guard';
@@ -52,10 +52,16 @@ export class RepositoriesController {
     return this.repositories.setRemoved(session.user.id, id, false);
   }
 
+  @Delete(':id/forget')
+  @UseGuards(CsrfGuard)
+  forget(@CurrentSession() session: AuthenticatedSession, @Param('id') id: string): Promise<RepositoryForgottenResponse> {
+    return this.repositories.forget(session.user.id, id);
+  }
+
   @Post('sync')
   @HttpCode(200)
   @UseGuards(CsrfGuard)
-  async synchronize(@CurrentSession() session: AuthenticatedSession, @Req() request: Request): Promise<{ accessibleRepositoryCount: number }> {
+  async synchronize(@CurrentSession() session: AuthenticatedSession, @Req() request: Request): Promise<RepositorySynchronizationResponse> {
     await this.rateLimits.consume('repository-sync', session.user.id, 30, 3_600_000);
     await this.rateLimits.consume('repository-sync:address', request.socket.remoteAddress ?? 'unknown', 150, 3_600_000);
     await this.rateLimits.consume('repository-sync:deployment', 'all', 1_500, 3_600_000);

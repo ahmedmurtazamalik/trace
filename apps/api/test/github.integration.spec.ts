@@ -389,10 +389,9 @@ describe('GitHub connection API', () => {
       releaseDiscovery();
       const installation = await installationRequest;
 
-      expect(installation.body).toMatchObject({
-        outcome: 'INSTALL_REQUIRED',
-        installationUrl: expect.stringMatching(/^https:\/\/github\.com\/apps\//),
-      });
+      const installationBody = installation.body as { outcome: unknown; installationUrl: unknown };
+      expect(installationBody.outcome).toBe('INSTALL_REQUIRED');
+      expect(installationBody.installationUrl).toEqual(expect.stringMatching(/^https:\/\/github\.com\/apps\//));
       const user = await prisma.user.findUniqueOrThrow({ where: { username } });
       const account = await prisma.githubAccount.findUniqueOrThrow({ where: { userId: user.id } });
       expect(account).toMatchObject({ githubUserId: 583_232n, githubUsername: 'fake-switcher' });

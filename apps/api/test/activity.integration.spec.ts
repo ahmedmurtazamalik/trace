@@ -184,6 +184,33 @@ describe('Activity API', () => {
         metadata: { sha: 'd'.repeat(40), message: 'Dashboard facts', branch: 'main', changedFiles: 3, additions: 8, deletions: 2 },
       },
     });
+    const sourceRepository = await prisma.repository.findUniqueOrThrow({ where: { id: fixture.repositoryId } });
+    const secondRepository = await prisma.repository.create({
+      data: {
+        githubRepositoryId: 77_099n,
+        githubInstallationId: sourceRepository.githubInstallationId,
+        owner: 'day7-org',
+        name: 'other-recent',
+        fullName: 'day7-org/other-recent',
+        private: true,
+        defaultBranch: 'main',
+      },
+    });
+    const fixtureUser = await prisma.userRepository.findFirstOrThrow({ where: { repositoryId: fixture.repositoryId } });
+    await prisma.userRepository.create({
+      data: { userId: fixtureUser.userId, repositoryId: secondRepository.id, trackingEnabled: true, createdAt: new Date('2026-08-10T00:00:00.000Z') },
+    });
+    await prisma.activityEvent.create({
+      data: {
+        sourceKey: `day7:dashboard:recent-all:${secondRepository.id}`,
+        repositoryId: secondRepository.id,
+        contributorId: contributor.id,
+        source: 'github',
+        type: 'commit',
+        occurredAt: new Date('2026-08-11T18:00:00.000Z'),
+        metadata: { sha: 'e'.repeat(40), message: 'Recent activity from another repository', branch: 'main' },
+      },
+    });
 
     const response = await request(server).get('/api/v1/dashboard')
       .query({ date: '2026-08-12', timezone: 'UTC' })
@@ -204,7 +231,9 @@ describe('Activity API', () => {
         deletions: 2,
       },
     });
-    expect(body.recentActivity).toHaveLength(2);
+    expect(body.recentActivity).toHaveLength(3);
+    expect(body.recentActivity[0]?.repository.fullName).toBe('day7-org/activity-api');
+    expect(body.recentActivity.some((item) => item.repository.fullName === 'day7-org/other-recent')).toBe(true);
     await request(server).get('/api/v1/dashboard')
       .query({ date: '2026-08-12', timezone: 'UTC' }).expect(401);
   });

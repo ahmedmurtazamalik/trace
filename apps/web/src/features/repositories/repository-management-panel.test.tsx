@@ -27,7 +27,8 @@ function renderPanel(overrides: Partial<React.ComponentProps<typeof RepositoryMa
     loadRepositories,
     updateTracking: vi.fn().mockImplementation(async (repositoryId: string, trackingEnabled: boolean) => ({ repositoryId, trackingEnabled })),
     updateMembership: vi.fn().mockImplementation(async (repositoryId: string, removed: boolean) => ({ repositoryId, trackingEnabled: false, removed })),
-    synchronize: vi.fn().mockResolvedValue({ accessibleRepositoryCount: 2 }),
+    forgetMembership: vi.fn().mockResolvedValue({ repositoryId: "repo_01", forgotten: true }),
+    synchronize: vi.fn().mockResolvedValue({ accessibleRepositoryCount: 3, activeRepositoryCount: 2, removedRepositoryCount: 1 }),
     onSearchChange: vi.fn(),
     ...overrides,
   };
@@ -127,6 +128,22 @@ describe("repository management", () => {
     expect(await screen.findByRole("status")).toHaveTextContent("Restored trace-fixture-org/trace");
   });
 
+  it("permanently forgets a removed repository only after explicit confirmation", async () => {
+    const forgetMembership = vi.fn().mockResolvedValue({ repositoryId: "repo_01", forgotten: true });
+    renderPanel({ forgetMembership });
+    await userEvent.click(await screen.findByRole("button", { name: "View removed repositories" }));
+    await screen.findByRole("link", { name: "trace-fixture-org/trace" });
+
+    await userEvent.click(screen.getByRole("button", { name: "Forget trace-fixture-org/trace from Trace" }));
+    expect(forgetMembership).not.toHaveBeenCalled();
+    expect(screen.getByRole("dialog", { name: "Forget repository from Trace?" })).toHaveTextContent("historical reports");
+    await userEvent.click(screen.getByRole("button", { name: "Confirm forget repository" }));
+
+    expect(forgetMembership).toHaveBeenCalledWith("repo_01", "csrf-live");
+    expect(await screen.findByRole("status")).toHaveTextContent("Forgot trace-fixture-org/trace from Trace");
+    expect(screen.queryByRole("link", { name: "trace-fixture-org/trace" })).not.toBeInTheDocument();
+  });
+
   it.each([
     [401, "UNAUTHENTICATED", "Your session has expired. Please sign in again."],
     [403, "UNEXPECTED_ERROR", "Trace could not complete the repository request. Please try again."],
@@ -184,7 +201,8 @@ describe("repository management", () => {
     expect(screen.getByRole("link", { name: "Manage GitHub access" })).toHaveAttribute("href", "/github");
     await userEvent.click(screen.getByRole("button", { name: "Add or refresh repositories" }));
     expect(props.synchronize).toHaveBeenCalledWith("csrf-live");
-    expect(await screen.findByRole("status")).toHaveTextContent("2 accessible repositories synchronized");
+    expect(await screen.findByRole("status")).toHaveTextContent("2 active repositories in Trace");
+    expect(screen.getByRole("status")).toHaveTextContent("1 removed repository is hidden from the active list");
     await waitFor(() => expect(props.loadRepositories).toHaveBeenCalledTimes(2));
   });
 

@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Activity, FileDiff, Files, GitCommitHorizontal, GitFork, Plus, Minus, Users } from "lucide-react";
 import { Badge, Button, Card } from "@trace/ui";
 import type { DashboardQuery, DashboardResponse, DashboardState, RepositoryListResponse } from "@trace/shared";
+import { PAKISTAN_TIMEZONE } from "@/lib/pakistan-time";
 import { ActivitySummaryCard } from "@/features/activity/activity-summary-card";
 
 export type DashboardFilters = Pick<DashboardQuery, "date" | "repositoryId">;
@@ -28,7 +29,7 @@ const stateActions: Partial<Record<DashboardState, { title: string; body: string
   NO_ACTIVITY: { title: "No development activity for this view", body: "Try another date or review the complete Activity timeline.", action: "Review Activity", href: "/activity" },
 };
 
-export function DashboardExperience({ loadDashboard, loadRepositories, initialDate, initialRepositoryId, timezone = "UTC", onFiltersChange }: Props) {
+export function DashboardExperience({ loadDashboard, loadRepositories, initialDate, initialRepositoryId, timezone = PAKISTAN_TIMEZONE, onFiltersChange }: Props) {
   const [filters, setFilters] = useState<DashboardFilters>({ date: initialDate, repositoryId: initialRepositoryId });
   const [repositories, setRepositories] = useState<RepositoryListResponse["items"]>([]);
   const [data, setData] = useState<DashboardResponse>();
@@ -78,24 +79,24 @@ export function DashboardExperience({ loadDashboard, loadRepositories, initialDa
   if (error !== undefined && data === undefined) return <Card className="dashboard-state dashboard-state-error" role="alert"><p>{error.message}</p>{error.code === "UNAUTHENTICATED" ? <Link className="trace-button trace-button-primary" href="/login">Sign in again</Link> : error.code === "REPOSITORY_NOT_FOUND" ? <Button className="trace-button-secondary" onClick={() => change({ date: filters.date })}>Show all repositories</Button> : <Button className="trace-button-secondary" onClick={() => void reload()}>Retry</Button>}</Card>;
   if (data === undefined) return null;
   const action = stateActions[data.state];
-  const selectedDate = new Date(`${data.date}T12:00:00.000Z`).toLocaleDateString("en-US", { dateStyle: "long", timeZone: "UTC" });
 
   return <div className="dashboard-experience">
     <Card className="dashboard-disclosure" role="note"><strong>Live dashboard connection</strong><span>Trace requests authorized metrics from the production API. Test environments use contract fixtures.</span></Card>
     <Card className="dashboard-toolbar">
       <label>Date<input type="date" value={filters.date} onChange={(event) => { if (event.target.value) change({ ...filters, date: event.target.value }); }} /></label>
       <label>Repository<select value={filters.repositoryId ?? ""} onChange={(event) => change({ date: filters.date, repositoryId: event.target.value || undefined })}><option value="">All repositories</option>{filters.repositoryId && !repositories.some((repository) => repository.id === filters.repositoryId) && <option value={filters.repositoryId}>Selected repository</option>}{repositories.map((repository) => <option key={repository.id} value={repository.id}>{repository.fullName}</option>)}</select></label>
-      <span>{data.timezone}</span>
+      <span>{data.timezone === PAKISTAN_TIMEZONE ? "Pakistan Standard Time (PKT)" : data.timezone}</span>
     </Card>
     {data.state === "PARTIAL" && <Card className="dashboard-warning" role="status"><strong>Some activity is still being processed.</strong><span>Available facts remain visible and may increase after processing finishes.</span></Card>}
-    {action !== undefined ? <Card className="dashboard-state"><FileDiff aria-hidden="true" /><h2>{action.title}</h2><p>{action.body}</p><Link className="trace-button trace-button-primary" href={action.href}>{action.action}</Link></Card> : <>
+    {action !== undefined ? <Card className="dashboard-state"><FileDiff aria-hidden="true" /><h2>{action.title}</h2><p>{action.body}</p><Link className="trace-button trace-button-primary" href={action.href}>{action.action}</Link></Card> :
       <section className="dashboard-metrics" aria-label="Development activity metrics">
         {metrics.map(({ key, label, note, icon: Icon, accent }, index) => <Card role="article" className="metric-card" data-accent={accent} key={key} style={{ "--card-index": index } as React.CSSProperties}><div className="metric-topline"><span>{label}</span><span className="metric-icon"><Icon aria-hidden="true" size={17} /></span></div><strong>{data.metrics[key].toLocaleString("en-US")}</strong><div className="metric-footer"><small>{note}</small></div></Card>)}
-      </section>
-      <Card className="dashboard-recent">
-        <header className="section-heading"><div><span className="eyebrow">{selectedDate}</span><h2>Recent development activity</h2></div><Badge>{data.recentActivity.length} shown</Badge></header>
-        <div className="activity-timeline">{data.recentActivity.map((item, index) => <ActivitySummaryCard headingLevel={3} index={index} item={item} key={item.id} timezone={data.timezone} />)}</div>
-      </Card>
-    </>}
+      </section>}
+    <Card className="dashboard-recent">
+      <header className="section-heading"><div><span className="eyebrow">Across all tracked repositories</span><h2>Recent development activity</h2></div><Badge>{data.recentActivity.length} shown</Badge></header>
+      {data.recentActivity.length === 0
+        ? <p className="dashboard-recent-empty">No retained activity has reached Trace yet.</p>
+        : <div className="activity-timeline">{data.recentActivity.map((item, index) => <ActivitySummaryCard headingLevel={3} index={index} item={item} key={item.id} />)}</div>}
+    </Card>
   </div>;
 }

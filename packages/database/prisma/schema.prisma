@@ -220,6 +220,7 @@ model UserRepository {
   trackingEnabled Boolean    @default(false) @map("tracking_enabled")
   accessRemovedAt DateTime?  @map("access_removed_at")
   removedAt       DateTime?  @map("removed_at")
+  forgottenAt     DateTime?  @map("forgotten_at")
   createdAt       DateTime   @default(now()) @map("created_at")
   updatedAt       DateTime   @updatedAt @map("updated_at")
   user            User       @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -228,6 +229,7 @@ model UserRepository {
   @@unique([userId, repositoryId])
   @@index([userId, trackingEnabled])
   @@index([userId, removedAt])
+  @@index([userId, forgottenAt])
   @@map("user_repositories")
 }
 
@@ -334,7 +336,7 @@ model WorkspaceAnalysisRun {
   workspace     Workspace                    @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   repository    Repository                   @relation(fields: [repositoryId], references: [id], onDelete: Restrict)
 
-  @@unique([analysisId, kind, toSha])
+  @@index([analysisId, kind, toSha])
   @@index([workspaceId, createdAt])
   @@index([repositoryId, dataCutoffAt])
   @@index([status, createdAt])

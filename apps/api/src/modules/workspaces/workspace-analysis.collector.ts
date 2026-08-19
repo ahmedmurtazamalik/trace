@@ -27,8 +27,18 @@ const MAX_ANALYZED_BYTES = 2 * 1024 * 1024;
 const MAX_FILE_BYTES = 256 * 1024;
 const MAX_CONTENT_CHARS = 32_768;
 const MAX_CHANGES = 3_000;
-const binaryExtensions = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'ico', 'pdf', 'zip', 'gz', 'woff', 'woff2', 'ttf', 'mp3', 'mp4', 'mov', 'exe', 'dll', 'so']);
+const binaryExtensions = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'ico', 'pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'zip', 'gz', 'tar', '7z', 'rar', 'jar', 'woff', 'woff2', 'ttf', 'mp3', 'mp4', 'mov', 'wasm', 'bin', 'exe', 'dll', 'so']);
 const languageNames: Record<string, string> = { ts: 'TypeScript', tsx: 'TypeScript React', js: 'JavaScript', jsx: 'JavaScript React', py: 'Python', md: 'Markdown', json: 'JSON', css: 'CSS', html: 'HTML', sql: 'SQL', prisma: 'Prisma', yml: 'YAML', yaml: 'YAML' };
+
+export function isWorkspaceAnalysisBinaryPath(path: string): boolean {
+  const lower = path.toLowerCase();
+  const extension = lower.includes('.') ? lower.split('.').pop() ?? '' : '';
+  return binaryExtensions.has(extension);
+}
+
+export function isWorkspaceAnalysisBinaryContent(content: Buffer): boolean {
+  return content.includes(0);
+}
 
 @Injectable()
 export class WorkspaceAnalysisCollector {
@@ -65,6 +75,12 @@ export class WorkspaceAnalysisCollector {
         continue;
       }
       const content = await this.blob(token, input, entry.sha);
+      if (content === null) {
+        eligibleFiles -= 1;
+        exclusions['binary-content'] = (exclusions['binary-content'] ?? 0) + 1;
+        files.push({ path: entry.path, blobSha: entry.sha, size: entry.size, language: this.language(entry.path), disposition: 'EXCLUDED', exclusionReason: 'binary-content', content: null });
+        continue;
+      }
       const truncated = content.length > MAX_CONTENT_CHARS;
       const bounded = content.slice(0, MAX_CONTENT_CHARS);
       analyzedFiles += 1;
@@ -116,11 +132,11 @@ export class WorkspaceAnalysisCollector {
     return { truncated: value.truncated, entries };
   }
 
-  private async blob(token: string, input: WorkspaceAnalysisRepositoryInput, sha: string): Promise<string> {
+  private async blob(token: string, input: WorkspaceAnalysisRepositoryInput, sha: string): Promise<string | null> {
     const value = await this.api(`/repos/${encodeURIComponent(input.owner)}/${encodeURIComponent(input.name)}/git/blobs/${sha}`, `Bearer ${token}`, {}, 512 * 1024) as { encoding?: unknown; content?: unknown };
     if (value.encoding !== 'base64' || typeof value.content !== 'string') throw new Error('GitHub blob response was invalid.');
     const decoded = Buffer.from(value.content.replace(/\s/g, ''), 'base64');
-    if (decoded.includes(0)) throw new Error('GitHub returned binary content for an eligible source file.');
+    if (isWorkspaceAnalysisBinaryContent(decoded)) return null;
     return decoded.toString('utf8');
   }
 
@@ -151,8 +167,7 @@ export class WorkspaceAnalysisCollector {
     const lower = path.toLowerCase();
     if (lower.split('/').some((part) => ['vendor', 'node_modules', 'dist', 'build', 'coverage', '.next', '.git'].includes(part))) return 'generated-or-vendored';
     if (size > MAX_FILE_BYTES) return 'oversized-file';
-    const extension = lower.includes('.') ? lower.split('.').pop() ?? '' : '';
-    if (binaryExtensions.has(extension)) return 'binary-file';
+    if (isWorkspaceAnalysisBinaryPath(lower)) return 'binary-file';
     return null;
   }
 

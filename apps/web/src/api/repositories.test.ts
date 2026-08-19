@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   RepositoryApiError,
+  forgetRepository,
   getRepository,
   listRepositories,
   setRepositoryTracking,
@@ -53,12 +54,12 @@ describe("repository API client", () => {
 
   it("synchronizes and toggles tracking with cookie credentials and in-memory CSRF", async () => {
     const fetchMock = vi.fn()
-      .mockResolvedValueOnce(jsonResponse({ accessibleRepositoryCount: 2 }))
+      .mockResolvedValueOnce(jsonResponse({ accessibleRepositoryCount: 2, activeRepositoryCount: 2, removedRepositoryCount: 0 }))
       .mockResolvedValueOnce(jsonResponse({ repositoryId: "repo_01", trackingEnabled: true }))
       .mockResolvedValueOnce(jsonResponse({ repositoryId: "repo_01", trackingEnabled: false }));
     vi.stubGlobal("fetch", fetchMock);
 
-    await expect(synchronizeRepositories("csrf-live")).resolves.toEqual({ accessibleRepositoryCount: 2 });
+    await expect(synchronizeRepositories("csrf-live")).resolves.toEqual({ accessibleRepositoryCount: 2, activeRepositoryCount: 2, removedRepositoryCount: 0 });
     await expect(setRepositoryTracking("repo_01", true, "csrf-live")).resolves.toMatchObject({ trackingEnabled: true });
     await expect(setRepositoryTracking("repo_01", false, "csrf-live")).resolves.toMatchObject({ trackingEnabled: false });
 
@@ -67,6 +68,17 @@ describe("repository API client", () => {
       ["http://localhost:3001/api/v1/repositories/repo_01/tracking", "POST", { "x-csrf-token": "csrf-live" }],
       ["http://localhost:3001/api/v1/repositories/repo_01/tracking", "DELETE", { "x-csrf-token": "csrf-live" }],
     ]);
+  });
+
+  it("forgets a removed repository with CSRF and validates the tombstone response", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ repositoryId: "repo_01", forgotten: true }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(forgetRepository("repo_01", "csrf-live")).resolves.toEqual({ repositoryId: "repo_01", forgotten: true });
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://localhost:3001/api/v1/repositories/repo_01/forget",
+      expect.objectContaining({ method: "DELETE", headers: { "x-csrf-token": "csrf-live" } }),
+    );
   });
 
   it("maps repository lifecycle errors to safe actionable messages", async () => {

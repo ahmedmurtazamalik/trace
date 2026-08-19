@@ -1,16 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { AuthShell } from "@/components/auth/auth-shell";
-import { useAuthSession } from "@/auth/session-provider";
-import { RegisterForm } from "./register-form";
 
 export function RegisterRoute() {
-  const router = useRouter();
-  const { establishSession } = useAuthSession();
-  return <AuthShell title="Create your workspace." description="Start with a Trace account, then connect development sources." note="Trace uses the same frozen validation contract as the API and keeps session credentials out of browser storage.">
-    <RegisterForm onAuthenticated={(session) => { establishSession(session); router.replace("/dashboard"); }} />
-    <div className="auth-links"><span>Already have an account?</span><Link href="/login">Sign in</Link></div>
+  return <AuthShell title="Account creation is closed." description="Trace is moving to verified GitHub sign-in so repository identity and account identity match." note="Existing Trace accounts remain available during the transition.">
+    <div className="auth-alert" role="status">Public username registration is disabled. GitHub signup will replace it.</div>
+    <div className="auth-links"><Link href="/login">Sign in with an existing account</Link></div>
   </AuthShell>;
 }

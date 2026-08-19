@@ -3,7 +3,7 @@ import { createHmac, timingSafeEqual } from 'node:crypto';
 import type { TraceConfig } from '@trace/config';
 import { Prisma, PrismaService, type Repository, type UserRepository } from '@trace/database';
 import type { GithubAuthorizationAdapter, GithubRepositoryAccess } from '@trace/github';
-import type { RepositoryDetailResponse, RepositoryListQuery, RepositoryListResponse, RepositoryMembershipResponse, RepositorySummary, RepositoryTrackingResponse } from '@trace/shared';
+import type { RepositoryDetailResponse, RepositoryForgottenResponse, RepositoryListQuery, RepositoryListResponse, RepositoryMembershipResponse, RepositorySummary, RepositorySynchronizationResponse, RepositoryTrackingResponse } from '@trace/shared';
 import { repositoryListQuerySchema } from '@trace/shared';
 import { GITHUB_AUTHORIZATION_ADAPTER } from '../github/github.tokens';
 import { TRACE_CONFIG } from '../../common/config/config.token';
@@ -24,6 +24,7 @@ export class RepositoriesService {
     const rows = await this.prisma.userRepository.findMany({
       where: {
         userId,
+        forgottenAt: null,
         removedAt: query.visibility === 'removed' ? { not: null } : null,
         ...(search === undefined ? {} : {
           repository: {
@@ -66,8 +67,8 @@ export class RepositoriesService {
   }
 
   async detail(userId: string, repositoryId: string): Promise<RepositoryDetailResponse> {
-    const row = await this.prisma.userRepository.findUnique({
-      where: { userId_repositoryId: { userId, repositoryId } },
+    const row = await this.prisma.userRepository.findFirst({
+      where: { userId, repositoryId, forgottenAt: null },
       include: {
         repository: {
           include: {
@@ -76,7 +77,7 @@ export class RepositoriesService {
         },
       },
     });
-    if (row === null) throw this.error('REPOSITORY_NOT_FOUND', 'Repository not found.', HttpStatus.NOT_FOUND);
+    if (row === null || row.forgottenAt !== null) throw this.error('REPOSITORY_NOT_FOUND', 'Repository not found.', HttpStatus.NOT_FOUND);
     const activitySummary = (await this.activitySummaries(userId, [repositoryId])).get(repositoryId);
     return { repository: this.summary(row, userId, activitySummary) };
   }
@@ -89,7 +90,7 @@ export class RepositoriesService {
         where: { userId_repositoryId: { userId, repositoryId } },
         include: { repository: { include: { installation: { include: { githubAccount: true } } } } },
       });
-      if (row === null) throw this.error('REPOSITORY_NOT_FOUND', 'Repository not found.', HttpStatus.NOT_FOUND);
+      if (row === null || row.forgottenAt !== null) throw this.error('REPOSITORY_NOT_FOUND', 'Repository not found.', HttpStatus.NOT_FOUND);
       if (enabled && row.removedAt !== null) {
         throw this.error('REPOSITORY_REMOVED', 'Restore the repository before enabling tracking.', HttpStatus.CONFLICT);
       }
@@ -127,7 +128,7 @@ export class RepositoriesService {
       const row = await transaction.userRepository.findUnique({
         where: { userId_repositoryId: { userId, repositoryId } },
       });
-      if (row === null) throw this.error('REPOSITORY_NOT_FOUND', 'Repository not found.', HttpStatus.NOT_FOUND);
+      if (row === null || row.forgottenAt !== null) throw this.error('REPOSITORY_NOT_FOUND', 'Repository not found.', HttpStatus.NOT_FOUND);
       const changed = removed ? row.removedAt === null : row.removedAt !== null;
       const updated = await transaction.userRepository.update({
         where: { userId_repositoryId: { userId, repositoryId } },
@@ -149,7 +150,52 @@ export class RepositoriesService {
     });
   }
 
-  async synchronize(userId: string): Promise<{ accessibleRepositoryCount: number }> {
+  async forget(userId: string, repositoryId: string): Promise<RepositoryForgottenResponse> {
+    return this.prisma.$transaction(async (transaction) => {
+      await transaction.$queryRaw`SELECT id FROM users WHERE id = ${userId} FOR UPDATE`;
+      await transaction.$queryRaw`SELECT id FROM user_repositories WHERE user_id = ${userId} AND repository_id = ${repositoryId} FOR UPDATE`;
+      const row = await transaction.userRepository.findUnique({
+        where: { userId_repositoryId: { userId, repositoryId } },
+      });
+      if (row === null || row.forgottenAt !== null) {
+        throw this.error('REPOSITORY_NOT_FOUND', 'Repository not found.', HttpStatus.NOT_FOUND);
+      }
+      if (row.removedAt === null) {
+        throw this.error('REPOSITORY_NOT_REMOVED', 'Remove the repository before forgetting it.', HttpStatus.CONFLICT);
+      }
+      const assignments = await transaction.workspaceRepository.findMany({
+        where: { repositoryId },
+        select: {
+          id: true,
+          workspace: {
+            select: { memberships: { where: { userId, role: 'MANAGER' }, select: { id: true } } },
+          },
+        },
+      });
+      if (assignments.some((assignment) => assignment.workspace.memberships.length === 0)) {
+        throw this.error('REPOSITORY_IN_USE', 'Remove the repository from Workspaces you do not manage before forgetting it.', HttpStatus.CONFLICT);
+      }
+      if (assignments.length > 0) {
+        await transaction.workspaceRepository.deleteMany({ where: { id: { in: assignments.map((assignment) => assignment.id) } } });
+      }
+      await transaction.userRepository.update({
+        where: { userId_repositoryId: { userId, repositoryId } },
+        data: { trackingEnabled: false, forgottenAt: new Date() },
+      });
+      await transaction.auditLog.create({
+        data: {
+          actorUserId: userId,
+          action: 'repository.forgotten',
+          targetType: 'repository',
+          targetId: repositoryId,
+          metadata: { removedWorkspaceAssignmentCount: assignments.length },
+        },
+      });
+      return { repositoryId, forgotten: true };
+    });
+  }
+
+  async synchronize(userId: string): Promise<RepositorySynchronizationResponse> {
     const account = await this.prisma.githubAccount.findUnique({
       where: { userId },
       include: { installations: true },
@@ -174,7 +220,11 @@ export class RepositoriesService {
       const acceptedRepositoryCount = await this.persistSynchronization(userId, account.id, installation.id, reservation.generation, reservation.sequence, repositories);
       accessibleRepositoryCount += acceptedRepositoryCount;
     }
-    return { accessibleRepositoryCount };
+    const [activeRepositoryCount, removedRepositoryCount] = await Promise.all([
+      this.prisma.userRepository.count({ where: { userId, forgottenAt: null, removedAt: null } }),
+      this.prisma.userRepository.count({ where: { userId, forgottenAt: null, removedAt: { not: null } } }),
+    ]);
+    return { accessibleRepositoryCount, activeRepositoryCount, removedRepositoryCount };
   }
 
   private async reserveSynchronization(userId: string, githubAccountId: string, installationId: string): Promise<{ generation: number; sequence: bigint }> {

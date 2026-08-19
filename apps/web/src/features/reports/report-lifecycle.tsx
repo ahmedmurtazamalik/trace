@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Badge, Button, Card } from "@trace/ui";
 import type { ReportCreateRequest, ReportCreateResponse, ReportListQuery, ReportListResponse, ReportStatus, ReportSummary } from "@trace/shared";
+import { formatPakistanDateTime } from "@/lib/pakistan-time";
 
 export type LoadReports = (query: ReportListQuery, signal?: AbortSignal) => Promise<ReportListResponse>;
 export type CreateReport = (request: ReportCreateRequest, signal?: AbortSignal) => Promise<ReportCreateResponse>;
@@ -15,7 +16,6 @@ function dateLabel(value: string) {
 }
 function createError(cause: unknown) {
   const code = typeof cause === "object" && cause !== null && "code" in cause ? cause.code : undefined;
-  if (code === "REPORT_ALREADY_EXISTS") return "A report already exists for this date. Open it from report history.";
   if (code === "RATE_LIMITED") return "Too many report requests. Wait before trying again.";
   if (code === "REPORT_GENERATION_UNAVAILABLE") return "Report generation is temporarily unavailable. Try again later.";
   if (code === "CSRF_INVALID") return "Your security session has expired. Refresh the page and sign in again if needed.";
@@ -100,7 +100,7 @@ export function ReportLifecycle({ loadReports, createReport, timezone, initialDa
         : loading ? <Card className="report-state-card" role="status">Loading report history…</Card>
         : reports.length === 0 ? <Card className="report-state-card"><h3>No reports yet</h3><p>Choose a date to request your first development activity report.</p></Card>
         : <ul className="report-history-list">{reports.map((report) => <li key={report.id}><Card className={`report-history-card report-status-${report.status}`}>
-          <div><Badge>{statusLabels[report.status]}</Badge><h3>{dateLabel(report.reportDate)}</h3><p>{report.timezone} · Requested {new Date(report.createdAt).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short", timeZone: report.timezone })}</p>{report.errorMessage && <p className="report-failure-message">{report.errorMessage}</p>}</div>
+          <div><Badge>{statusLabels[report.status]}</Badge><h3>{dateLabel(report.reportDate)}</h3><p>{report.timezone} · Requested {formatPakistanDateTime(report.createdAt)}</p>{report.errorMessage && <p className="report-failure-message">{report.errorMessage}</p>}</div>
           <div className="report-history-actions">
             <Link
               className="trace-button trace-button-secondary"

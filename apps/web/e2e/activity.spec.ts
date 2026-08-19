@@ -79,9 +79,9 @@ test("invalid activity query values fall back without crashing", async ({ page }
   await expect(page.getByLabel("Development activity timeline")).toBeVisible();
 });
 
-test("activity date filtering follows the selected timezone", async ({ page }) => {
+test("activity date filtering always follows Pakistan Standard Time", async ({ page }) => {
   await page.goto("/activity?date=2026-08-11&timezone=Pacific%2FHonolulu");
-  await expect(page.getByRole("heading", { name: "Refine activity timeline" })).toBeVisible();
-  await page.goto("/activity?date=2026-08-12&timezone=Pacific%2FHonolulu");
   await expect(page.getByRole("heading", { name: "No activity matches these filters" })).toBeVisible();
+  await page.goto("/activity?date=2026-08-12&timezone=Pacific%2FHonolulu");
+  await expect(page.getByRole("heading", { name: "Refine activity timeline" })).toBeVisible();
 });

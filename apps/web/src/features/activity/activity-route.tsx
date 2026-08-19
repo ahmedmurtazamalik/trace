@@ -6,6 +6,7 @@ import { ActivityExperience, type ActivityFilters } from "./activity-experience"
 import { activityFixtureItems } from "@/mocks/fixtures/activity";
 import { listActivity } from "@/api/activity";
 import { listRepositories } from "@/api/repositories";
+import { PAKISTAN_TIMEZONE } from "@/lib/pakistan-time";
 
 function localDate(value: string, timezone: string) {
   const parts = new Intl.DateTimeFormat("en-US", { timeZone: timezone, year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(new Date(value));
@@ -35,12 +36,6 @@ function validDate(value: string | null) {
   const result = activityListQuerySchema.safeParse({ date: value, timezone: "UTC" });
   return result.success ? result.data.date : undefined;
 }
-function validTimezone(value: string | null) {
-  if (!value) return "UTC";
-  const result = activityListQuerySchema.safeParse({ timezone: value });
-  return result.success ? result.data.timezone : "UTC";
-}
-
 export function ActivityRoute() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -72,6 +67,5 @@ export function ActivityRoute() {
     const url = next.size === 0 ? pathname : `${pathname}?${next.toString()}`;
     window.history.replaceState(window.history.state, "", url);
   }
-  const timezone = validTimezone(searchParams.get("timezone"));
-  return <ActivityExperience loadActivity={listActivity} loadRepositories={listRepositories} initialFilters={initialFilters} timezone={timezone} onFiltersChange={update} />;
+  return <ActivityExperience loadActivity={listActivity} loadRepositories={listRepositories} initialFilters={initialFilters} timezone={PAKISTAN_TIMEZONE} onFiltersChange={update} />;
 }

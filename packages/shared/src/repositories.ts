@@ -40,14 +40,22 @@ export const repositoryMembershipResponseSchema = z.object({
   trackingEnabled: z.boolean(),
   removed: z.boolean(),
 }).strict();
+export const repositoryForgottenResponseSchema = z.object({
+  repositoryId: z.string().min(1),
+  forgotten: z.literal(true),
+}).strict();
 export const repositorySynchronizationResponseSchema = z.object({
   accessibleRepositoryCount: z.number().int().nonnegative(),
+  activeRepositoryCount: z.number().int().nonnegative(),
+  removedRepositoryCount: z.number().int().nonnegative(),
 }).strict();
 
 export const repositoryErrorCodeSchema = z.enum([
   'REPOSITORY_NOT_FOUND',
   'REPOSITORY_ACCESS_REMOVED',
   'REPOSITORY_REMOVED',
+  'REPOSITORY_NOT_REMOVED',
+  'REPOSITORY_IN_USE',
   'GITHUB_INSTALLATION_REQUIRED',
   'GITHUB_INSTALLATION_SUSPENDED',
 ]);
@@ -58,5 +66,6 @@ export type RepositoryListResponse = z.infer<typeof repositoryListResponseSchema
 export type RepositoryDetailResponse = z.infer<typeof repositoryDetailResponseSchema>;
 export type RepositoryTrackingResponse = z.infer<typeof repositoryTrackingResponseSchema>;
 export type RepositoryMembershipResponse = z.infer<typeof repositoryMembershipResponseSchema>;
+export type RepositoryForgottenResponse = z.infer<typeof repositoryForgottenResponseSchema>;
 export type RepositorySynchronizationResponse = z.infer<typeof repositorySynchronizationResponseSchema>;
 export type RepositoryErrorCode = z.infer<typeof repositoryErrorCodeSchema>;
