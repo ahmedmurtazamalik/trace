@@ -107,6 +107,32 @@ describe('GitHub authorization adapters', () => {
     }
   });
 
+  it('falls back to the user-scoped installation list when the exact installation is not yet visible', async () => {
+    const adapter = new RealGithubAuthorizationAdapter({
+      clientId: 'client-id', clientSecret: 'client-secret', appId: '123', privateKey: appPrivateKey,
+    });
+    const originalFetch = global.fetch;
+    try {
+      global.fetch = jest.fn()
+        .mockResolvedValueOnce(new Response(JSON.stringify({ access_token: 'token' }), { status: 200 }))
+        .mockResolvedValueOnce(new Response(JSON.stringify({ id: 583_231, login: 'fake-octocat' }), { status: 200 }))
+        .mockResolvedValueOnce(new Response(null, { status: 404 }))
+        .mockResolvedValueOnce(new Response(JSON.stringify({ installations: [{
+          id: 91,
+          account: { login: 'trace-fixture-org', type: 'Organization' },
+          suspended_at: null,
+        }] }), { status: 200 })) as typeof fetch;
+
+      await expect(adapter.verifyInstallation('code', 91n)).resolves.toEqual({
+        user: { id: 583_231n, username: 'fake-octocat', displayName: null, avatarUrl: null },
+        installation: { id: 91n, accountType: 'ORGANIZATION', accountLogin: 'trace-fixture-org', suspended: false },
+      });
+      expect(global.fetch).toHaveBeenCalledTimes(4);
+    } finally {
+      global.fetch = originalFetch;
+    }
+  });
+
   it('cancels every unused early-rejected response, including parallel verification siblings', async () => {
     const adapter = new RealGithubAuthorizationAdapter({
       clientId: 'client-id', clientSecret: 'client-secret', appId: '123', privateKey: 'invalid-test-key',
@@ -170,7 +196,9 @@ describe('GitHub authorization adapters', () => {
         .mockResolvedValueOnce(token)
         .mockResolvedValueOnce(verificationUserFailure.response)
         .mockResolvedValueOnce(installationSibling.response) as typeof fetch;
-      await expect(adapter.verifyInstallation('code', 91n)).rejects.toThrow('GitHub installation verification failed');
+      await expect(adapter.verifyInstallation('code', 91n)).rejects.toThrow(
+        'GitHub installation verification failed (user_status=500, installation_status=200)',
+      );
       expect(verificationUserFailure.cancel).toHaveBeenCalledTimes(1);
       expect(installationSibling.cancel).toHaveBeenCalledTimes(1);
 
