@@ -28,7 +28,7 @@ async function authenticated(page: Page) {
       if (repository) repository.removed = false;
       return route.fulfill({ status: 200, headers: corsHeaders, contentType: "application/json", body: JSON.stringify({ repositoryId: restoring, trackingEnabled: false, removed: false }) });
     }
-    if (url.pathname.endsWith("/sync")) return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ accessibleRepositoryCount: 1 }) });
+    if (url.pathname.endsWith("/sync")) return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ accessibleRepositoryCount: 1, activeRepositoryCount: 1, removedRepositoryCount: 0 }) });
     const detailId = segments.at(-1)?.startsWith("repo_") ? segments.at(-1) : undefined;
     if (detailId !== undefined && request.method() === "DELETE") {
       const repository = repositories.find((item) => item.id === detailId);
@@ -99,7 +99,7 @@ test("repository access and Trace tracking use live API contracts on desktop and
   expect((await removeResponse).status()).toBe(200);
   await expect(page.getByRole("link", { name: "trace-fixture-org/trace" })).toHaveCount(0);
   await page.getByRole("button", { name: "View removed repositories" }).click();
-  await expect(page.getByText("Removed repositories", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("1 removed repository shown")).toBeVisible();
   await expect(page.getByRole("link", { name: "trace-fixture-org/trace" })).toBeVisible();
   const restoreRequest = page.waitForRequest((request) => request.method() === "POST" && request.url().endsWith("/api/v1/repositories/repo_01/restore"));
   await page.getByRole("button", { name: "Restore trace-fixture-org/trace" }).click();

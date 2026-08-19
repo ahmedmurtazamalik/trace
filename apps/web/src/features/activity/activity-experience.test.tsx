@@ -145,6 +145,8 @@ describe("Day 5 activity experience", () => {
     const empty: ActivityListResponse = { items: [], pageInfo: { nextCursor: null, hasNextPage: false } };
     const { rerender } = render(<ActivityExperience loadActivity={vi.fn().mockResolvedValue(empty)} />);
     expect(await screen.findByRole("heading", { name: "No development activity yet" })).toBeInTheDocument();
+    expect(screen.getByText(/does not backfill older commits/i)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Review repository tracking" })).toHaveAttribute("href", "/repositories");
     rerender(<ActivityExperience loadActivity={vi.fn().mockRejectedValue(new Error("database password: super-secret"))} />);
     expect(await screen.findByRole("alert")).toHaveTextContent("Trace could not load activity");
     expect(screen.getByRole("alert")).not.toHaveTextContent("super-secret");

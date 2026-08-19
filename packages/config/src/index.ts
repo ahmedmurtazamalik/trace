@@ -14,6 +14,7 @@ const rawEnvironmentSchema = z
     SESSION_SECRET: optionalEnvironmentValue(z.string().min(32)),
     LOG_LEVEL: z.enum(['error', 'warn', 'info', 'debug']).default('info'),
     FRONTEND_ORIGIN: z.url().default('http://localhost:3000'),
+    PUBLIC_REGISTRATION_ENABLED: z.enum(['true', 'false']).optional(),
     GITHUB_APP_ID: optionalEnvironmentValue(z.string().min(1)),
     GITHUB_APP_SLUG: optionalEnvironmentValue(z.string().regex(/^[a-z0-9-]+$/)),
     GITHUB_APP_PRIVATE_KEY: optionalEnvironmentValue(z.string().min(1)),
@@ -67,6 +68,7 @@ export interface TraceConfig {
   sessionSecret?: string;
   logLevel: 'error' | 'warn' | 'info' | 'debug';
   frontendOrigin: string;
+  publicRegistrationEnabled: boolean;
   github: {
     appId?: string;
     appSlug?: string;
@@ -108,6 +110,9 @@ export function loadConfig(environment: NodeJS.ProcessEnv | Record<string, strin
     sessionSecret: value.SESSION_SECRET,
     logLevel: value.LOG_LEVEL,
     frontendOrigin: value.FRONTEND_ORIGIN,
+    publicRegistrationEnabled: value.PUBLIC_REGISTRATION_ENABLED === undefined
+      ? value.NODE_ENV === 'test'
+      : value.PUBLIC_REGISTRATION_ENABLED === 'true',
     github: {
       appId: value.GITHUB_APP_ID,
       appSlug: value.GITHUB_APP_SLUG,

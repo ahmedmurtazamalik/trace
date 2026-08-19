@@ -62,6 +62,9 @@ export class AuthService {
   ) {}
 
   async register(input: unknown, context: RequestContext): Promise<SessionResult> {
+    if (!this.config.publicRegistrationEnabled) {
+      throw new HttpException({ code: 'REGISTRATION_DISABLED', message: 'Public registration is disabled. Sign in with an existing account.' }, HttpStatus.FORBIDDEN);
+    }
     const parsed = this.parse(registerRequestSchema, input);
     const username = parsed.username.trim();
     const email = parsed.email?.trim().toLowerCase();

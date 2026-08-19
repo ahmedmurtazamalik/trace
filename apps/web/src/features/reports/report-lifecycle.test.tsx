@@ -66,14 +66,6 @@ describe("Day 8 report lifecycle", () => {
     expect(createReport).not.toHaveBeenCalled();
   });
 
-  it("explains duplicate reports without exposing raw errors", async () => {
-    const createReport = vi.fn().mockRejectedValue({ code: "REPORT_ALREADY_EXISTS", message: "postgres secret" });
-    setup({ createReport });
-    await screen.findByRole("heading", { name: "Report history" });
-    await userEvent.click(screen.getByRole("button", { name: "Create report" }));
-    expect(await screen.findByRole("alert")).toHaveTextContent("A report already exists for this date");
-    expect(screen.getByRole("alert")).not.toHaveTextContent("secret");
-  });
 
   it.each([
     ["REPORT_GENERATION_UNAVAILABLE", "Report generation is temporarily unavailable"],

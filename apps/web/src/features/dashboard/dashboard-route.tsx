@@ -6,6 +6,7 @@ import { DashboardExperience, type DashboardFilters } from "./dashboard-experien
 import { dashboardFixtures } from "@/mocks/fixtures/dashboard";
 import { getDashboard } from "@/api/dashboard";
 import { listRepositories } from "@/api/repositories";
+import { PAKISTAN_TIMEZONE, pakistanDateKey } from "@/lib/pakistan-time";
 
 function localDate(value: string, timezone: string) {
   const parts = new Intl.DateTimeFormat("en-US", { timeZone: timezone, year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(new Date(value));
@@ -37,16 +38,15 @@ export function DashboardRoute() {
   const pathname = usePathname();
   const router = useRouter();
   const searchParams = useSearchParams();
-  const requestedTimezone = searchParams.get("timezone") || "UTC";
-  const fallbackDate = dateInTimezone(new Date(), requestedTimezone);
+  const fallbackDate = pakistanDateKey(new Date());
   const candidate = dashboardQuerySchema.safeParse({
     date: searchParams.get("date") || fallbackDate,
-    timezone: requestedTimezone,
+    timezone: PAKISTAN_TIMEZONE,
     ...(searchParams.get("repositoryId") ? { repositoryId: searchParams.get("repositoryId") } : {}),
   });
   const { date, timezone, repositoryId } = candidate.success
     ? candidate.data
-    : dashboardQuerySchema.parse({ date: dateInTimezone(new Date(), "UTC"), timezone: "UTC" });
+    : dashboardQuerySchema.parse({ date: pakistanDateKey(new Date()), timezone: PAKISTAN_TIMEZONE });
   function update(filters: DashboardFilters) {
     const next = new URLSearchParams(searchParams.toString());
     next.set("date", filters.date);

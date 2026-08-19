@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState, type MouseEvent, type ReactNode } fro
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { SessionControls } from "./session-controls";
+import { ThemeToggle } from "./theme-toggle";
 import { useReportDraftRecovery } from "./report-draft-recovery";
 import { confirmDiscardUnsavedReportChanges, useUnsavedNavigationGuard } from "./unsaved-navigation";
 import {
@@ -13,12 +14,14 @@ import {
   LayoutDashboard,
   Radio,
   Settings,
+  UsersRound,
   Workflow,
 } from "lucide-react";
 
 const items = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/repositories", label: "Repositories", icon: BookOpen },
+  { href: "/workspaces", label: "Workspaces", icon: UsersRound },
   { href: "/activity", label: "Activity", icon: Activity },
   { href: "/reports", label: "Reports", icon: Workflow },
   { href: "/github", label: "GitHub", icon: Github },
@@ -110,10 +113,6 @@ export function AppShell({ children }: { children: ReactNode }) {
         </Link>
         <p className="workspace-label">Command center</p>
         <Navigation dirty={reportDirty} onDiscard={discardUnsavedReport} />
-        <div className="connection-card">
-          <span className="status-orbit"><span className="status-dot" /></span>
-          <div><strong>Integration workspace</strong><small>Contract-validated frontend</small></div>
-        </div>
       </aside>
       <div className="content-column">
         <header className="topbar">
@@ -121,13 +120,11 @@ export function AppShell({ children }: { children: ReactNode }) {
             <span className="eyebrow">Trace workspace</span>
             <strong>Development activity</strong>
           </div>
-          <SessionControls reportDirty={reportDirty} onDiscardUnsavedReport={discardUnsavedReport} />
+          <div className="topbar-actions">
+            <ThemeToggle />
+            <SessionControls reportDirty={reportDirty} onDiscardUnsavedReport={discardUnsavedReport} />
+          </div>
         </header>
-        <div className="data-disclosure">
-          <span className="disclosure-icon"><Radio size={14} aria-hidden="true" /></span>
-          <div><strong>Environment-aware data</strong><span>Production routes use authorized APIs; automated tests use disclosed contract fixtures.</span></div>
-          <span className="preview-pill">Integration environment</span>
-        </div>
         <main id="main-content" tabIndex={-1}>{children}</main>
         <Navigation dirty={reportDirty} mobile onDiscard={discardUnsavedReport} />
       </div>

@@ -15,6 +15,6 @@ export function LoginRoute() {
       establishSession(session);
       router.replace(safeReturnPath(searchParams.get("returnTo")));
     }} />
-    <div className="auth-links"><Link href="/forgot-password">Forgot password?</Link><Link href="/register">Create an account</Link></div>
+    <div className="auth-links"><Link href="/forgot-password">Forgot password?</Link></div>
   </AuthShell>;
 }

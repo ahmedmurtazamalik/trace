@@ -134,6 +134,46 @@ describe("Day 9 structured report editor", () => {
     }, expect.any(AbortSignal)));
   });
 
+  it("rebases repository and contributor drafts by opaque IDs when the latest revision reorders evidence", async () => {
+    const secondRepository = {
+      repositoryId: "repo_2",
+      summary: "Second repository summary.",
+      contributors: [{ contributorId: "contributor_2", summary: "Second contributor summary.", accomplishments: ["Second accomplishment."] }],
+    };
+    const original: ReportDetail = {
+      ...report,
+      content: { ...report.content!, repositories: [...report.content!.repositories, secondRepository] },
+    };
+    const save = vi.fn();
+    const view = render(<ReportEditor report={original} saveRevision={save} contributorLabels={{ contributor_1: "Contributor One", contributor_2: "Contributor Two" }} />);
+
+    fireEvent.change(screen.getByLabelText("Repository repo_1 summary"), { target: { value: "Retained repo one draft." } });
+    fireEvent.change(screen.getByLabelText("Contributor One summary"), { target: { value: "Retained contributor one draft." } });
+
+    const latest: ReportDetail = {
+      ...original,
+      revision: 2,
+      revisionSource: "manual",
+      content: { ...original.content!, repositories: [secondRepository, original.content!.repositories[0]!] },
+    };
+    view.rerender(<ReportEditor report={latest} saveRevision={save} contributorLabels={{ contributor_1: "Contributor One", contributor_2: "Contributor Two" }} />);
+
+    await waitFor(() => expect(screen.getByText("Revision 2 · Manually edited")).toBeInTheDocument());
+    expect(screen.getByLabelText("Repository repo_1 summary")).toHaveValue("Retained repo one draft.");
+    expect(screen.getByLabelText("Contributor One summary")).toHaveValue("Retained contributor one draft.");
+    fireEvent.click(screen.getByRole("button", { name: "Save revision" }));
+    await waitFor(() => expect(save).toHaveBeenCalledWith("report-completed", {
+      expectedRevision: 2,
+      prosePatch: {
+        repositories: [{
+          repositoryId: "repo_1",
+          summary: "Retained repo one draft.",
+          contributors: [{ contributorId: "contributor_1", summary: "Retained contributor one draft." }],
+        }],
+      },
+    }, expect.any(AbortSignal)));
+  });
+
   it("aborts and ignores an old save when a different report replaces the editor", async () => {
     let resolveOld: ((value: ReportRevisionUpdateResponse) => void) | undefined;
     let oldSignal: AbortSignal | undefined;

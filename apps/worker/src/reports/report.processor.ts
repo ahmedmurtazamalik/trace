@@ -6,6 +6,12 @@ import {
   type ReportContent,
   type StructuredReportProvider,
 } from './report-provider';
+import {
+  markWorkspaceReportFailed,
+  markWorkspaceReportPending,
+  markWorkspaceReportProcessing,
+} from './workspace-report-lifecycle';
+import { DIRECT_REPORT_DELIVERY, type ReportDeliveryContext } from './report-delivery';
 
 export interface ReportProcessorOptions {
   maximumAttempts?: number;
@@ -16,7 +22,6 @@ const SAFE_FAILURE = 'Report generation failed.';
 const RETRYABLE_PROCESSING_ERROR = 'REPORT_PROCESSING_RETRY';
 
 export class ReportProcessor {
-  private readonly maximumAttempts: number;
   private readonly leaseDurationMs: number;
 
   constructor(
@@ -24,9 +29,9 @@ export class ReportProcessor {
     private readonly provider: StructuredReportProvider,
     options: ReportProcessorOptions = {},
   ) {
-    this.maximumAttempts = options.maximumAttempts ?? 3;
+    const configuredAttempts = options.maximumAttempts ?? 3;
     this.leaseDurationMs = options.leaseDurationMs ?? 180_000;
-    if (!Number.isInteger(this.maximumAttempts) || this.maximumAttempts < 1 || this.maximumAttempts > 5) {
+    if (!Number.isInteger(configuredAttempts) || configuredAttempts < 1 || configuredAttempts > 5) {
       throw new Error('Report provider attempts must be between 1 and 5.');
     }
     if (!Number.isInteger(this.leaseDurationMs) || this.leaseDurationMs < 30_000 || this.leaseDurationMs > 600_000) {
@@ -34,7 +39,7 @@ export class ReportProcessor {
     }
   }
 
-  async process(reportId: string): Promise<void> {
+  async process(reportId: string, delivery: ReportDeliveryContext = DIRECT_REPORT_DELIVERY): Promise<void> {
     if (!/^[A-Za-z0-9_-]{1,128}$/.test(reportId)) return;
     const token = randomUUID();
     let claim: Awaited<ReturnType<ReportProcessor['claim']>>;
@@ -49,29 +54,34 @@ export class ReportProcessor {
     try {
       const parsedSnapshot = reportInputSnapshotSchema.safeParse(claim.inputSnapshot);
       if (!parsedSnapshot.success) {
-        await this.failClaim(reportId, token);
-        return;
+        return this.finishGenerationFailure(reportId, token, delivery, false);
       }
 
-      let content: ReportContent | undefined;
-      for (let attempt = 1; attempt <= this.maximumAttempts; attempt += 1) {
-        try {
-          content = validateGroundedReportContent(await this.provider.generate(parsedSnapshot.data), parsedSnapshot.data);
-          break;
-        } catch (error) {
-          if (permanentFailure(error) || attempt === this.maximumAttempts) break;
-        }
-      }
-
-      if (content === undefined) {
-        await this.failClaim(reportId, token);
-        return;
+      let content: ReportContent;
+      try {
+        content = validateGroundedReportContent(await this.provider.generate(parsedSnapshot.data), parsedSnapshot.data);
+      } catch (error) {
+        return this.finishGenerationFailure(reportId, token, delivery, permanentFailure(error));
       }
       await this.persistClaim(reportId, token, content);
     } catch {
       await this.releaseClaim(reportId, token).catch(() => undefined);
       throw new Error(RETRYABLE_PROCESSING_ERROR);
     }
+  }
+
+  private async finishGenerationFailure(
+    reportId: string,
+    token: string,
+    delivery: ReportDeliveryContext,
+    permanent: boolean,
+  ): Promise<void> {
+    if (permanent || delivery.finalDelivery) {
+      await this.failClaim(reportId, token);
+      return;
+    }
+    await this.releaseClaim(reportId, token);
+    throw new Error(RETRYABLE_PROCESSING_ERROR);
   }
 
   private async claim(reportId: string, token: string): Promise<
@@ -105,6 +115,7 @@ export class ReportProcessor {
           AND NOT EXISTS (SELECT 1 FROM "report_revisions" WHERE "report_id" = ${reportId})
       `;
       if (claimed !== 1) return { kind: 'done' };
+      await markWorkspaceReportProcessing(transaction, reportId);
       return { kind: 'claimed', inputSnapshot: report.inputSnapshot };
     });
   }
@@ -126,6 +137,7 @@ export class ReportProcessor {
           AND NOT EXISTS (SELECT 1 FROM "report_revisions" WHERE "report_id" = ${reportId})
       `;
       if (updated !== 1) throw new Error(RETRYABLE_PROCESSING_ERROR);
+      await markWorkspaceReportFailed(transaction, reportId);
     });
   }
 
@@ -179,6 +191,7 @@ export class ReportProcessor {
           AND NOT EXISTS (SELECT 1 FROM "report_revisions" WHERE "report_id" = ${reportId})
       `;
       if (updated !== 1) throw new Error(RETRYABLE_PROCESSING_ERROR);
+      await markWorkspaceReportPending(transaction, reportId);
     });
   }
 

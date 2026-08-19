@@ -6,6 +6,7 @@ import { ExternalLink, ShieldCheck, ShieldX } from "lucide-react";
 import { Badge, Button, Card } from "@trace/ui";
 import type { RepositoryDetailResponse } from "@trace/shared";
 import { getRepository, RepositoryApiError } from "@/api/repositories";
+import { formatPakistanDateTime } from "@/lib/pakistan-time";
 
 type LoadRepository = (id: string, options?: { signal?: AbortSignal }) => Promise<RepositoryDetailResponse>;
 
@@ -29,7 +30,7 @@ export function RepositoryDetailPanel({ repositoryId, loadRepository = getReposi
     <Card className={`repository-card repository-detail-card${repository.accessible ? "" : " repository-card-historical"}`}>
       <div className="repository-card-heading"><div><span className="eyebrow">{repository.owner}</span><h2>{repository.fullName}</h2></div><Badge>{repository.private ? "Private" : "Public"}</Badge></div>
       <div className="repository-label-grid"><div>{repository.accessible ? <ShieldCheck aria-hidden="true" size={18} /> : <ShieldX aria-hidden="true" size={18} />}<span><strong>{repository.accessible ? "GitHub access active" : "Historical access only"}</strong><small>{repository.accessible ? "Authorized by the GitHub App" : "Previously synchronized activity remains in Trace"}</small></span></div><div><span className={`repository-tracking-dot${repository.trackingEnabled ? " is-active" : ""}`} aria-hidden="true" /><span><strong>{repository.trackingEnabled ? "Tracked by Trace" : "Not tracked by Trace"}</strong><small>Tracking is independent from GitHub authorization</small></span></div></div>
-      <dl className="repository-metadata"><div><dt>Default branch</dt><dd>{repository.defaultBranch}</dd></div><div><dt>Contributors</dt><dd>{repository.contributorCount}</dd></div><div><dt>Last retained activity</dt><dd>{repository.lastActivityAt === null ? "None retained" : new Date(repository.lastActivityAt).toLocaleString()}</dd></div></dl>
+      <dl className="repository-metadata"><div><dt>Default branch</dt><dd>{repository.defaultBranch}</dd></div><div><dt>Contributors</dt><dd>{repository.contributorCount}</dd></div><div><dt>Last retained activity</dt><dd>{repository.lastActivityAt === null ? "None retained" : formatPakistanDateTime(repository.lastActivityAt)}</dd></div></dl>
       {repository.url !== null && <a className="repository-link" href={repository.url} target="_blank" rel="noreferrer">Open on GitHub <ExternalLink aria-hidden="true" size={15} /></a>}
     </Card>
   </div>;

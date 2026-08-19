@@ -2,6 +2,7 @@ import {
   apiErrorSchema,
   csrfHeaderName,
   repositoryDetailResponseSchema,
+  repositoryForgottenResponseSchema,
   repositoryErrorCodeSchema,
   repositoryListQuerySchema,
   repositoryListResponseSchema,
@@ -10,6 +11,7 @@ import {
   repositoryTrackingResponseSchema,
   type RepositoryDetailResponse,
   type RepositoryErrorCode,
+  type RepositoryForgottenResponse,
   type RepositoryListQuery,
   type RepositoryListResponse,
   type RepositoryMembershipResponse,
@@ -25,6 +27,8 @@ const messages: Record<ClientCode, string> = {
   REPOSITORY_NOT_FOUND: "This repository is not available to your Trace account.",
   REPOSITORY_ACCESS_REMOVED: "GitHub access to this repository has been removed.",
   REPOSITORY_REMOVED: "Restore this repository before enabling tracking.",
+  REPOSITORY_NOT_REMOVED: "Remove this repository before forgetting it from Trace.",
+  REPOSITORY_IN_USE: "Remove this repository from Workspaces you do not manage before forgetting it.",
   GITHUB_INSTALLATION_REQUIRED: "Connect GitHub and install the Trace GitHub App before synchronizing repositories.",
   GITHUB_INSTALLATION_SUSPENDED: "The GitHub App installation is suspended. Restore it before synchronizing repositories.",
   UNAUTHENTICATED: "Your session has expired. Please sign in again.",
@@ -101,4 +105,8 @@ export function setRepositoryRemoved(id: string, removed: boolean, csrfToken: st
     ? `/api/v1/repositories/${encodeURIComponent(id)}`
     : `/api/v1/repositories/${encodeURIComponent(id)}/restore`;
   return request(path, removed ? "DELETE" : "POST", repositoryMembershipResponseSchema, options, csrfToken);
+}
+
+export function forgetRepository(id: string, csrfToken: string, options: Options = {}): Promise<RepositoryForgottenResponse> {
+  return request(`/api/v1/repositories/${encodeURIComponent(id)}/forget`, "DELETE", repositoryForgottenResponseSchema, options, csrfToken);
 }

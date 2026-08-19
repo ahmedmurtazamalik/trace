@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 
 const css = readFileSync(resolve(process.cwd(), "app/globals.css"), "utf8");
 const appShell = readFileSync(resolve(process.cwd(), "src/components/shell/app-shell.tsx"), "utf8");
+const githubPanel = readFileSync(resolve(process.cwd(), "src/features/github/github-connection-panel.tsx"), "utf8");
 
 describe("Editorial Console visual system", () => {
   it("uses the approved Preview 3 palette, square surfaces, and offset depth", () => {
@@ -16,9 +17,42 @@ describe("Editorial Console visual system", () => {
     expect(css).toContain("border-radius: 0;");
   });
 
-  it("does not publish unfinished Workspace navigation with the theme", () => {
-    expect(appShell).not.toContain('href: "/workspaces"');
-    expect(appShell).not.toContain("UsersRound");
+  it("matches the approved Terminal Noir palette and surface treatment", () => {
+    expect(css).toContain('html[data-theme="night"]');
+    expect(css).toContain("--night-canvas: #05070a;");
+    expect(css).toContain("--night-panel: #0a0e13;");
+    expect(css).toContain("--night-line: #1c2733;");
+    expect(css).toContain("--night-signal: #19df91;");
+    expect(css).toMatch(/html\[data-theme="night"\] body\s*\{[^}]*radial-gradient\(circle at 78% 0, var\(--night-soft\), transparent 27rem\)/s);
+    expect(css).toMatch(/html\[data-theme="night"\] \.nav-link\.active\s*\{[^}]*box-shadow:\s*inset 2px 0 var\(--signal\)/s);
+    expect(css).toMatch(/html\[data-theme="night"\] \.trace-card[\s\S]*?box-shadow:\s*none;/);
+  });
+
+  it("keeps the Activity empty-state action in normal document flow", () => {
+    expect(css).toMatch(/\.activity-state-card\s*\{[^}]*display:\s*grid;[^}]*gap:/s);
+    expect(css).toMatch(/\.activity-state-card\s+\.trace-button\s*\{[^}]*position:\s*static;/s);
+  });
+
+  it("keeps report metadata above WCAG AA contrast on pale cards", () => {
+    const luminance = (hex: string) => {
+      const channels = [1, 3, 5].map((index) => Number.parseInt(hex.slice(index, index + 2), 16) / 255)
+        .map((value) => value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4);
+      return 0.2126 * channels[0]! + 0.7152 * channels[1]! + 0.0722 * channels[2]!;
+    };
+    const foreground = luminance("#5f7086");
+    const background = luminance("#f8faf5");
+    expect((background + 0.05) / (foreground + 0.05)).toBeGreaterThanOrEqual(4.5);
+    expect(css).toContain(".report-currentness span, .report-currentness small { color: #5f7086;");
+  });
+
+  it("publishes completed Workspace navigation without static integration placeholders", () => {
+    expect(appShell).toContain('href: "/workspaces"');
+    expect(appShell).toContain("UsersRound");
+    expect(appShell).not.toContain("Integration workspace");
+    expect(appShell).not.toContain("Contract-validated frontend");
+    expect(appShell).not.toContain("Integration environment");
+    expect(githubPanel).not.toContain("DAY 4 PREVIEW");
+    expect(githubPanel).not.toContain("Illustrative repository list");
   });
 
   it("restores the one-column app shell after the late theme override on narrow screens", () => {

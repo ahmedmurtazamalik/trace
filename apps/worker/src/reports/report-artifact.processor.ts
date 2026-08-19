@@ -4,12 +4,18 @@ import type { ArtifactStorage } from '@trace/report-storage';
 import { reportContentSchema } from '@trace/shared';
 import { MAX_LATEX_BYTES, MAX_PDF_BYTES, validateCompiledPdf, type LatexCompiler } from '../latex/latex-compiler';
 import { renderReportLatex } from '../latex/report-latex-renderer';
+import { DIRECT_REPORT_DELIVERY, type ReportDeliveryContext } from './report-delivery';
+import {
+  markWorkspaceReportCompleted,
+  markWorkspaceReportFailed,
+  markWorkspaceReportProcessing,
+} from './workspace-report-lifecycle';
 
 const RENDER_FAILED = 'Report rendering failed.';
 const RENDER_RETRY = 'REPORT_RENDER_RETRY';
 const DEFAULT_STORAGE_WRITE_TIMEOUT_MS = 30_000;
 
-export interface ReportGenerationProcessor { process(reportId: string): Promise<void> }
+export interface ReportGenerationProcessor { process(reportId: string, delivery?: ReportDeliveryContext): Promise<void> }
 
 export class ReportArtifactProcessor {
   constructor(
@@ -28,8 +34,8 @@ export class ReportArtifactProcessor {
     }
   }
 
-  async process(reportId: string): Promise<void> {
-    await this.generation.process(reportId);
+  async process(reportId: string, delivery: ReportDeliveryContext = DIRECT_REPORT_DELIVERY): Promise<void> {
+    await this.generation.process(reportId, delivery);
     const token = randomUUID();
     const claim = await this.claim(reportId, token);
     if (claim.kind === 'done') return;
@@ -146,6 +152,7 @@ export class ReportArtifactProcessor {
           AND "render_generation" = ${report.renderGeneration}
       `;
       if (updated !== 1) return { kind: 'busy' } as const;
+      await markWorkspaceReportProcessing(transaction, reportId);
       return {
         kind: 'claimed',
         userId: report.userId,
@@ -242,22 +249,31 @@ export class ReportArtifactProcessor {
       `;
       if (renewed !== 1) throw new Error(RENDER_RETRY);
       for (const artifact of artifacts) {
-        await transaction.reportArtifact.upsert({
+        const metadata = {
+          storageKey: artifact.key,
+          sizeBytes: artifact.bytes.length,
+          checksum: createHash('sha256').update(artifact.bytes).digest('hex'),
+        };
+        const existing = await transaction.reportArtifact.findUnique({
           where: { reportId_revisionId_kind: { reportId, revisionId: claim.revisionId, kind: artifact.kind } },
-          create: {
-            reportId,
-            revisionId: claim.revisionId,
-            kind: artifact.kind,
-            storageKey: artifact.key,
-            sizeBytes: artifact.bytes.length,
-            checksum: createHash('sha256').update(artifact.bytes).digest('hex'),
-          },
-          update: {
-            storageKey: artifact.key,
-            sizeBytes: artifact.bytes.length,
-            checksum: createHash('sha256').update(artifact.bytes).digest('hex'),
-          },
+          select: { storageKey: true, sizeBytes: true, checksum: true },
         });
+        if (existing === null) {
+          await transaction.reportArtifact.create({
+            data: {
+              reportId,
+              revisionId: claim.revisionId,
+              kind: artifact.kind,
+              ...metadata,
+            },
+          });
+        } else if (
+          existing.storageKey !== metadata.storageKey
+          || existing.sizeBytes !== metadata.sizeBytes
+          || existing.checksum !== metadata.checksum
+        ) {
+          throw new Error(RENDER_RETRY);
+        }
       }
       const updated = await transaction.$executeRaw`
         UPDATE "reports"
@@ -279,6 +295,7 @@ export class ReportArtifactProcessor {
           AND "render_generation" = ${claim.generation}
       `;
       if (updated !== 1) throw new Error(RENDER_RETRY);
+      await markWorkspaceReportCompleted(transaction, reportId);
     });
   }
 
@@ -304,6 +321,7 @@ export class ReportArtifactProcessor {
           AND "render_generation" = ${generation}
       `;
       if (updated !== 1) throw new Error(RENDER_RETRY);
+      await markWorkspaceReportFailed(transaction, reportId);
     });
   }
 

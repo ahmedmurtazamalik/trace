@@ -55,8 +55,14 @@ describe('Day 3 GitHub connection contract', () => {
 
   it('freezes a separate GitHub App installation setup flow', () => {
     expect(githubInstallationStartResponseSchema.parse({
+      outcome: 'INSTALL_REQUIRED',
       installationUrl: 'https://github.com/apps/trace-app/installations/new?state=installation-state-value',
     })).toBeDefined();
+    expect(githubInstallationStartResponseSchema.parse({ outcome: 'CONNECTED' })).toEqual({ outcome: 'CONNECTED' });
+    expect(githubInstallationStartResponseSchema.safeParse({
+      outcome: 'INSTALL_REQUIRED',
+      installationUrl: 'http://localhost:3002/github?result=connected',
+    }).success).toBe(false);
     expect(githubInstallationCallbackQuerySchema.parse({
       installation_id: '91', setup_action: 'install', state: 'installation-state-value-at-least-32-characters',
     })).toEqual({ installation_id: '91', setup_action: 'install', state: 'installation-state-value-at-least-32-characters' });

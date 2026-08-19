@@ -113,6 +113,7 @@ test("connected account can start or repair GitHub App installation", async ({ p
     trackedRepositoryCount: 0,
   }) }));
   await page.route("**/api/v1/github/installation", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({
+    outcome: "INSTALL_REQUIRED",
     installationUrl: "https://github.com/apps/trace/installations/new?state=opaque",
   }) }));
 

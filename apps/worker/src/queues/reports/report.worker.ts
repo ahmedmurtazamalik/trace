@@ -1,5 +1,6 @@
 import { Queue, UnrecoverableError, Worker, type Job } from 'bullmq';
 import { beforeWorkerDeadline, workerDrainDeadline } from '../../shutdown-budget';
+import type { ReportDeliveryContext } from '../../reports/report-delivery';
 
 export interface ReportQueueWorkerOptions {
   redisUrl: string;
@@ -7,7 +8,7 @@ export interface ReportQueueWorkerOptions {
   concurrency?: number;
   startupTimeoutMs?: number;
   shutdownTimeoutMs?: number;
-  processReport(reportId: string): Promise<void>;
+  processReport(reportId: string, delivery: ReportDeliveryContext): Promise<void>;
 }
 
 interface ReportJob { reportId: string }
@@ -117,8 +118,16 @@ export class ReportQueueWorker {
     ) {
       throw new UnrecoverableError('REPORT_JOB_INVALID');
     }
+    const maximumAttempts = typeof job.opts.attempts === 'number' && Number.isSafeInteger(job.opts.attempts) && job.opts.attempts > 0
+      ? job.opts.attempts
+      : 1;
+    const attempt = Math.min(job.attemptsMade + 1, maximumAttempts);
     try {
-      await this.options.processReport(reportId);
+      await this.options.processReport(reportId, {
+        attempt,
+        maximumAttempts,
+        finalDelivery: attempt >= maximumAttempts,
+      });
     } catch {
       throw new Error('REPORT_PROCESSING_RETRY');
     }

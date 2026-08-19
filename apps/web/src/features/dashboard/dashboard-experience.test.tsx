@@ -122,7 +122,7 @@ describe("Day 6 dashboard experience", () => {
     expect(screen.queryByRole("button", { name: "Retry" })).not.toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Show all repositories" }));
     await screen.findByLabelText("Development activity metrics");
-    expect(loadDashboard).toHaveBeenLastCalledWith({ date: "2026-08-12", timezone: "UTC" }, expect.objectContaining({ signal: expect.any(AbortSignal) }));
+    expect(loadDashboard).toHaveBeenLastCalledWith({ date: "2026-08-12", timezone: "Asia/Karachi" }, expect.objectContaining({ signal: expect.any(AbortSignal) }));
     expect(onFiltersChange).toHaveBeenCalledWith({ date: "2026-08-12" });
   });
 

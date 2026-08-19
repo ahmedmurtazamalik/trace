@@ -5,10 +5,11 @@ import { DockerLatexCompiler } from '../latex/latex-compiler';
 import { ReportQueueWorker, type ReportQueueWorkerOptions } from '../queues/reports/report.worker';
 import { reportProviderFromEnvironment } from './configured-report-provider';
 import { ReportArtifactProcessor } from './report-artifact.processor';
+import type { ReportDeliveryContext } from './report-delivery';
 import { ReportProcessor } from './report.processor';
 import { beforeWorkerDeadline, workerShutdownDeadline, workerShutdownTimeoutMs, type WorkerStop } from '../shutdown-budget';
 
-interface ReportProcessorLike { process(reportId: string): Promise<void> }
+interface ReportProcessorLike { process(reportId: string, delivery?: ReportDeliveryContext): Promise<void> }
 interface ReportWorkerLifecycle { start(): Promise<void>; close(deadline?: number): Promise<void>; readonly completion: Promise<void> }
 
 export interface ReportApplicationOptions {
@@ -47,7 +48,7 @@ export async function startReportWorker(options: ReportApplicationOptions): Prom
       queueName: configuration.queueName,
       concurrency: configuration.concurrency,
       shutdownTimeoutMs: configuration.shutdownTimeoutMs,
-      processReport: (reportId) => processor.process(reportId),
+      processReport: (reportId, delivery) => processor.process(reportId, delivery),
     });
     await worker.start();
   } catch {

@@ -3,8 +3,8 @@ import { expect, test } from "@playwright/test";
 const session = { user: { id: "usr_01HXYZ", username: "alice.dev", displayName: "Alice Developer", email: "alice@example.com", createdAt: "2026-08-11T12:00:00.000Z" }, csrfToken: "csrf_opaque_value" };
 const repositories = { items: [{ id: "repo_1", owner: "trace-fixture-org", name: "trace", fullName: "trace-fixture-org/trace", private: false, defaultBranch: "main", url: null, accessible: true, trackingEnabled: true, removed: false, lastActivityAt: "2026-08-12T09:30:00.000Z", contributorCount: 1 }], pageInfo: { nextCursor: null, hasNextPage: false } };
 
-function utcToday() {
-  return new Intl.DateTimeFormat("en-CA", { timeZone: "UTC", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
+function pakistanToday() {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Karachi", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
 }
 
 test.beforeEach(async ({ page }) => {
@@ -12,9 +12,9 @@ test.beforeEach(async ({ page }) => {
   await page.route("**/api/v1/repositories?*", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(repositories) }));
   await page.route("**/api/v1/dashboard?*", async (route) => {
     const url = new URL(route.request().url());
-    const date = url.searchParams.get("date") ?? utcToday();
-    const timezone = url.searchParams.get("timezone") ?? "UTC";
-    const hasActivity = timezone === "Pacific/Honolulu" ? date === "2026-08-11" : date === "2026-08-12" || date === utcToday();
+    const date = url.searchParams.get("date") ?? pakistanToday();
+    const timezone = url.searchParams.get("timezone") ?? "Asia/Karachi";
+    const hasActivity = date === "2026-08-12" || date === pakistanToday();
     const activity = { id: "activity_commit_1", repository: { id: "repo_1", fullName: "trace-fixture-org/trace", url: null }, contributor: { id: "contributor_1", username: "alice-dev", displayName: "Alice Developer", avatarUrl: null }, source: "github", type: "commit", occurredAt: "2026-08-12T09:30:00.000Z", facts: { sha: "0123456789abcdef0123456789abcdef01234567", message: "Add repository synchronization", branch: "main", filesChanged: 4, additions: 120, deletions: 18, url: null } };
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ date, timezone, state: hasActivity ? "READY" : "NO_ACTIVITY", metrics: hasActivity ? { activityCount: 2, repositoryCount: 1, contributorCount: 1, commitCount: 1, filesChanged: 4, additions: 120, deletions: 18 } : { activityCount: 0, repositoryCount: 1, contributorCount: 0, commitCount: 0, filesChanged: 0, additions: 0, deletions: 0 }, recentActivity: hasActivity ? [activity] : [] }) });
   });
@@ -48,13 +48,14 @@ test("dashboard history restores filters and invalid contract values fall back s
   await expect(page.getByRole("heading", { name: "No development activity for this view" })).toBeVisible();
 
   await page.goto("/dashboard?date=2026-08-11&timezone=Pacific%2FHonolulu");
-  await expect(page.getByLabel("Development activity metrics")).toBeVisible();
-  await expect(page.getByText("August 11, 2026", { exact: true })).toBeVisible();
-  await page.goto("/dashboard?date=2026-08-12&timezone=Pacific%2FHonolulu");
   await expect(page.getByRole("heading", { name: "No development activity for this view" })).toBeVisible();
+  await page.goto("/dashboard?date=2026-08-12&timezone=Pacific%2FHonolulu");
+  await expect(page.getByLabel("Development activity metrics")).toBeVisible();
+  await expect(page.getByLabel("Date")).toHaveValue("2026-08-12");
+  await expect(page.getByText("Pakistan Standard Time (PKT)", { exact: true })).toBeVisible();
 
   await page.goto("/dashboard?date=not-a-date&timezone=Not%2FAZone");
   await expect(page.getByRole("heading", { level: 1, name: "Development dashboard" })).toBeVisible();
-  await expect(page.getByLabel("Date")).toHaveValue(utcToday());
-  await expect(page.getByText("UTC", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Date")).toHaveValue(pakistanToday());
+  await expect(page.getByText("Pakistan Standard Time (PKT)", { exact: true })).toBeVisible();
 });

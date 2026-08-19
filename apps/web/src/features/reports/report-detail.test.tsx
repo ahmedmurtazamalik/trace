@@ -1,6 +1,8 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ReportDetailResponse } from "@trace/shared";
+import { AppShell } from "@/components/shell/app-shell";
+import { ReportDraftRecoveryProvider, useReportDraftRecovery } from "@/components/shell/report-draft-recovery";
 import { ReportDetailView } from "./report-detail";
 
 const processing: ReportDetailResponse = { report: {
@@ -19,6 +21,48 @@ const completed: ReportDetailResponse = { report: {
 afterEach(() => vi.useRealTimers());
 
 describe("Day 8 report detail", () => {
+  it("shows the executive summary and code analysis without internal snapshot jargon", async () => {
+    const workspaceReport = {
+      report: {
+        ...completed.report,
+        content: {
+          executiveSummary: "Executive summary for workspace members.",
+          repositories: [{
+            repositoryId: "repo-coachconnect",
+            summary: "CoachConnect changed its homepage presentation and supporting styles.",
+            contributors: [{ contributorId: "contributor-ali", summary: "Updated the homepage theme.", accomplishments: ["Applied the crimson homepage theme."] }],
+          }],
+        },
+      },
+      workspaceEvidence: {
+        workspaceId: "workspace-1",
+        workspaceName: "Day 16 Workspace",
+        trigger: "SCHEDULED" as const,
+        scheduleVersion: 1,
+        scheduledFor: "2026-08-19T08:19:00.000Z",
+        intendedLocalDateTime: "2026-08-19T13:19:00+05:00",
+        windowStart: "2026-08-12T08:19:00.000Z",
+        windowEnd: "2026-08-19T08:19:00.000Z",
+        dataCutoffAt: "2026-08-19T08:19:00.000Z",
+        recoveredAt: null,
+        noActivity: false,
+        repositories: [{ repositoryId: "repo-coachconnect", fullName: "alimajid266/coachconnect", accessState: "ACTIVE" as const, coverage: null, baselineOnly: false, activityCount: 2 }],
+      },
+    };
+
+    render(<ReportDetailView reportId="report-completed" loadReport={vi.fn().mockResolvedValue(workspaceReport)} resolveContributorLabels={vi.fn().mockResolvedValue({ "contributor-ali": "Ali Majid" })} />);
+
+    expect(await screen.findByRole("heading", { name: "Code analysis" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "alimajid266/coachconnect" })).toBeInTheDocument();
+    expect(screen.getByText("CoachConnect changed its homepage presentation and supporting styles.")).toBeInTheDocument();
+    expect(screen.getByText("Applied the crimson homepage theme.")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Executive summary" })).toBeInTheDocument();
+    expect(screen.getByText("Executive summary for workspace members.")).toBeInTheDocument();
+    expect(screen.queryByText("Immutable snapshot")).not.toBeInTheDocument();
+    expect(screen.queryByText("Frozen report evidence")).not.toBeInTheDocument();
+    expect(screen.queryByText("Scheduled run")).not.toBeInTheDocument();
+  });
+
   it("polls processing reports and stops after completion", async () => {
     vi.useFakeTimers();
     const loadReport = vi.fn().mockResolvedValueOnce(processing).mockResolvedValueOnce(processing).mockResolvedValueOnce(completed);
@@ -55,6 +99,152 @@ describe("Day 8 report detail", () => {
     expect(screen.getByText("Completed")).toBeInTheDocument();
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
     expect(loadReport).toHaveBeenCalledTimes(3);
+  });
+
+  it("clears protected report data and stops polling after authorization is lost", async () => {
+    vi.useFakeTimers();
+    const loadReport = vi.fn()
+      .mockResolvedValueOnce(processing)
+      .mockRejectedValueOnce({ code: "UNAUTHENTICATED" });
+    render(<ReportDetailView reportId="report-processing" loadReport={loadReport} pollIntervalMs={100} />);
+
+    await act(async () => { await Promise.resolve(); });
+    expect(screen.getByText("Building your report")).toBeInTheDocument();
+    expect(screen.getByText("2 commits")).toBeInTheDocument();
+
+    await act(async () => { await vi.advanceTimersByTimeAsync(100); });
+    expect(screen.getByRole("alert")).toHaveTextContent("session expired");
+    expect(screen.queryByText("Building your report")).not.toBeInTheDocument();
+    expect(screen.queryByText("2 commits")).not.toBeInTheDocument();
+
+    await act(async () => { await vi.advanceTimersByTimeAsync(500); });
+    expect(loadReport).toHaveBeenCalledTimes(2);
+  });
+
+  it("discards globally recoverable prose when a post-render download loses report authorization", async () => {
+    let recovery!: ReturnType<typeof useReportDraftRecovery>;
+    let resolveLabels!: (labels: Record<string, string>) => void;
+    const resolveContributorLabels = vi.fn(() => new Promise<Record<string, string>>((resolve) => { resolveLabels = resolve; }));
+    const downloadArtifact = vi.fn().mockRejectedValue({ code: "WORKSPACE_NOT_FOUND" });
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+    function RecoveryProbe() { recovery = useReportDraftRecovery(); return null; }
+
+    window.history.replaceState({}, "", "/reports/report-completed");
+    render(
+      <ReportDraftRecoveryProvider>
+        <RecoveryProbe />
+        <AppShell>
+          <ReportDetailView
+            reportId="report-completed"
+            loadReport={vi.fn().mockResolvedValue(completed)}
+            saveRevision={vi.fn()}
+            downloadArtifact={downloadArtifact}
+            deliverDownload={vi.fn()}
+            resolveContributorLabels={resolveContributorLabels}
+          />
+        </AppShell>
+      </ReportDraftRecoveryProvider>,
+    );
+
+    fireEvent.change(await screen.findByLabelText("Executive summary"), { target: { value: "Prose that must not survive revoked access." } });
+    await waitFor(() => expect(recovery.hasActiveDraft).toBe(true));
+    act(() => recovery.stageActive(window.location.href));
+    expect(recovery.consume("report-processing", 1, window.location.href)?.executiveSummary).toBe("Prose that must not survive revoked access.");
+    fireEvent.click(screen.getAllByRole("link", { name: "Dashboard" })[0]!);
+    expect(confirm).toHaveBeenCalledOnce();
+
+    fireEvent.click(screen.getByRole("button", { name: "Download PDF" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("no longer available");
+    expect(screen.queryByLabelText("Executive summary")).not.toBeInTheDocument();
+    expect(screen.queryByText("2 commits recorded")).not.toBeInTheDocument();
+    await waitFor(() => expect(recovery.hasActiveDraft).toBe(false));
+    expect(recovery.consume("report-processing", 1, window.location.href)).toBeUndefined();
+    document.addEventListener("click", (event) => event.preventDefault(), { once: true });
+    fireEvent.click(screen.getAllByRole("link", { name: "Dashboard" })[0]!);
+    expect(confirm).toHaveBeenCalledOnce();
+
+    act(() => {
+      recovery.restorePending();
+      resolveLabels({ hidden: "Stale protected contributor" });
+    });
+    expect(recovery.consume("report-processing", 1, window.location.href)).toBeUndefined();
+    expect(screen.queryByText("Stale protected contributor")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Executive summary")).not.toBeInTheDocument();
+    confirm.mockRestore();
+  });
+
+  it("discards globally recoverable prose when contributor lookup loses authorization", async () => {
+    let recovery!: ReturnType<typeof useReportDraftRecovery>;
+    let rejectLabels!: (cause: unknown) => void;
+    const resolveContributorLabels = vi.fn(() => new Promise<Record<string, string>>((_, reject) => { rejectLabels = reject; }));
+    function RecoveryProbe() { recovery = useReportDraftRecovery(); return null; }
+
+    render(
+      <ReportDraftRecoveryProvider>
+        <RecoveryProbe />
+        <ReportDetailView
+          reportId="report-completed"
+          loadReport={vi.fn().mockResolvedValue(completed)}
+          saveRevision={vi.fn()}
+          resolveContributorLabels={resolveContributorLabels}
+        />
+      </ReportDraftRecoveryProvider>,
+    );
+
+    fireEvent.change(await screen.findByLabelText("Executive summary"), { target: { value: "Protected draft from contributor lookup." } });
+    await waitFor(() => expect(recovery.hasActiveDraft).toBe(true));
+
+    await act(async () => { rejectLabels({ code: "FORBIDDEN" }); });
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("no longer available");
+    expect(screen.queryByLabelText("Executive summary")).not.toBeInTheDocument();
+    await waitFor(() => expect(recovery.hasActiveDraft).toBe(false));
+  });
+
+  it("ignores stale contributor authorization rejection after the route changes", async () => {
+    let recovery!: ReturnType<typeof useReportDraftRecovery>;
+    let rejectOldLabels!: (cause: unknown) => void;
+    const newer = {
+      ...completed,
+      report: {
+        ...completed.report,
+        id: "report-new",
+        reportDate: "2026-08-14",
+        content: { executiveSummary: "Newer protected report.", repositories: [] },
+      },
+    };
+    const loadReport = vi.fn()
+      .mockResolvedValueOnce(completed)
+      .mockResolvedValueOnce(newer);
+    const resolveContributorLabels = vi.fn((report: ReportDetailResponse["report"]) => report.id === completed.report.id
+      ? new Promise<Record<string, string>>((_, reject) => { rejectOldLabels = reject; })
+      : Promise.resolve({}));
+    function RecoveryProbe() { recovery = useReportDraftRecovery(); return null; }
+
+    const view = render(
+      <ReportDraftRecoveryProvider>
+        <RecoveryProbe />
+        <ReportDetailView reportId="report-old" loadReport={loadReport} saveRevision={vi.fn()} resolveContributorLabels={resolveContributorLabels} />
+      </ReportDraftRecoveryProvider>,
+    );
+    await screen.findByDisplayValue("Development activity was summarized.");
+
+    view.rerender(
+      <ReportDraftRecoveryProvider>
+        <RecoveryProbe />
+        <ReportDetailView reportId="report-new" loadReport={loadReport} saveRevision={vi.fn()} resolveContributorLabels={resolveContributorLabels} />
+      </ReportDraftRecoveryProvider>,
+    );
+    const editor = await screen.findByDisplayValue("Newer protected report.");
+    fireEvent.change(editor, { target: { value: "Newer draft must survive the stale rejection." } });
+    await waitFor(() => expect(recovery.hasActiveDraft).toBe(true));
+
+    await act(async () => { rejectOldLabels({ code: "FORBIDDEN" }); });
+
+    expect(screen.getByDisplayValue("Newer draft must survive the stale rejection.")).toBeInTheDocument();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(recovery.hasActiveDraft).toBe(true);
   });
 
   it("aborts and ignores an older report response after the route id changes", async () => {
@@ -191,6 +381,27 @@ describe("Day 8 report detail", () => {
     fireEvent.click(screen.getByRole("button", { name: "Download PDF" }));
     await waitFor(() => expect(downloadArtifact).toHaveBeenCalledWith("report-completed", completed.report.artifacts[0], expect.any(AbortSignal)));
     expect(deliverDownload).toHaveBeenCalledWith(expect.objectContaining({ fileName: "trace-report.pdf" }));
+  });
+
+  it("aborts an in-flight download when regeneration invalidates its report revision", async () => {
+    let resolveDownload!: (value: { blob: Blob; fileName: string }) => void;
+    let downloadSignal: AbortSignal | undefined;
+    const downloadArtifact = vi.fn((_id, _artifact, signal?: AbortSignal) => {
+      downloadSignal = signal;
+      return new Promise<{ blob: Blob; fileName: string }>((resolve) => { resolveDownload = resolve; });
+    });
+    const regenerating: ReportDetailResponse = { report: { ...completed.report, status: "processing", completedAt: null, downloadAvailable: false, artifacts: [] } };
+    const regenerateReport = vi.fn().mockResolvedValue(regenerating);
+    const deliverDownload = vi.fn();
+    render(<ReportDetailView reportId="report-completed" loadReport={vi.fn().mockResolvedValue(completed)} regenerateReport={regenerateReport} downloadArtifact={downloadArtifact} deliverDownload={deliverDownload} />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Download PDF" }));
+    expect(downloadSignal).toBeInstanceOf(AbortSignal);
+    fireEvent.click(screen.getByRole("button", { name: "Regenerate report" }));
+    await waitFor(() => expect(regenerateReport).toHaveBeenCalled());
+    expect(downloadSignal?.aborted).toBe(true);
+    await act(async () => resolveDownload({ blob: new Blob(["old"]), fileName: "old.pdf" }));
+    expect(deliverDownload).not.toHaveBeenCalled();
   });
 
   it("shows and downloads only artifacts for the current revision", async () => {

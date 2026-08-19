@@ -27,8 +27,8 @@ const activity: ActivitySummary = {
 };
 
 describe("ActivitySummaryCard", () => {
-  it("shows contributor identity, exact local time, branch, and changed-file count", () => {
-    render(<ActivitySummaryCard item={activity} timezone="UTC" />);
+  it("shows contributor identity, exact Pakistan time, branch, and changed-file count", () => {
+    render(<ActivitySummaryCard item={activity} />);
 
     expect(screen.getByRole("img", { name: "Ali Majid's avatar" })).toHaveAttribute("src", activity.contributor?.avatarUrl);
     expect(screen.getByRole("link", { name: "View activity for Ali Majid" })).toHaveAttribute("href", "/contributors/contributor-01");
@@ -36,7 +36,7 @@ describe("ActivitySummaryCard", () => {
     expect(screen.getByText("@alimajid266")).toBeInTheDocument();
     expect(screen.getByText("Branch main")).toBeInTheDocument();
     expect(screen.getByText("1 file changed")).toBeInTheDocument();
-    expect(screen.getByText("Aug 13, 2026 at 7:52:45 AM UTC")).toBeInTheDocument();
-    expect(screen.getByText("Aug 13, 2026 at 7:52:45 AM UTC").closest("time")).toHaveAttribute("datetime", activity.occurredAt);
+    expect(screen.getByText("Aug 13, 2026 at 12:52:45 PM PKT")).toBeInTheDocument();
+    expect(screen.getByText("Aug 13, 2026 at 12:52:45 PM PKT").closest("time")).toHaveAttribute("datetime", activity.occurredAt);
   });
 });

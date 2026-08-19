@@ -57,17 +57,24 @@ describe("GitHub API client", () => {
 
   it("starts GitHub App installation through the contract endpoint", async () => {
     const fetchMock = vi.fn().mockResolvedValue(response({
+      outcome: "INSTALL_REQUIRED",
       installationUrl: "https://github.com/apps/trace/installations/new?state=opaque-state",
     }));
     vi.stubGlobal("fetch", fetchMock);
 
     await expect(getGithubInstallation("csrf-value")).resolves.toEqual({
+      outcome: "INSTALL_REQUIRED",
       installationUrl: "https://github.com/apps/trace/installations/new?state=opaque-state",
     });
     expect(fetchMock).toHaveBeenCalledWith(
       "http://localhost:3001/api/v1/github/installation",
       expect.objectContaining({ method: "POST", credentials: "include", headers: { "x-csrf-token": "csrf-value" } }),
     );
+  });
+
+  it("accepts the explicit already-connected installation outcome", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response({ outcome: "CONNECTED" })));
+    await expect(getGithubInstallation("csrf-value")).resolves.toEqual({ outcome: "CONNECTED" });
   });
 
   it("rejects malformed successes and hides raw backend failures", async () => {

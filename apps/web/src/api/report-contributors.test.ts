@@ -54,4 +54,10 @@ describe("report contributor labels", () => {
       "internal-sam-id": "Unknown contributor",
     });
   });
+
+  it("propagates authorization loss instead of converting it into an identity fallback", async () => {
+    const authorizationLoss = { code: "FORBIDDEN" };
+    const loadActivity = vi.fn().mockRejectedValue(authorizationLoss);
+    await expect(resolveReportContributorLabels(report, undefined, loadActivity)).rejects.toBe(authorizationLoss);
+  });
 });

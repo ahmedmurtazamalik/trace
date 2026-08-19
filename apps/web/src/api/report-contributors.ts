@@ -28,6 +28,8 @@ export async function resolveReportContributorLabels(
       return [contributorId, humanLabel(response)] as const;
     } catch (cause) {
       if (cause instanceof DOMException && cause.name === "AbortError") throw cause;
+      if (typeof cause === "object" && cause !== null && "code" in cause
+        && (cause.code === "UNAUTHENTICATED" || cause.code === "FORBIDDEN")) throw cause;
       return [contributorId, "Unknown contributor"] as const;
     }
   }));

@@ -330,6 +330,58 @@ describe('database foundation', () => {
     expect(await prisma.reportRevision.count({ where: { id: revision.id } })).toBe(0);
   });
 
+  it('prevents completed artifact metadata tampering while preserving report deletion cascades', async () => {
+    const report = await prisma.report.create({ data: {
+      id: 'test_completed_artifact_immutable',
+      userId: 'seed_user_bob',
+      reportDate: new Date('2000-01-02T00:00:00.000Z'),
+      timezone: 'UTC',
+      status: 'processing',
+      inputSnapshot: { test: true },
+    } });
+    const revision = await prisma.reportRevision.create({ data: {
+      id: 'test_completed_artifact_immutable_revision',
+      reportId: report.id,
+      revision: 1,
+      source: 'ai',
+      content: { test: true },
+    } });
+    const artifact = await prisma.reportArtifact.create({ data: {
+      id: 'test_completed_artifact_immutable_pdf',
+      reportId: report.id,
+      revisionId: revision.id,
+      kind: 'pdf',
+      storageKey: 'test/completed-artifact.pdf',
+      sizeBytes: 10,
+      checksum: 'a'.repeat(64),
+    } });
+    await prisma.report.update({ where: { id: report.id }, data: {
+      currentRevisionId: revision.id,
+      status: 'completed',
+      completedAt: new Date(),
+    } });
+
+    await expect(prisma.reportArtifact.update({
+      where: { id: artifact.id },
+      data: { checksum: 'b'.repeat(64) },
+    })).rejects.toThrow();
+    await expect(prisma.reportArtifact.update({
+      where: { id: artifact.id },
+      data: { storageKey: 'test/tampered-completed-artifact.pdf' },
+    })).rejects.toThrow();
+    await expect(prisma.reportArtifact.update({
+      where: { id: artifact.id },
+      data: { sizeBytes: 11 },
+    })).rejects.toThrow();
+    await expect(prisma.reportArtifact.update({
+      where: { id: artifact.id },
+      data: { kind: 'latex' },
+    })).rejects.toThrow();
+
+    await prisma.report.delete({ where: { id: report.id } });
+    await expect(prisma.reportArtifact.count({ where: { id: artifact.id } })).resolves.toBe(0);
+  });
+
   it('prevents an artifact from referencing another report’s revision', async () => {
     const otherReport = await prisma.report.create({
       data: {

@@ -121,7 +121,7 @@ describe('Repository API', () => {
       .post('/api/v1/repositories/sync')
       .set('Cookie', identity.cookie)
       .set('X-CSRF-Token', identity.csrfToken)
-      .expect(200, { accessibleRepositoryCount: 2 });
+      .expect(200, { accessibleRepositoryCount: 2, activeRepositoryCount: 2, removedRepositoryCount: 0 });
 
     const repositories = await prisma.repository.findMany({ where: { githubInstallationId: identity.installationId }, orderBy: { githubRepositoryId: 'asc' } });
     expect(repositories).toMatchObject([
@@ -216,8 +216,8 @@ describe('Repository API', () => {
       const secondSyncResult = await service.synchronize(secondUser.id);
       releaseFirst?.();
       const staleFirstSyncResult = await staleFirstSync;
-      expect(secondSyncResult).toEqual({ accessibleRepositoryCount: 1 });
-      expect(staleFirstSyncResult).toEqual({ accessibleRepositoryCount: 0 });
+      expect(secondSyncResult).toEqual({ accessibleRepositoryCount: 1, activeRepositoryCount: 1, removedRepositoryCount: 0 });
+      expect(staleFirstSyncResult).toEqual({ accessibleRepositoryCount: 0, activeRepositoryCount: 1, removedRepositoryCount: 0 });
 
       const repository = await prisma.repository.findUniqueOrThrow({ where: { githubRepositoryId: 7_001n } });
       expect(repository.githubInstallationId).toBe(secondInstallation.id);
@@ -379,12 +379,30 @@ describe('Repository API', () => {
       expect.arrayContaining([expect.objectContaining({ id: repository.id, removed: true })]),
     );
 
+    await request(server).delete(`/api/v1/repositories/${repository.id}/forget`).set('Cookie', identity.cookie).expect(403);
+    await request(server).delete(`/api/v1/repositories/${repository.id}/forget`)
+      .set('Cookie', identity.cookie).set('X-CSRF-Token', identity.csrfToken)
+      .expect(200, { repositoryId: repository.id, forgotten: true });
+    const removedAfterForget = await request(server).get('/api/v1/repositories').query({ visibility: 'removed' }).set('Cookie', identity.cookie).expect(200);
+    expect(repositoryListResponseSchema.parse(removedAfterForget.body as unknown).items.map((item) => item.id)).not.toContain(repository.id);
+    await request(server).get(`/api/v1/repositories/${repository.id}`).set('Cookie', identity.cookie).expect(404);
+
     await request(server).post('/api/v1/repositories/sync').set('Cookie', identity.cookie).set('X-CSRF-Token', identity.csrfToken).expect(200);
     const stillRemoved = await request(server).get('/api/v1/repositories').set('Cookie', identity.cookie).expect(200);
     expect(repositoryListResponseSchema.parse(stillRemoved.body as unknown).items.map((item) => item.id)).not.toContain(repository.id);
+    const stillForgotten = await request(server).get('/api/v1/repositories').query({ visibility: 'removed' }).set('Cookie', identity.cookie).expect(200);
+    expect(repositoryListResponseSchema.parse(stillForgotten.body as unknown).items.map((item) => item.id)).not.toContain(repository.id);
     const tracking = await request(server).post(`/api/v1/repositories/${repository.id}/tracking`)
-      .set('Cookie', identity.cookie).set('X-CSRF-Token', identity.csrfToken).expect(409);
-    expect(tracking.body).toMatchObject({ code: 'REPOSITORY_REMOVED' });
+      .set('Cookie', identity.cookie).set('X-CSRF-Token', identity.csrfToken).expect(404);
+    expect(tracking.body).toMatchObject({ code: 'REPOSITORY_NOT_FOUND' });
+  });
+
+  it('supports restoring a removed repository before it is forgotten', async () => {
+    const identity = await installedIdentity();
+    await request(server).post('/api/v1/repositories/sync').set('Cookie', identity.cookie).set('X-CSRF-Token', identity.csrfToken).expect(200);
+    const repository = await prisma.repository.findUniqueOrThrow({ where: { githubRepositoryId: 7_001n } });
+    await request(server).delete(`/api/v1/repositories/${repository.id}`)
+      .set('Cookie', identity.cookie).set('X-CSRF-Token', identity.csrfToken).expect(200);
 
     await request(server).post(`/api/v1/repositories/${repository.id}/restore`).set('Cookie', identity.cookie).expect(403);
     await request(server).post(`/api/v1/repositories/${repository.id}/restore`)

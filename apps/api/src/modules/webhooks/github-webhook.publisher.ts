@@ -146,6 +146,8 @@ export class GithubWebhookPublisher implements OnApplicationBootstrap, OnModuleD
         AND u.disabled_at IS NULL
         AND r.access_removed_at IS NULL
         AND ur.access_removed_at IS NULL
+        AND ur.removed_at IS NULL
+        AND ur.forgotten_at IS NULL
         AND ur.tracking_enabled = TRUE
       FOR UPDATE OF gi, ga, u, r, ur
     `;

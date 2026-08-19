@@ -20,12 +20,16 @@ export const githubConnectResponseSchema = z.object({
   ),
 });
 
-export const githubInstallationStartResponseSchema = z.object({
-  installationUrl: z.url().refine(
-    (value) => value.startsWith('https://github.com/apps/'),
-    'Installation URL must be an HTTPS github.com App URL',
-  ),
-});
+export const githubInstallationStartResponseSchema = z.discriminatedUnion('outcome', [
+  z.object({
+    outcome: z.literal('INSTALL_REQUIRED'),
+    installationUrl: z.url().refine(
+      (value) => value.startsWith('https://github.com/apps/'),
+      'Installation URL must be an HTTPS github.com App URL',
+    ),
+  }),
+  z.object({ outcome: z.literal('CONNECTED') }),
+]);
 
 export const githubInstallationCallbackQuerySchema = z.object({
   installation_id: z.coerce.string().regex(/^\d+$/),
