@@ -122,7 +122,14 @@ export function GithubConnectionPanel({
     setError(undefined);
     try {
       const result = await beginInstallation(csrfToken);
-      navigate(result.installationUrl);
+      if (result.outcome === "INSTALL_REQUIRED") {
+        navigate(result.installationUrl);
+        return;
+      }
+      const refreshed = await loadStatus();
+      setStatus(refreshed);
+      setNotice("GitHub App is installed. Repository access is refreshed.");
+      setPending(undefined);
     } catch (reason) {
       setError(errorMessage(reason));
       setPending(undefined);
@@ -237,15 +244,6 @@ export function GithubConnectionPanel({
         <p>Disconnecting GitHub stops future access but does not delete historical activity already stored in Trace.</p>
       </Card>
     </div>
-
-    <Card className="github-repository-preview">
-      <div><span className="eyebrow">DAY 4 PREVIEW</span><h2>Repository management comes next</h2><p>This visual preview is illustrative. Real repository access and tracking controls begin after the Day 3 repository contract is frozen.</p></div>
-      <div className="github-preview-rows" aria-label="Illustrative repository list">
-        <div><span><strong>trace/web</strong><small>Public · main</small></span><Badge>Illustrative</Badge></div>
-        <div><span><strong>trace/api</strong><small>Private · main</small></span><Badge>Illustrative</Badge></div>
-      </div>
-    </Card>
-
     {confirmSwitch && <AccessibleConfirmDialog
       title="Switch GitHub account?"
       description={<p>Switching will stop tracking repositories from <strong>@{account?.username}</strong> and deactivate the old GitHub App installation. Historical activity remains in Trace. You will need to install the App for the new account.</p>}

@@ -161,7 +161,7 @@ export class GithubService {
     try {
       const existingInstallation = await this.adapter.installationForUser(account.githubUserId);
       if (existingInstallation !== null && await this.persistInstallation(userId, account.githubUserId, existingInstallation)) {
-        return { installationUrl: this.redirect({ result: 'connected' }) };
+        return { outcome: 'CONNECTED' };
       }
     } catch {
       // Fall back to GitHub's setup flow when inventory discovery is unavailable.
@@ -174,7 +174,7 @@ export class GithubService {
       throw this.unavailable();
     }
     await this.storeState(userId, sessionId, state, 'INSTALLATION');
-    return { installationUrl };
+    return { outcome: 'INSTALL_REQUIRED', installationUrl };
   }
 
   async installationCallback(input: unknown, session: { userId: string; sessionId: string } | null): Promise<string> {

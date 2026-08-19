@@ -34,7 +34,7 @@ function renderPanel(overrides: Partial<React.ComponentProps<typeof GithubConnec
     loadStatus: vi.fn().mockResolvedValue(disconnected),
     beginConnection: vi.fn().mockResolvedValue({ authorizationUrl: "https://github.com/login/oauth/authorize?client_id=trace&state=opaque" }),
     beginSwitch: vi.fn().mockResolvedValue({ authorizationUrl: "https://github.com/login/oauth/authorize?client_id=trace&state=switch" }),
-    beginInstallation: vi.fn().mockResolvedValue({ installationUrl: "https://github.com/apps/trace/installations/new?state=opaque" }),
+    beginInstallation: vi.fn().mockResolvedValue({ outcome: "INSTALL_REQUIRED", installationUrl: "https://github.com/apps/trace/installations/new?state=opaque" }),
     revokeConnection: vi.fn().mockResolvedValue({ success: true, historyRetained: true }),
     navigate: vi.fn(),
     callbackResult: undefined,
@@ -75,6 +75,27 @@ describe("GitHub connection UX", () => {
     await userEvent.click(await screen.findByRole("button", { name: "Manage repository access" }));
     expect(props.beginInstallation).toHaveBeenCalledOnce();
     expect(props.navigate).toHaveBeenCalledWith(expect.stringMatching(/^https:\/\/github\.com\/apps\//));
+  });
+
+  it("refreshes status without navigating when GitHub is already installed", async () => {
+    const loadStatus = vi.fn()
+      .mockResolvedValueOnce({
+        ...connected,
+        installationAuthorization: { status: "NOT_INSTALLED" as const, installation: null },
+        accessibleRepositoryCount: 0,
+        trackedRepositoryCount: 0,
+      })
+      .mockResolvedValueOnce(connected);
+    const props = renderPanel({
+      loadStatus,
+      beginInstallation: vi.fn().mockResolvedValue({ outcome: "CONNECTED" }),
+    });
+
+    await userEvent.click(await screen.findByRole("button", { name: "Install GitHub App" }));
+
+    await waitFor(() => expect(loadStatus).toHaveBeenCalledTimes(2));
+    expect(props.navigate).not.toHaveBeenCalled();
+    expect(await screen.findByText("GitHub App is installed. Repository access is refreshed.")).toBeInTheDocument();
   });
 
   it("offers installation and suspended-installation recovery through the backend URL", async () => {

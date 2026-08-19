@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 
 const css = readFileSync(resolve(process.cwd(), "app/globals.css"), "utf8");
 const appShell = readFileSync(resolve(process.cwd(), "src/components/shell/app-shell.tsx"), "utf8");
+const githubPanel = readFileSync(resolve(process.cwd(), "src/features/github/github-connection-panel.tsx"), "utf8");
 
 describe("Editorial Console visual system", () => {
   it("uses the approved Preview 3 palette, square surfaces, and offset depth", () => {
@@ -16,9 +17,14 @@ describe("Editorial Console visual system", () => {
     expect(css).toContain("border-radius: 0;");
   });
 
-  it("does not publish unfinished Workspace navigation with the theme", () => {
-    expect(appShell).not.toContain('href: "/workspaces"');
-    expect(appShell).not.toContain("UsersRound");
+  it("publishes completed Workspace navigation without static integration placeholders", () => {
+    expect(appShell).toContain('href: "/workspaces"');
+    expect(appShell).toContain("UsersRound");
+    expect(appShell).not.toContain("Integration workspace");
+    expect(appShell).not.toContain("Contract-validated frontend");
+    expect(appShell).not.toContain("Integration environment");
+    expect(githubPanel).not.toContain("DAY 4 PREVIEW");
+    expect(githubPanel).not.toContain("Illustrative repository list");
   });
 
   it("restores the one-column app shell after the late theme override on narrow screens", () => {

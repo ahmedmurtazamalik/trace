@@ -289,6 +289,7 @@ describe('GitHub connection API', () => {
       .expect(302);
     await request(server).post('/api/v1/github/installation').set('Cookie', sessionCookie).expect(403);
     const installationStart = await request(server).post('/api/v1/github/installation').set('Cookie', sessionCookie).set('X-CSRF-Token', csrfToken).expect(200);
+    expect(installationStart.body).toMatchObject({ outcome: 'INSTALL_REQUIRED' });
     const installationState = new URL((installationStart.body as { installationUrl: string }).installationUrl).searchParams.get('state');
     const setupCallback = await request(server)
       .get('/api/v1/github/installation/callback')
@@ -347,7 +348,7 @@ describe('GitHub connection API', () => {
       .set('Cookie', identity.cookie).set('X-CSRF-Token', identity.csrfToken).expect(200);
     delete (adapterWithDiscovery as Partial<typeof adapterWithDiscovery>).installationForUser;
 
-    expect((start.body as { installationUrl: string }).installationUrl).toBe('http://localhost:3000/github?result=connected');
+    expect(start.body).toEqual({ outcome: 'CONNECTED' });
     const status = await request(server).get('/api/v1/github/status').set('Cookie', identity.cookie).expect(200);
     expect(status.body).toMatchObject({
       accountConnection: { status: 'CONNECTED' },
@@ -386,8 +387,10 @@ describe('GitHub connection API', () => {
       releaseDiscovery();
       const installation = await installationRequest;
 
-      expect((installation.body as { installationUrl: string }).installationUrl)
-        .not.toBe('http://localhost:3000/github?result=connected');
+      expect(installation.body).toMatchObject({
+        outcome: 'INSTALL_REQUIRED',
+        installationUrl: expect.stringMatching(/^https:\/\/github\.com\/apps\//),
+      });
       const user = await prisma.user.findUniqueOrThrow({ where: { username } });
       const account = await prisma.githubAccount.findUniqueOrThrow({ where: { userId: user.id } });
       expect(account).toMatchObject({ githubUserId: 583_232n, githubUsername: 'fake-switcher' });

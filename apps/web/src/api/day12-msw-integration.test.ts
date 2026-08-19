@@ -120,7 +120,7 @@ describe("Day 12 API clients through the MSW HTTP boundary", () => {
       }),
       http.post(`${origin}/api/v1/github/installation`, ({ request }) => {
         csrf.push(request.headers.get("x-csrf-token"));
-        return HttpResponse.json({ installationUrl: "https://github.com/apps/trace/installations/new?state=installation-state" });
+        return HttpResponse.json({ outcome: "INSTALL_REQUIRED", installationUrl: "https://github.com/apps/trace/installations/new?state=installation-state" });
       }),
       http.delete(`${origin}/api/v1/github/connection`, ({ request }) => {
         csrf.push(request.headers.get("x-csrf-token"));
@@ -131,7 +131,7 @@ describe("Day 12 API clients through the MSW HTTP boundary", () => {
     await expect(getGithubStatus()).resolves.toEqual(githubStatus);
     await expect(connectGithub("csrf-connect")).resolves.toMatchObject({ authorizationUrl: expect.stringMatching(/^https:\/\/github\.com\//) });
     await expect(switchGithub("csrf-github")).resolves.toMatchObject({ authorizationUrl: expect.stringMatching(/^https:\/\/github\.com\//) });
-    await expect(getGithubInstallation("csrf-install")).resolves.toMatchObject({ installationUrl: expect.stringMatching(/^https:\/\/github\.com\/apps\//) });
+    await expect(getGithubInstallation("csrf-install")).resolves.toMatchObject({ outcome: "INSTALL_REQUIRED", installationUrl: expect.stringMatching(/^https:\/\/github\.com\/apps\//) });
     await expect(disconnectGithub("csrf-disconnect")).resolves.toEqual({ success: true, historyRetained: true });
     expect(csrf).toEqual(["csrf-connect", "csrf-github", "csrf-install", "csrf-disconnect"]);
   });
