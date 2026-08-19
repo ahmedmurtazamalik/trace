@@ -20,7 +20,7 @@ export function AuthShell({ title, description, note, children }: { title: strin
           <span className="signal-node node-one" /><span className="signal-node node-two" /><span className="signal-node node-three" />
           <span className="signal-path path-one" /><span className="signal-path path-two" />
         </div>
-        <div className="auth-message"><span className="signal-line" /><h2>See the shape of the work—not just the commits.</h2><p>Trace turns repository signals into a clear, defensible narrative of progress.</p></div>
+        <div className="auth-message"><span className="signal-line" /><h2>See the shape of the work, not just the commits.</h2><p>Trace turns repository signals into a clear, defensible narrative of progress.</p></div>
         <dl><div><dt>Identity</dt><dd>Trace account first</dd></div><div><dt>Integration</dt><dd>GitHub connects later</dd></div><div><dt>Reports</dt><dd>Structured and editable</dd></div></dl>
       </aside>
     </main>

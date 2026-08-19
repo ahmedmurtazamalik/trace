@@ -1,5 +1,5 @@
 export const workspaceFixture = {
-  disclosure: "Illustrative frontend data — no API, GitHub account, or database is connected.",
+  disclosure: "Illustrative frontend data: no API, GitHub account, or database is connected.",
   metrics: [
     { label: "Activity today", value: "24", note: "Illustrative events" },
     { label: "Tracked repositories", value: "6", note: "Mock selection" },
