@@ -4,13 +4,13 @@ import { describe, expect, it, vi } from "vitest";
 import { AppShell } from "./app-shell";
 
 describe("AppShell", () => {
-  it("provides accessible navigation and an environment-aware disclosure", () => {
+  it("provides accessible navigation without an integration-placeholder disclosure", () => {
     render(<AppShell><h1>Dashboard</h1></AppShell>);
     expect(screen.getByRole("link", { name: "Skip to content" })).toHaveAttribute("href", "#main-content");
     expect(screen.getAllByRole("navigation").length).toBeGreaterThanOrEqual(2);
     expect(screen.getByRole("main")).toHaveAttribute("id", "main-content");
-    expect(screen.getByRole("region", { name: "Environment disclosure" })).toBeInTheDocument();
-    expect(screen.getByText(/environment-aware data/i)).toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "Environment disclosure" })).not.toBeInTheDocument();
+    expect(screen.queryByText(/environment-aware data/i)).not.toBeInTheDocument();
     for (const name of ["Dashboard", "Repositories", "Workspaces", "Activity", "Reports", "GitHub", "Settings"]) expect(screen.getAllByRole("link", { name }).length).toBeGreaterThan(0);
   });
 
