@@ -244,14 +244,24 @@ export class RealGithubAuthorizationAdapter implements GithubAuthorizationAdapte
     }
     const userResponse = fetchResults[0].value;
     const installationResponse = fetchResults[1].value;
-    if (!userResponse.ok || !installationResponse.ok) {
+    if (!userResponse.ok || (!installationResponse.ok && installationResponse.status !== 404)) {
       await Promise.all([this.cancel(userResponse), this.cancel(installationResponse)]);
-      throw new Error('GitHub installation verification failed');
+      throw new Error(
+        `GitHub installation verification failed (user_status=${userResponse.status}, installation_status=${installationResponse.status})`,
+      );
     }
-    const [userResult, installationResult] = await Promise.allSettled([
-      this.boundedJson(userResponse, 262_144, 'GitHub installation verification failed'),
-      this.boundedJson(installationResponse, 262_144, 'GitHub installation verification failed'),
-    ]);
+    const [userResult, installationResult] = installationResponse.status === 404
+      ? await (async () => {
+        await this.cancel(installationResponse);
+        return Promise.allSettled([
+          this.boundedJson(userResponse, 262_144, 'GitHub installation verification failed'),
+          this.listedUserInstallation(accessToken, installationId),
+        ]);
+      })()
+      : await Promise.allSettled([
+        this.boundedJson(userResponse, 262_144, 'GitHub installation verification failed'),
+        this.boundedJson(installationResponse, 262_144, 'GitHub installation verification failed'),
+      ]);
     if (userResult.status === 'rejected' || installationResult.status === 'rejected') {
       throw new Error('GitHub installation verification failed');
     }
@@ -265,6 +275,28 @@ export class RealGithubAuthorizationAdapter implements GithubAuthorizationAdapte
       user: { id: BigInt(user.id), username: user.login, displayName: user.name ?? null, avatarUrl: user.avatar_url ?? null },
       installation: { id: installationId, accountType: value.account?.type === 'Organization' ? 'ORGANIZATION' : 'USER', accountLogin, suspended: value.suspended_at != null },
     };
+  }
+
+  private async listedUserInstallation(accessToken: string, installationId: bigint): Promise<GithubInstallationPayload> {
+    const signal = AbortSignal.timeout(10_000);
+    for (let page = 1; page <= 100; page += 1) {
+      const response = await fetch(`https://api.github.com/user/installations?per_page=100&page=${page}`, {
+        headers: { Accept: 'application/vnd.github+json', Authorization: 'Bearer ' + accessToken, 'X-GitHub-Api-Version': '2022-11-28' },
+        signal,
+      });
+      await this.requireOk(response, 'GitHub installation verification failed');
+      const value = await this.boundedJson(response, 2_097_152, 'GitHub installation verification failed') as { installations?: unknown[] };
+      if (!Array.isArray(value.installations) || value.installations.length > 100) {
+        throw new Error('GitHub installation verification failed');
+      }
+      for (const item of value.installations) {
+        const candidate = item as GithubInstallationPayload;
+        if (!Number.isSafeInteger(candidate.id)) throw new Error('GitHub installation verification failed');
+        if (BigInt(candidate.id as number) === installationId) return candidate;
+      }
+      if (value.installations.length < 100) break;
+    }
+    throw new Error('GitHub installation verification failed');
   }
 
   private async exchangeToken(code: string): Promise<string> {
