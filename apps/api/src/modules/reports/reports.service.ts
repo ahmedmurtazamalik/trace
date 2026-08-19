@@ -146,6 +146,7 @@ export class ReportsService {
     const reports = await this.prisma.report.findMany({
       where: {
         userId,
+        workspaceId: null,
         ...(query.status === undefined ? {} : { status: query.status }),
         ...(cursor === null ? {} : {
           OR: [
@@ -175,12 +176,63 @@ export class ReportsService {
     };
   }
 
+  async listWorkspace(userId: string, workspaceId: string, input: unknown): Promise<ReportListResponse> {
+    const parsed = reportListQuerySchema.safeParse(input);
+    if (!parsed.success) throw this.validationError();
+    const query: ReportListQuery = parsed.data;
+    const status = query.status;
+    const fingerprint = JSON.stringify({ version: 1, userId, workspaceId, status: status ?? null, limit: query.limit });
+    const cursor = this.decodeCursor(query.cursor, fingerprint);
+    const reports = await this.prisma.report.findMany({
+      where: {
+        workspaceId,
+        workspace: { memberships: { some: { userId } } },
+        AND: [{ OR: [
+          { workspace: { memberships: { some: { userId, role: 'MANAGER' } } } },
+          { status: 'completed' },
+        ] }],
+        ...(status === undefined ? {} : { status }),
+        ...(cursor === null ? {} : {
+          OR: [
+            { createdAt: { lt: cursor.createdAt } },
+            { createdAt: cursor.createdAt, id: { lt: cursor.id } },
+          ],
+        }),
+      },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      take: query.limit + 1,
+      include: {
+        currentRevision: { select: { revision: true } },
+        artifacts: { select: { kind: true, revision: { select: { revision: true } } } },
+      },
+    });
+    const page = reports.slice(0, query.limit);
+    const last = page.at(-1);
+    return {
+      items: page.map((report) => this.summary(report)),
+      pageInfo: {
+        hasNextPage: reports.length > query.limit,
+        nextCursor: reports.length > query.limit && last !== undefined
+          ? this.encodeCursor(last.createdAt, last.id, fingerprint)
+          : null,
+      },
+    };
+  }
+
   async detail(userId: string, reportId: string): Promise<ReportDetailResponse> {
+    return this.detailScoped({ userId, workspaceId: null }, reportId);
+  }
+
+  async detailWorkspace(userId: string, workspaceId: string, reportId: string): Promise<ReportDetailResponse> {
+    return this.detailScoped(this.workspaceReadScope(userId, workspaceId), reportId);
+  }
+
+  private async detailScoped(scope: Prisma.ReportWhereInput, reportId: string): Promise<ReportDetailResponse> {
     if (reportId.length === 0 || reportId.length > 256) throw this.notFound();
     const report = await this.prisma.$transaction(async (transaction) => {
       await transaction.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${reportId}, 0))`;
       const current = await transaction.report.findFirst({
-        where: { id: reportId, userId },
+        where: { id: reportId, ...scope },
         include: { currentRevision: true },
       });
       if (current === null) return null;
@@ -219,11 +271,19 @@ export class ReportsService {
   }
 
   async updateRevision(userId: string, reportId: string, input: unknown): Promise<ReportDetailResponse> {
+    return this.updateRevisionScoped({ userId, workspaceId: null }, userId, reportId, input);
+  }
+
+  async updateWorkspaceRevision(actorUserId: string, workspaceId: string, reportId: string, input: unknown): Promise<ReportDetailResponse> {
+    return this.updateRevisionScoped(this.workspaceManagerScope(actorUserId, workspaceId), actorUserId, reportId, input);
+  }
+
+  private async updateRevisionScoped(scope: Prisma.ReportWhereInput, actorUserId: string, reportId: string, input: unknown): Promise<ReportDetailResponse> {
     const request = this.parseRevisionUpdate(input);
     await this.prisma.$transaction(async (transaction) => {
       await transaction.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${reportId}, 0))`;
       const report = await transaction.report.findFirst({
-        where: { id: reportId, userId },
+        where: { id: reportId, ...scope },
         include: { currentRevision: true },
       });
       if (report === null) throw this.notFound();
@@ -244,7 +304,7 @@ export class ReportsService {
       const updated = await transaction.report.updateMany({
         where: {
           id: reportId,
-          userId,
+          ...scope,
           currentRevisionId: current.id,
           renderGeneration: report.renderGeneration,
         },
@@ -265,7 +325,7 @@ export class ReportsService {
       if (updated.count !== 1) throw this.revisionConflict();
       await transaction.auditLog.create({
         data: {
-          actorUserId: userId,
+          actorUserId,
           action: 'report.revision_updated',
           targetType: 'report',
           targetId: reportId,
@@ -274,15 +334,23 @@ export class ReportsService {
       });
     });
     await this.publisher.publishOneBounded(reportId);
-    return this.detail(userId, reportId);
+    return this.detailScoped(scope, reportId);
   }
 
   async regenerate(userId: string, reportId: string, input: unknown): Promise<ReportDetailResponse> {
+    return this.regenerateScoped({ userId, workspaceId: null }, userId, reportId, input);
+  }
+
+  async regenerateWorkspace(actorUserId: string, workspaceId: string, reportId: string, input: unknown): Promise<ReportDetailResponse> {
+    return this.regenerateScoped(this.workspaceManagerScope(actorUserId, workspaceId), actorUserId, reportId, input);
+  }
+
+  private async regenerateScoped(scope: Prisma.ReportWhereInput, actorUserId: string, reportId: string, input: unknown): Promise<ReportDetailResponse> {
     const request = this.parseRegeneration(input);
     await this.prisma.$transaction(async (transaction) => {
       await transaction.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${reportId}, 0))`;
       const report = await transaction.report.findFirst({
-        where: { id: reportId, userId },
+        where: { id: reportId, ...scope },
         include: { currentRevision: true },
       });
       if (report === null) throw this.notFound();
@@ -292,7 +360,7 @@ export class ReportsService {
       const updated = await transaction.report.updateMany({
         where: {
           id: reportId,
-          userId,
+          ...scope,
           currentRevisionId: current.id,
           renderGeneration: report.renderGeneration,
         },
@@ -312,7 +380,7 @@ export class ReportsService {
       if (updated.count !== 1) throw this.revisionConflict();
       await transaction.auditLog.create({
         data: {
-          actorUserId: userId,
+          actorUserId,
           action: 'report.regenerated',
           targetType: 'report',
           targetId: reportId,
@@ -321,16 +389,24 @@ export class ReportsService {
       });
     });
     await this.publisher.publishOneBounded(reportId);
-    return this.detail(userId, reportId);
+    return this.detailScoped(scope, reportId);
   }
 
   async download(userId: string, reportId: string, input: unknown): Promise<ReportArtifactDownload> {
+    return this.downloadScoped({ userId, workspaceId: null }, reportId, input);
+  }
+
+  async downloadWorkspace(userId: string, workspaceId: string, reportId: string, input: unknown): Promise<ReportArtifactDownload> {
+    return this.downloadScoped(this.workspaceReadScope(userId, workspaceId), reportId, input);
+  }
+
+  private async downloadScoped(scope: Prisma.ReportWhereInput, reportId: string, input: unknown): Promise<ReportArtifactDownload> {
     const query = this.parseDownloadQuery(input);
     const artifact = await this.prisma.reportArtifact.findFirst({
       where: {
         id: query.artifactId,
         reportId,
-        report: { userId, status: 'completed', currentRevisionId: { not: null } },
+        report: { ...scope, status: 'completed', currentRevisionId: { not: null } },
       },
       include: {
         report: { select: { currentRevisionId: true } },
@@ -345,11 +421,39 @@ export class ReportsService {
     }
     const checksum = createHash('sha256').update(bytes).digest('hex');
     if (bytes.length !== artifact.sizeBytes || checksum !== artifact.checksum) throw this.artifactUnavailable();
+    const stillAuthorized = await this.prisma.reportArtifact.findFirst({
+      where: {
+        id: artifact.id,
+        reportId,
+        revisionId: artifact.revisionId,
+        report: { ...scope, status: 'completed', currentRevisionId: artifact.revisionId },
+      },
+      select: { id: true },
+    });
+    if (stillAuthorized === null) throw this.artifactNotFound();
     return {
       bytes,
       fileName: this.artifactFileName(artifact.storageKey, artifact.kind),
       contentType: artifact.kind === 'pdf' ? 'application/pdf' : 'application/x-tex',
       checksum,
+    };
+  }
+
+  private workspaceReadScope(userId: string, workspaceId: string): Prisma.ReportWhereInput {
+    return {
+      workspaceId,
+      workspace: { memberships: { some: { userId } } },
+      AND: [{ OR: [
+        { workspace: { memberships: { some: { userId, role: 'MANAGER' } } } },
+        { status: 'completed' },
+      ] }],
+    };
+  }
+
+  private workspaceManagerScope(userId: string, workspaceId: string): Prisma.ReportWhereInput {
+    return {
+      workspaceId,
+      workspace: { archivedAt: null, memberships: { some: { userId, role: 'MANAGER' } } },
     };
   }
 

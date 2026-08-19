@@ -9,8 +9,9 @@ describe("AppShell", () => {
     expect(screen.getByRole("link", { name: "Skip to content" })).toHaveAttribute("href", "#main-content");
     expect(screen.getAllByRole("navigation").length).toBeGreaterThanOrEqual(2);
     expect(screen.getByRole("main")).toHaveAttribute("id", "main-content");
+    expect(screen.getByRole("region", { name: "Environment disclosure" })).toBeInTheDocument();
     expect(screen.getByText(/environment-aware data/i)).toBeInTheDocument();
-    for (const name of ["Dashboard", "Repositories", "Activity", "Reports", "GitHub", "Settings"]) expect(screen.getAllByRole("link", { name }).length).toBeGreaterThan(0);
+    for (const name of ["Dashboard", "Repositories", "Workspaces", "Activity", "Reports", "GitHub", "Settings"]) expect(screen.getAllByRole("link", { name }).length).toBeGreaterThan(0);
   });
 
   it("makes the skip link the first keyboard destination", async () => {

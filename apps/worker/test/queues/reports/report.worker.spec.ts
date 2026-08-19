@@ -20,7 +20,7 @@ describe('report queue worker', () => {
   });
 
   it('processes only the frozen report job reference and drains cleanly', async () => {
-    const processReport = jest.fn<Promise<void>, [string]>().mockResolvedValue(undefined);
+    const processReport = jest.fn().mockResolvedValue(undefined);
     worker = new ReportQueueWorker({ redisUrl, queueName, processReport });
     await worker.start();
 
@@ -28,7 +28,9 @@ describe('report queue worker', () => {
     await worker.waitUntilIdle();
 
     expect(processReport).toHaveBeenCalledTimes(1);
-    expect(processReport).toHaveBeenCalledWith('report-row-1');
+    expect(processReport).toHaveBeenCalledWith('report-row-1', {
+      attempt: 1, maximumAttempts: 1, finalDelivery: true,
+    });
     await expect(worker.close()).resolves.toBeUndefined();
   });
 
@@ -68,5 +70,28 @@ describe('report queue worker', () => {
     const job = await queue.getJob('sanitized-report-row');
     expect(job?.failedReason).toBe('REPORT_PROCESSING_RETRY');
     expect(job?.stacktrace?.join('\n') ?? '').not.toContain('SECRET_PROCESSOR_FRAGMENT');
+  });
+
+  it('uses BullMQ attempts as authoritative configured report deliveries', async () => {
+    const processReport = jest.fn()
+      .mockRejectedValueOnce(new Error('transient first'))
+      .mockRejectedValueOnce(new Error('transient second'))
+      .mockResolvedValueOnce(undefined);
+    worker = new ReportQueueWorker({ redisUrl, queueName, processReport });
+    await worker.start();
+
+    await queue.add('generate-report', { reportId: 'redelivered-report' }, {
+      jobId: 'redelivered-report-job', attempts: 3, backoff: { type: 'fixed', delay: 1 },
+    });
+    await worker.waitUntilIdle();
+
+    expect(processReport.mock.calls).toEqual([
+      ['redelivered-report', { attempt: 1, maximumAttempts: 3, finalDelivery: false }],
+      ['redelivered-report', { attempt: 2, maximumAttempts: 3, finalDelivery: false }],
+      ['redelivered-report', { attempt: 3, maximumAttempts: 3, finalDelivery: true }],
+    ]);
+    const job = await queue.getJob('redelivered-report-job');
+    expect(await job?.getState()).toBe('completed');
+    expect(job?.attemptsMade).toBe(3);
   });
 });

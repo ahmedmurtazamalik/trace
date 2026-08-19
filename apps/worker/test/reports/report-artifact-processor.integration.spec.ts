@@ -152,6 +152,35 @@ describe('report artifact processor', () => {
     expect(storage.objects.size).toBe(2);
   });
 
+  it('fails closed instead of rewriting mismatched existing artifact metadata', async () => {
+    const storage = new MemoryStorage();
+    const generate = new ReportProcessor(prisma, new DeterministicReportProvider());
+    await generate.process(reportId);
+    const report = await prisma.report.findUniqueOrThrow({ where: { id: reportId }, include: { currentRevision: true } });
+    const revisionId = report.currentRevision?.id;
+    if (revisionId === undefined) throw new Error('missing generated revision');
+    const original = await prisma.reportArtifact.create({ data: {
+      reportId,
+      revisionId,
+      kind: 'latex',
+      storageKey: `users/${userId}/reports/${reportId}/immutable-existing.tex`,
+      sizeBytes: 1,
+      checksum: '0'.repeat(64),
+    } });
+    const processor = new ReportArtifactProcessor(prisma, generate, compiler(), storage);
+
+    await expect(processor.process(reportId)).rejects.toThrow('REPORT_RENDER_RETRY');
+
+    expect(await prisma.reportArtifact.findUniqueOrThrow({ where: { id: original.id } })).toMatchObject({
+      storageKey: original.storageKey,
+      sizeBytes: original.sizeBytes,
+      checksum: original.checksum,
+    });
+    expect(await prisma.report.findUniqueOrThrow({ where: { id: reportId } })).toMatchObject({
+      status: 'processing', renderRevision: 1,
+    });
+  });
+
   it('keeps database transactions and the report advisory lock free while storage is stalled', async () => {
     const storage = new BlockingPutStorage();
     const processor = new ReportArtifactProcessor(
@@ -236,9 +265,11 @@ describe('report artifact processor', () => {
     const frozen = await prisma.reportRevision.findFirstOrThrow({ where: { reportId } });
     expect(frozen.latexSource).toContain('Engineering Activity Report');
     const originalObjects = new Map([...storage.objects].map(([key, value]) => [key, Buffer.from(value)]));
-    const latexKey = [...storage.objects.keys()].find((key) => key.endsWith('/report.tex'));
-    if (latexKey === undefined) throw new Error('missing LaTeX artifact');
-    storage.objects.delete(latexKey);
+    const originalArtifacts = await prisma.reportArtifact.findMany({
+      where: { reportId },
+      orderBy: { kind: 'asc' },
+      select: { id: true, kind: true, storageKey: true, sizeBytes: true, checksum: true },
+    });
     await prisma.report.update({
       where: { id: reportId },
       data: {
@@ -255,17 +286,13 @@ describe('report artifact processor', () => {
     expect(await prisma.report.findUniqueOrThrow({ where: { id: reportId } })).toMatchObject({
       status: 'completed', renderRevision: null,
     });
-    expect(await prisma.reportArtifact.count({ where: { reportId } })).toBe(2);
-    expect(storage.objects.size).toBe(2);
+    expect(await prisma.reportArtifact.findMany({
+      where: { reportId },
+      orderBy: { kind: 'asc' },
+      select: { id: true, kind: true, storageKey: true, sizeBytes: true, checksum: true },
+    })).toEqual(originalArtifacts);
+    expect(storage.objects).toEqual(originalObjects);
     expect(compileMock).toHaveBeenCalledTimes(1);
-    const originalLatex = originalObjects.get(latexKey);
-    if (originalLatex === undefined) throw new Error('missing original LaTeX bytes');
-    expect(storage.objects.get(latexKey)).toBeUndefined();
-    const replacementLatex = [...storage.objects].find(([key]) => key.includes('/generations/2/') && key.endsWith('/report.tex'));
-    expect(replacementLatex?.[1]).toEqual(originalLatex);
-    const pdfEntry = [...originalObjects].find(([key]) => key.endsWith('/report.pdf'));
-    if (pdfEntry === undefined) throw new Error('missing original PDF bytes');
-    expect(storage.objects.get(pdfEntry[0])).toEqual(pdfEntry[1]);
   });
 
   it('leaves a truthful processing obligation after transient storage failure and retries idempotently', async () => {

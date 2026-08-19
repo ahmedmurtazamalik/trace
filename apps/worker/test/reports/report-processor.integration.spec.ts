@@ -51,14 +51,20 @@ describe('structured report processor', () => {
     ]);
   });
 
-  it('retries schema or grounding failures within a fixed bound before persisting valid content', async () => {
+  it('releases a transient validation failure for BullMQ redelivery and later succeeds', async () => {
     const valid = await new DeterministicReportProvider().generate(snapshot);
     const generate = jest.fn<Promise<unknown>, [ReportInputSnapshot]>()
       .mockResolvedValueOnce({ arbitraryLatex: '\\write18{curl attacker}' })
       .mockResolvedValueOnce(valid);
-    const processor = new ReportProcessor(prisma, { generate }, { maximumAttempts: 3 });
+    const processor = new ReportProcessor(prisma, { generate });
 
-    await processor.process(reportId);
+    await expect(processor.process(reportId, { attempt: 1, maximumAttempts: 3, finalDelivery: false }))
+      .rejects.toThrow('REPORT_PROCESSING_RETRY');
+    expect(await prisma.report.findUniqueOrThrow({ where: { id: reportId } })).toMatchObject({
+      status: 'pending', processingToken: null, processingExpiresAt: null, error: null,
+    });
+
+    await processor.process(reportId, { attempt: 2, maximumAttempts: 3, finalDelivery: false });
 
     expect(generate).toHaveBeenCalledTimes(2);
     expect(await prisma.report.findUniqueOrThrow({ where: { id: reportId } })).toMatchObject({
@@ -67,17 +73,29 @@ describe('structured report processor', () => {
     });
   });
 
-  it('stores only a closed safe error after bounded provider failures', async () => {
+  it('stores only a closed safe error after final transient delivery exhaustion', async () => {
     const generate = jest.fn().mockRejectedValue(new Error('secret provider payload and api key'));
     const provider: StructuredReportProvider = { generate };
-    const processor = new ReportProcessor(prisma, provider, { maximumAttempts: 2 });
+    const processor = new ReportProcessor(prisma, provider);
 
-    await expect(processor.process(reportId)).resolves.toBeUndefined();
+    await expect(processor.process(reportId, { attempt: 3, maximumAttempts: 3, finalDelivery: true })).resolves.toBeUndefined();
 
     const report = await prisma.report.findUniqueOrThrow({ where: { id: reportId }, include: { revisions: true } });
-    expect(generate).toHaveBeenCalledTimes(2);
+    expect(generate).toHaveBeenCalledTimes(1);
     expect(report).toMatchObject({ status: 'failed', error: 'Report generation failed.', completedAt: null, aiOutput: null });
     expect(report.revisions).toHaveLength(0);
+  });
+
+  it('terminally fails a permanent provider error on the first delivery', async () => {
+    const generate = jest.fn().mockRejectedValue(new Error('REPORT_PROVIDER_AUTH'));
+    const processor = new ReportProcessor(prisma, { generate });
+
+    await expect(processor.process(reportId, { attempt: 1, maximumAttempts: 3, finalDelivery: false })).resolves.toBeUndefined();
+
+    expect(generate).toHaveBeenCalledTimes(1);
+    expect(await prisma.report.findUniqueOrThrow({ where: { id: reportId } })).toMatchObject({
+      status: 'failed', error: 'Report generation failed.', processingToken: null, processingExpiresAt: null,
+    });
   });
 
   it('fences concurrent duplicate processing so only the lease owner can persist', async () => {

@@ -11,8 +11,12 @@ describe('report worker application', () => {
     const process = jest.fn().mockResolvedValue(undefined);
     const start = jest.fn().mockResolvedValue(undefined);
     const close = jest.fn().mockResolvedValue(undefined);
-    const workerFactory = jest.fn().mockImplementation((options: { processReport(id: string): Promise<void>; shutdownTimeoutMs: number }) => ({
-      start: async () => { await start(); await options.processReport('report-1'); },
+    const delivery = { attempt: 2, maximumAttempts: 3, finalDelivery: false };
+    const workerFactory = jest.fn().mockImplementation((options: {
+      processReport(id: string, context: typeof delivery): Promise<void>;
+      shutdownTimeoutMs: number;
+    }) => ({
+      start: async () => { await start(); await options.processReport('report-1', delivery); },
       close,
       completion: new Promise<void>(() => undefined),
     }));
@@ -25,7 +29,7 @@ describe('report worker application', () => {
       workerFactory: workerFactory as never,
     });
 
-    expect(process).toHaveBeenCalledWith('report-1');
+    expect(process).toHaveBeenCalledWith('report-1', delivery);
     expect(workerFactory).toHaveBeenCalledWith(expect.objectContaining({ shutdownTimeoutMs: 210_000 }));
     const deadline = Date.now() + 1_000;
     await stop(deadline);

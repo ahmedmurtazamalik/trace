@@ -10,9 +10,10 @@ import { GithubModule } from './modules/github/github.module';
 import { RepositoriesModule } from './modules/repositories/repositories.module';
 import { ReportsModule } from './modules/reports/reports.module';
 import { WebhooksModule } from './modules/webhooks/webhooks.module';
+import { WorkspacesModule } from './modules/workspaces/workspaces.module';
 
 @Module({
-  imports: [TraceConfigModule, PrismaModule, RedisModule, AuthModule, GithubModule, RepositoriesModule, WebhooksModule, ActivityModule, ReportsModule],
+  imports: [TraceConfigModule, PrismaModule, RedisModule, AuthModule, GithubModule, RepositoriesModule, WebhooksModule, ActivityModule, ReportsModule, WorkspacesModule],
   controllers: [HealthController],
   providers: [DependencyHealthService],
 })

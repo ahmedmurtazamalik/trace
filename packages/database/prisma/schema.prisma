@@ -44,6 +44,50 @@ enum ReportArtifactKind {
   pdf
 }
 
+enum WorkspaceRole {
+  MANAGER
+  DEVELOPER
+}
+
+enum WorkspaceAnalysisStatus {
+  UNINITIALIZED
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+  BLOCKED_ACCESS
+}
+
+enum WorkspaceAnalysisRunKind {
+  BASELINE
+  INCREMENTAL
+}
+
+enum WorkspaceAnalysisAccessState {
+  ACTIVE
+  ACCESS_REMOVED
+}
+
+enum WorkspaceReportFrequency {
+  DAILY
+  WEEKDAYS
+  SELECTED_DAYS
+}
+
+enum WorkspaceReportTrigger {
+  MANUAL
+  SCHEDULED
+  RECOVERY
+}
+
+enum WorkspaceReportOccurrenceStatus {
+  PENDING
+  QUEUED
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
 enum WebhookDeliveryStatus {
   pending
   processing
@@ -67,6 +111,11 @@ model User {
   repositories        UserRepository[]
   reports             Report[]
   auditLogs            AuditLog[]
+  createdWorkspaces   Workspace[]           @relation("WorkspaceCreator")
+  workspaceMemberships WorkspaceMembership[]
+  workspaceRepositoryAssignments WorkspaceRepository[] @relation("WorkspaceRepositoryAssigner")
+  configuredWorkspaceReportSchedules WorkspaceReportSchedule[] @relation("WorkspaceReportScheduleConfigurer")
+  requestedWorkspaceReportOccurrences WorkspaceReportOccurrence[] @relation("WorkspaceReportOccurrenceRequester")
 
   @@map("users")
 }
@@ -154,6 +203,9 @@ model Repository {
   pushEvents         PushEvent[]
   activityEvents     ActivityEvent[]
   webhookDeliveries  GithubWebhookDelivery[]
+  workspaces         WorkspaceRepository[]
+  workspaceAnalysisStates WorkspaceRepositoryAnalysis[]
+  workspaceAnalysisRuns WorkspaceAnalysisRun[]
 
   @@index([githubInstallationId])
   @@index([githubInstallationId, accessRemovedAt])
@@ -177,6 +229,174 @@ model UserRepository {
   @@index([userId, trackingEnabled])
   @@index([userId, removedAt])
   @@map("user_repositories")
+}
+
+model Workspace {
+  id           String                @id @default(cuid())
+  name         String                @db.VarChar(100)
+  slug         String                @unique @db.VarChar(120)
+  createdById  String                @map("created_by_id")
+  archivedAt   DateTime?             @map("archived_at")
+  createdAt    DateTime              @default(now()) @map("created_at")
+  updatedAt    DateTime              @updatedAt @map("updated_at")
+  createdBy    User                  @relation("WorkspaceCreator", fields: [createdById], references: [id], onDelete: Restrict)
+  memberships  WorkspaceMembership[]
+  repositories WorkspaceRepository[]
+  analysisStates WorkspaceRepositoryAnalysis[]
+  analysisRuns WorkspaceAnalysisRun[]
+  reportSchedule WorkspaceReportSchedule?
+  reportOccurrences WorkspaceReportOccurrence[]
+  reports Report[]
+
+  @@index([createdById])
+  @@index([archivedAt, createdAt])
+  @@map("workspaces")
+}
+
+model WorkspaceMembership {
+  id          String        @id @default(cuid())
+  workspaceId String        @map("workspace_id")
+  userId      String        @map("user_id")
+  role        WorkspaceRole
+  createdAt   DateTime      @default(now()) @map("created_at")
+  updatedAt   DateTime      @updatedAt @map("updated_at")
+  workspace   Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user        User          @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  @@unique([workspaceId, userId])
+  @@index([userId, role])
+  @@index([workspaceId, role])
+  @@map("workspace_memberships")
+}
+
+model WorkspaceRepository {
+  id           String     @id @default(cuid())
+  workspaceId  String     @map("workspace_id")
+  repositoryId String     @map("repository_id")
+  assignedById String     @map("assigned_by_id")
+  createdAt    DateTime   @default(now()) @map("created_at")
+  workspace    Workspace  @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  repository   Repository @relation(fields: [repositoryId], references: [id], onDelete: Restrict)
+  assignedBy   User       @relation("WorkspaceRepositoryAssigner", fields: [assignedById], references: [id], onDelete: Restrict)
+
+  @@unique([workspaceId, repositoryId])
+  @@index([repositoryId])
+  @@index([assignedById])
+  @@map("workspace_repositories")
+}
+
+model WorkspaceRepositoryAnalysis {
+  id                  String                       @id @default(cuid())
+  workspaceId         String                       @map("workspace_id")
+  repositoryId        String                       @map("repository_id")
+  status              WorkspaceAnalysisStatus      @default(UNINITIALIZED)
+  baselineSha         String?                      @db.VarChar(64) @map("baseline_sha")
+  lastAnalyzedSha     String?                      @db.VarChar(64) @map("last_analyzed_sha")
+  baselineStartedAt   DateTime?                    @map("baseline_started_at")
+  baselineCompletedAt DateTime?                    @map("baseline_completed_at")
+  lastAnalyzedAt      DateTime?                    @map("last_analyzed_at")
+  accessState         WorkspaceAnalysisAccessState @default(ACTIVE) @map("access_state")
+  coverage            Json?
+  lastError           String?                      @db.VarChar(500) @map("last_error")
+  createdAt           DateTime                     @default(now()) @map("created_at")
+  updatedAt           DateTime                     @updatedAt @map("updated_at")
+  workspace           Workspace                    @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  repository          Repository                   @relation(fields: [repositoryId], references: [id], onDelete: Restrict)
+  runs                 WorkspaceAnalysisRun[]
+
+  @@unique([workspaceId, repositoryId])
+  @@index([workspaceId, status])
+  @@index([repositoryId, accessState])
+  @@map("workspace_repository_analyses")
+}
+
+model WorkspaceAnalysisRun {
+  id            String                       @id @default(cuid())
+  analysisId    String                       @map("analysis_id")
+  workspaceId   String                       @map("workspace_id")
+  repositoryId  String                       @map("repository_id")
+  kind          WorkspaceAnalysisRunKind
+  fromSha       String?                      @db.VarChar(64) @map("from_sha")
+  toSha         String?                      @db.VarChar(64) @map("to_sha")
+  dataCutoffAt  DateTime                     @map("data_cutoff_at")
+  status        WorkspaceAnalysisStatus
+  accessState   WorkspaceAnalysisAccessState @default(ACTIVE) @map("access_state")
+  coverage      Json?
+  evidence      Json                         @default("{}")
+  publishedAt   DateTime?                    @map("published_at")
+  processingToken String?                    @map("processing_token")
+  processingExpiresAt DateTime?              @map("processing_expires_at")
+  startedAt     DateTime?                    @map("started_at")
+  completedAt   DateTime?                    @map("completed_at")
+  error         String?                      @db.VarChar(500)
+  createdAt     DateTime                     @default(now()) @map("created_at")
+  analysis      WorkspaceRepositoryAnalysis  @relation(fields: [analysisId], references: [id], onDelete: Cascade)
+  workspace     Workspace                    @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  repository    Repository                   @relation(fields: [repositoryId], references: [id], onDelete: Restrict)
+
+  @@unique([analysisId, kind, toSha])
+  @@index([workspaceId, createdAt])
+  @@index([repositoryId, dataCutoffAt])
+  @@index([status, createdAt])
+  @@index([status, processingExpiresAt])
+  @@map("workspace_analysis_runs")
+}
+
+model WorkspaceReportSchedule {
+  id              String                   @id @default(cuid())
+  workspaceId     String                   @unique @map("workspace_id")
+  enabled         Boolean                  @default(true)
+  frequency       WorkspaceReportFrequency
+  selectedDays    Int[]                    @default([]) @map("selected_days")
+  localTime       String                   @db.VarChar(5) @map("local_time")
+  timezone        String                   @db.VarChar(100)
+  version         Int                      @default(1)
+  configuredById  String                   @map("configured_by_id")
+  nextRunAt       DateTime?                @map("next_run_at")
+  lastEvaluatedAt DateTime?                @map("last_evaluated_at")
+  createdAt       DateTime                 @default(now()) @map("created_at")
+  updatedAt       DateTime                 @updatedAt @map("updated_at")
+  workspace       Workspace                @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  configuredBy    User                     @relation("WorkspaceReportScheduleConfigurer", fields: [configuredById], references: [id], onDelete: Restrict)
+  occurrences     WorkspaceReportOccurrence[]
+
+  @@index([enabled, nextRunAt])
+  @@map("workspace_report_schedules")
+}
+
+model WorkspaceReportOccurrence {
+  id                    String                           @id @default(cuid())
+  workspaceId           String                           @map("workspace_id")
+  scheduleId            String?                          @map("schedule_id")
+  scheduleVersion       Int?                             @map("schedule_version")
+  trigger               WorkspaceReportTrigger
+  scheduledFor          DateTime?                        @map("scheduled_for")
+  intendedLocalDateTime String?                          @db.VarChar(40) @map("intended_local_date_time")
+  windowStart           DateTime                         @map("window_start")
+  windowEnd             DateTime                         @map("window_end")
+  dataCutoffAt          DateTime                         @map("data_cutoff_at")
+  requestedById         String                           @map("requested_by_id")
+  status                WorkspaceReportOccurrenceStatus  @default(PENDING)
+  reportId              String?                          @unique @map("report_id")
+  idempotencyKey        String                           @db.VarChar(160) @map("idempotency_key")
+  evidenceSnapshot      Json                             @map("evidence_snapshot")
+  noActivity            Boolean?                         @map("no_activity")
+  recoveredAt           DateTime?                        @map("recovered_at")
+  publishedAt           DateTime?                        @map("published_at")
+  createdAt             DateTime                         @default(now()) @map("created_at")
+  startedAt             DateTime?                        @map("started_at")
+  completedAt           DateTime?                        @map("completed_at")
+  error                 String?                          @db.VarChar(500)
+  workspace             Workspace                        @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  schedule              WorkspaceReportSchedule?         @relation(fields: [scheduleId], references: [id], onDelete: SetNull)
+  requestedBy           User                             @relation("WorkspaceReportOccurrenceRequester", fields: [requestedById], references: [id], onDelete: Restrict)
+  report                Report?                          @relation(fields: [reportId], references: [id], onDelete: NoAction)
+
+  @@unique([workspaceId, idempotencyKey])
+  @@unique([scheduleId, scheduledFor])
+  @@index([status, publishedAt, createdAt])
+  @@index([workspaceId, createdAt])
+  @@map("workspace_report_occurrences")
 }
 
 model Contributor {
@@ -321,6 +541,7 @@ model GithubWebhookDelivery {
 model Report {
   id            String        @id @default(cuid())
   userId        String        @map("user_id")
+  workspaceId   String?       @map("workspace_id")
   reportDate    DateTime      @map("report_date") @db.Date
   timezone      String        @default("UTC")
   status        ReportStatus  @default(pending)
@@ -339,14 +560,16 @@ model Report {
   completedAt   DateTime?     @map("completed_at")
   error         String?
   user          User          @relation(fields: [userId], references: [id], onDelete: Restrict)
+  workspace     Workspace?    @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  workspaceOccurrence WorkspaceReportOccurrence?
   revisions     ReportRevision[] @relation("ReportRevisions")
   currentRevision ReportRevision? @relation("CurrentReportRevision", fields: [currentRevisionId], references: [id], onDelete: SetNull)
   artifacts     ReportArtifact[]
 
-  @@unique([userId, reportDate])
   @@index([status, publishedAt, createdAt])
   @@index([status, processingExpiresAt])
   @@index([userId, reportDate, createdAt])
+  @@index([workspaceId, createdAt])
   @@map("reports")
 }
 

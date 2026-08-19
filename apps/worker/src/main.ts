@@ -1,5 +1,6 @@
 import { startTraceWorkers } from './application';
 import type { WorkerStop } from './shutdown-budget';
+import { safeWorkerStartupError } from './startup-error';
 
 let stopWorkers: WorkerStop | undefined;
 let runtimeFailurePending = false;
@@ -17,6 +18,7 @@ void startTraceWorkers({ environment: process.env, onRuntimeFailure: runtimeFail
   };
   process.once('SIGINT', onSignal);
   process.once('SIGTERM', onSignal);
-}).catch(() => {
+}).catch((error: unknown) => {
+  console.error(safeWorkerStartupError(error));
   process.exitCode = 1;
 });

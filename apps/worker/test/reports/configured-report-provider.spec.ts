@@ -91,6 +91,15 @@ describe('configured structured report provider', () => {
     expect(() => reportProviderFromEnvironment({ REPORT_LLM_PROVIDER: 'configured' })).toThrow('Invalid report provider configuration.');
   });
 
+  it('accepts the official Gemini OpenAI-compatible chat completions endpoint', () => {
+    expect(() => reportProviderFromEnvironment({
+      REPORT_LLM_PROVIDER: 'configured',
+      REPORT_LLM_ENDPOINT: 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions',
+      REPORT_LLM_MODEL: 'gemini-test-model',
+      LLM_API_KEY: 'test-api-key',
+    })).not.toThrow();
+  });
+
   it('returns closed errors for provider HTTP failures, oversized responses, and invalid envelopes', async () => {
     const cases = [
       new Response('provider secret', { status: 429 }),

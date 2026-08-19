@@ -34,7 +34,7 @@ export class ReportPublisher implements OnApplicationBootstrap, OnModuleDestroy 
       this.logFailure(`report ${reportId}`, error);
       return;
     }
-    await this.enqueueOneBounded(reportId);
+    await this.enqueueAndMarkQueued(reportId);
   }
 
   async publishOwed(): Promise<void> {
@@ -89,7 +89,7 @@ export class ReportPublisher implements OnApplicationBootstrap, OnModuleDestroy 
     }));
     await Promise.all(prepared
       .filter((id): id is string => id !== null)
-      .map((id) => this.enqueueOneBounded(id)));
+      .map((id) => this.enqueueAndMarkQueued(id)));
   }
 
   private async prepareOne(reportId: string): Promise<boolean> {
@@ -127,9 +127,21 @@ export class ReportPublisher implements OnApplicationBootstrap, OnModuleDestroy 
     return attempted.count === 1;
   }
 
-  private async enqueueOneBounded(reportId: string): Promise<void> {
-    await this.withTimeout(this.queue.enqueue(reportId), REQUEST_PUBLISH_TIMEOUT_MS)
-      .catch((error: unknown) => this.logFailure(`report ${reportId}`, error));
+  private async enqueueAndMarkQueued(reportId: string): Promise<void> {
+    try {
+      await this.withTimeout(this.queue.enqueue(reportId), REQUEST_PUBLISH_TIMEOUT_MS);
+    } catch (error) {
+      this.logFailure(`report ${reportId}`, error);
+      return;
+    }
+    try {
+      await this.prisma.workspaceReportOccurrence.updateMany({
+        where: { reportId, status: 'PENDING' },
+        data: { status: 'QUEUED', publishedAt: new Date() },
+      });
+    } catch (error) {
+      this.logFailure(`workspace occurrence for report ${reportId}`, error);
+    }
   }
 
   private async withTimeout(operation: Promise<void>, timeoutMs: number): Promise<void> {

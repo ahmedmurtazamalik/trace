@@ -4,6 +4,7 @@ import type { GithubCommitEnricher } from './processors/github/github-commit.enr
 import { GithubPushProcessor } from './processors/github/github-push.processor';
 import { runGithubWebhookWorker } from './runtime';
 import { startReportWorker } from './reports/report-application';
+import { startWorkspaceAnalysisWorker } from './workspaces/workspace-analysis.application';
 import { workerShutdownDeadline, workerShutdownTimeoutMs, type WorkerStop } from './shutdown-budget';
 
 interface ActivityProcessor {
@@ -25,32 +26,41 @@ interface TraceWorkersOptions {
   environment: NodeJS.ProcessEnv;
   startActivity?: typeof startGithubActivityWorker;
   startReports?: typeof startReportWorker;
+  startWorkspaceAnalysis?: typeof startWorkspaceAnalysisWorker;
   onRuntimeFailure?: () => void;
 }
 
 export async function startTraceWorkers(options: TraceWorkersOptions): Promise<WorkerStop> {
   const activityStarter = options.startActivity ?? startGithubActivityWorker;
   const reportStarter = options.startReports ?? startReportWorker;
+  const analysisStarter = options.startWorkspaceAnalysis ?? startWorkspaceAnalysisWorker;
   let stopActivity: WorkerStop | undefined;
   let stopReports: WorkerStop | undefined;
+  let stopAnalysis: WorkerStop | undefined;
+  let startupStage: 'activity' | 'report' | 'analysis' = 'activity';
   try {
     const childFailure = (): void => options.onRuntimeFailure?.();
     stopActivity = await activityStarter({ environment: options.environment, onRuntimeFailure: childFailure });
+    startupStage = 'report';
     stopReports = await reportStarter({ environment: options.environment, onRuntimeFailure: childFailure });
+    startupStage = 'analysis';
+    stopAnalysis = await analysisStarter({ environment: options.environment, onRuntimeFailure: childFailure });
   } catch {
     const deadline = workerShutdownDeadline(options.environment);
     const outcomes = await Promise.allSettled([
+      stopAnalysis?.(deadline) ?? Promise.resolve(),
       stopReports?.(deadline) ?? Promise.resolve(),
       stopActivity?.(deadline) ?? Promise.resolve(),
     ]);
     if (outcomes.some((outcome) => outcome.status === 'rejected')) throw new Error('Trace workers cleanup failed.');
-    throw new Error('Trace workers startup failed.');
+    throw new Error(`Trace ${startupStage} worker startup failed.`);
   }
   let stopping: Promise<void> | undefined;
   return async (requestedDeadline?: number): Promise<void> => {
     stopping ??= (async () => {
       const deadline = requestedDeadline ?? workerShutdownDeadline(options.environment);
       const outcomes = await Promise.allSettled([
+        stopAnalysis?.(deadline) ?? Promise.resolve(),
         stopReports?.(deadline) ?? Promise.resolve(),
         stopActivity?.(deadline) ?? Promise.resolve(),
       ]);

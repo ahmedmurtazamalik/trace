@@ -3,6 +3,7 @@ import { DeterministicReportProvider, groundedTemplate, type ReportInputSnapshot
 
 const TRUSTED_PROVIDER_HOSTS = new Set([
   'api.openai.com',
+  'generativelanguage.googleapis.com',
 ]);
 
 export interface ConfiguredReportProviderOptions {

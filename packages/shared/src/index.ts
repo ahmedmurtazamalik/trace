@@ -6,3 +6,7 @@ export * from './github';
 export * from './pagination';
 export * from './repositories';
 export * from './reports';
+export * from './workspaces';
+export * from './workspace-analysis';
+export * from './workspace-reports';
+export * from './workspace-report-schedule';

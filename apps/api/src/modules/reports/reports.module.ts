@@ -19,5 +19,6 @@ import { ReportsService } from './reports.service';
       useFactory: () => artifactStorageFromEnvironment(process.env),
     },
   ],
+  exports: [ReportPublisher, ReportsService],
 })
 export class ReportsModule {}

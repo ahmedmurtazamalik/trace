@@ -19,6 +19,34 @@ describe('report publication reconciliation', () => {
     logger.mockRestore();
   });
 
+  it('marks a workspace occurrence queued only after successful initial queue publication', async () => {
+    const reportUpdateMany = jest.fn().mockResolvedValue({ count: 1 });
+    let occurrenceUpdateCall: unknown;
+    const occurrenceUpdateMany = jest.fn((input: unknown) => {
+      occurrenceUpdateCall = input;
+      return Promise.resolve({ count: 1 });
+    });
+    const prisma = {
+      report: {
+        findFirst: jest.fn().mockResolvedValue({ id: 'workspace-report', renderRevision: null, renderGeneration: 0 }),
+        updateMany: reportUpdateMany,
+      },
+      workspaceReportOccurrence: { updateMany: occurrenceUpdateMany },
+    } as unknown as PrismaService;
+    const enqueue = jest.fn().mockResolvedValue(undefined);
+
+    await new ReportPublisher(prisma, { enqueue } as unknown as ReportQueue).publishOneBounded('workspace-report');
+
+    expect(enqueue).toHaveBeenCalledWith('workspace-report');
+    expect(occurrenceUpdateMany).toHaveBeenCalledTimes(1);
+    const updateCall = occurrenceUpdateCall;
+    if (typeof updateCall !== 'object' || updateCall === null || !('where' in updateCall) || !('data' in updateCall)) throw new Error('missing occurrence update');
+    expect(updateCall.where).toEqual({ reportId: 'workspace-report', status: 'PENDING' });
+    if (typeof updateCall.data !== 'object' || updateCall.data === null || !('status' in updateCall.data) || !('publishedAt' in updateCall.data)) throw new Error('invalid occurrence update');
+    expect(updateCall.data.status).toBe('QUEUED');
+    expect(updateCall.data.publishedAt).toBeInstanceOf(Date);
+  });
+
   it('uses independent fair batches for render and initial obligations', async () => {
     const findMany = jest.fn().mockResolvedValue([]);
     const prisma = { report: { findMany } } as unknown as PrismaService;
@@ -90,7 +118,10 @@ describe('report publication reconciliation', () => {
     });
     const enqueue = jest.fn().mockImplementation((id: string) =>
       id.startsWith('poison-') ? Promise.reject(new Error('queue unavailable')) : Promise.resolve());
-    const prisma = { report: { findMany, findFirst, updateMany } } as unknown as PrismaService;
+    const prisma = {
+      report: { findMany, findFirst, updateMany },
+      workspaceReportOccurrence: { updateMany: jest.fn().mockResolvedValue({ count: 0 }) },
+    } as unknown as PrismaService;
     const publisher = new ReportPublisher(prisma, { enqueue } as unknown as ReportQueue);
 
     await publisher.publishOwed();
@@ -116,7 +147,10 @@ describe('report publication reconciliation', () => {
       if (enqueue.mock.calls.length === 1) attemptedBeforeFirstQueueCall = updateMany.mock.calls.length;
       return new Promise<void>(() => undefined);
     });
-    const prisma = { report: { findMany, findFirst, updateMany } } as unknown as PrismaService;
+    const prisma = {
+      report: { findMany, findFirst, updateMany },
+      workspaceReportOccurrence: { updateMany: jest.fn().mockResolvedValue({ count: 0 }) },
+    } as unknown as PrismaService;
     const publisher = new ReportPublisher(prisma, { enqueue } as unknown as ReportQueue);
     const startedAt = Date.now();
 
@@ -141,7 +175,10 @@ describe('report publication reconciliation', () => {
     }));
     const updateMany = jest.fn().mockResolvedValue({ count: 1 });
     const enqueue = jest.fn().mockResolvedValue(undefined);
-    const prisma = { report: { findMany, findFirst, updateMany } } as unknown as PrismaService;
+    const prisma = {
+      report: { findMany, findFirst, updateMany },
+      workspaceReportOccurrence: { updateMany: jest.fn().mockResolvedValue({ count: 0 }) },
+    } as unknown as PrismaService;
     const queue = { enqueue } as unknown as ReportQueue;
 
     await new ReportPublisher(prisma, queue).publishOwed();

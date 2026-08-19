@@ -7,7 +7,7 @@ import { useReportDraftRecovery } from "@/components/shell/report-draft-recovery
 
 export type SaveReportRevision = (reportId: string, request: ReportRevisionUpdateRequest, signal?: AbortSignal) => Promise<ReportRevisionUpdateResponse>;
 export type ReportRevisionSaved = (report: ReportDetail) => void;
-interface Props { report: ReportDetail; saveRevision: SaveReportRevision; contributorLabels?: Record<string, string>; onReloadLatest?: () => void; onDirtyChange?: (dirty: boolean) => void; onSaved?: ReportRevisionSaved }
+interface Props { report: ReportDetail; saveRevision: SaveReportRevision; contributorLabels?: Record<string, string>; onReloadLatest?: () => void; onDirtyChange?: (dirty: boolean) => void; onSaved?: ReportRevisionSaved; onAuthorizationFailure?: (code: string) => void }
 type EditableReport = ReportDetail & { content: ReportContent; revision: number; revisionSource: "ai" | "manual" };
 
 function cloneContent(content: ReportContent): ReportContent {
@@ -55,13 +55,13 @@ function applyPatch(content: ReportContent, prosePatch: ReportRevisionUpdateRequ
   return next;
 }
 
-export function ReportEditor({ report, saveRevision, contributorLabels = {}, onReloadLatest, onDirtyChange, onSaved }: Props) {
+export function ReportEditor({ report, saveRevision, contributorLabels = {}, onReloadLatest, onDirtyChange, onSaved, onAuthorizationFailure }: Props) {
   if (!report.content || !report.revision || !report.revisionSource) return null;
   const editableReport: EditableReport = { ...report, content: report.content, revision: report.revision, revisionSource: report.revisionSource };
-  return <ReportEditorReady report={editableReport} saveRevision={saveRevision} contributorLabels={contributorLabels} onReloadLatest={onReloadLatest} onDirtyChange={onDirtyChange} onSaved={onSaved} editable={["completed", "failed"].includes(report.status)} />;
+  return <ReportEditorReady report={editableReport} saveRevision={saveRevision} contributorLabels={contributorLabels} onReloadLatest={onReloadLatest} onDirtyChange={onDirtyChange} onSaved={onSaved} onAuthorizationFailure={onAuthorizationFailure} editable={["completed", "failed"].includes(report.status)} />;
 }
-function ReportEditorReady({ report, saveRevision, contributorLabels, onReloadLatest, onDirtyChange, onSaved, editable }: { report: EditableReport; saveRevision: SaveReportRevision; contributorLabels: Record<string, string>; onReloadLatest?: () => void; onDirtyChange?: (dirty: boolean) => void; onSaved?: ReportRevisionSaved; editable: boolean }) {
-  const { clearActive, consume, publishActive, recoveryGeneration } = useReportDraftRecovery();
+function ReportEditorReady({ report, saveRevision, contributorLabels, onReloadLatest, onDirtyChange, onSaved, onAuthorizationFailure, editable }: { report: EditableReport; saveRevision: SaveReportRevision; contributorLabels: Record<string, string>; onReloadLatest?: () => void; onDirtyChange?: (dirty: boolean) => void; onSaved?: ReportRevisionSaved; onAuthorizationFailure?: (code: string) => void; editable: boolean }) {
+  const { clearActive, consume, discardActive, publishActive, recoveryGeneration } = useReportDraftRecovery();
   const [current, setCurrent] = useState(report);
   const [draft, setDraft] = useState(() => cloneContent(
     typeof window === "undefined" ? report.content : consume(report.id, report.revision, window.location.href) ?? report.content,
@@ -134,6 +134,11 @@ function ReportEditorReady({ report, saveRevision, contributorLabels, onReloadLa
     } catch (cause) {
       if (controller.signal.aborted || saveGeneration.current !== generation) return;
       const code = typeof cause === "object" && cause !== null && "code" in cause ? String(cause.code) : "";
+      if ((code === "UNAUTHENTICATED" || code === "REPORT_NOT_FOUND" || code === "WORKSPACE_NOT_FOUND") && onAuthorizationFailure) {
+        discardActive();
+        onAuthorizationFailure(code);
+        return;
+      }
       setError(code === "REPORT_REVISION_CONFLICT" ? "A newer revision exists. Reload the latest revision; your unsaved prose will be kept for review." : code === "RATE_LIMITED" ? "Too many revision requests. Wait before trying again; your changes remain here." : code === "CSRF_INVALID" ? "Your security session expired. Refresh the page before saving; your changes remain here." : code === "UNAUTHENTICATED" ? "Your session expired. Sign in again before saving." : code === "INVALID_RESPONSE" ? "Trace received an invalid revision response. Your changes remain here so you can retry." : code === "REPORT_NOT_EDITABLE" ? "This report is no longer editable. Reload the latest report state." : code === "REPORT_NOT_FOUND" ? "This report is no longer available. Your changes remain here." : code === "NOT_FOUND" ? "Revision saving is not available in the current backend. Your changes remain here until the backend is updated." : "Trace could not save this revision. Your changes remain here so you can retry.");
     } finally { if (!controller.signal.aborted) setSaving(false); }
   }

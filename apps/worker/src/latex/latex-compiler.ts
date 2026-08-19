@@ -195,6 +195,22 @@ const spawnRunner: ProcessRunner = (command, arguments_, options) => new Promise
 });
 
 async function removeContainer(containerName: string): Promise<void> {
+  // Killing the Docker CLI can race the daemon's pending `run --name` request: an
+  // initial remove may report "no such container" and the container can appear
+  // shortly afterward. Reconcile for a bounded window before declaring cleanup.
+  const reconciliationDeadline = Date.now() + 2_000;
+  while (Date.now() < reconciliationDeadline) {
+    const removed = await runDockerCommand(['rm', '-f', containerName], 5_000);
+    if (removed.code !== 0 && !/No such (?:object|container)/i.test(removed.stderr)) {
+      throw new Error(COMPILE_FAILED);
+    }
+    const inspected = await runDockerCommand(['container', 'inspect', containerName], 5_000);
+    if (inspected.code !== 0 && !/No such (?:object|container)/i.test(inspected.stderr)) {
+      throw new Error(COMPILE_FAILED);
+    }
+    await new Promise((resolveDelay) => setTimeout(resolveDelay, 100));
+  }
+
   const removed = await runDockerCommand(['rm', '-f', containerName], 5_000);
   if (removed.code !== 0 && !/No such (?:object|container)/i.test(removed.stderr)) {
     throw new Error(COMPILE_FAILED);

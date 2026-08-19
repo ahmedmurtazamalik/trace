@@ -2,17 +2,26 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Button, Card } from "@trace/ui";
-import type { ReportArtifact, ReportDetail, ReportDetailResponse, ReportRegenerationRequest, ReportRegenerationResponse } from "@trace/shared";
+import type { ReportArtifact, ReportDetail, ReportDetailResponse, ReportRegenerationRequest, ReportRegenerationResponse, WorkspaceReportDetailResponse, WorkspaceReportEvidence } from "@trace/shared";
 
+import { useReportDraftRecovery } from "@/components/shell/report-draft-recovery";
 import { ReportEditor, type SaveReportRevision } from "./report-editor";
 
-export type LoadReport = (reportId: string, signal?: AbortSignal) => Promise<ReportDetailResponse>;
+export type LoadReport = (reportId: string, signal?: AbortSignal) => Promise<ReportDetailResponse | WorkspaceReportDetailResponse>;
 export type RegenerateReport = (reportId: string, request: ReportRegenerationRequest, signal?: AbortSignal) => Promise<ReportRegenerationResponse>;
 export interface DownloadedArtifact { blob: Blob; fileName: string }
 export type DownloadArtifact = (reportId: string, artifact: ReportArtifact, signal?: AbortSignal) => Promise<DownloadedArtifact>;
 export type DeliverDownload = (artifact: DownloadedArtifact) => void;
 export type ResolveContributorLabels = (report: ReportDetail, signal?: AbortSignal) => Promise<Record<string, string>>;
 const labels = { pending: "Pending", processing: "Processing", completed: "Completed", failed: "Failed" } as const;
+
+function failureCode(cause: unknown) {
+  return typeof cause === "object" && cause !== null && "code" in cause ? String(cause.code) : "";
+}
+
+function isAuthorizationFailure(code: string) {
+  return code === "UNAUTHENTICATED" || code === "FORBIDDEN" || code === "REPORT_NOT_FOUND" || code === "WORKSPACE_NOT_FOUND";
+}
 
 export function deliverBrowserDownload(artifact: DownloadedArtifact) {
   const url = URL.createObjectURL(artifact.blob);
@@ -32,10 +41,22 @@ function formatBytes(sizeBytes: number) {
   return `${(sizeBytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+function formatEvidenceInstant(value: string) {
+  return new Date(value).toLocaleString("en-US", { dateStyle: "long", timeStyle: "short", timeZone: "UTC" });
+}
+
+function evidenceTriggerLabel(trigger: WorkspaceReportEvidence["trigger"]) {
+  if (trigger === "RECOVERY") return "Recovery run";
+  if (trigger === "SCHEDULED") return "Scheduled run";
+  return "Manual run";
+}
+
 interface Props { reportId: string; loadReport: LoadReport; saveRevision?: SaveReportRevision; regenerateReport?: RegenerateReport; downloadArtifact?: DownloadArtifact; deliverDownload?: DeliverDownload; resolveContributorLabels?: ResolveContributorLabels; pollIntervalMs?: number }
 
 export function ReportDetailView({ reportId, loadReport, saveRevision, regenerateReport, downloadArtifact, deliverDownload = deliverBrowserDownload, resolveContributorLabels, pollIntervalMs = 5000 }: Props) {
+  const { discardActive } = useReportDraftRecovery();
   const [report, setReport] = useState<ReportDetail>();
+  const [workspaceEvidence, setWorkspaceEvidence] = useState<WorkspaceReportEvidence>();
   const [contributorLabels, setContributorLabels] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>();
@@ -46,8 +67,16 @@ export function ReportDetailView({ reportId, loadReport, saveRevision, regenerat
   const pollingGeneration = useRef(0);
   const controller = useRef<AbortController>();
   const downloadController = useRef<AbortController>();
+  const downloadGeneration = useRef(0);
   const timer = useRef<number>();
   const hasLoadedReport = useRef(false);
+
+  const invalidateDownloads = useCallback(() => {
+    downloadGeneration.current += 1;
+    downloadController.current?.abort();
+    downloadController.current = undefined;
+    setDownloadingId(undefined);
+  }, []);
 
   const cancelPolling = useCallback(() => {
     pollingGeneration.current += 1;
@@ -56,6 +85,21 @@ export function ReportDetailView({ reportId, loadReport, saveRevision, regenerat
     if (timer.current !== undefined) window.clearTimeout(timer.current);
     timer.current = undefined;
   }, []);
+
+  const invalidateProtectedReport = useCallback((code: string) => {
+    discardActive();
+    cancelPolling();
+    invalidateDownloads();
+    hasLoadedReport.current = false;
+    setReport(undefined);
+    setWorkspaceEvidence(undefined);
+    setContributorLabels({});
+    setDownloadingId(undefined);
+    setRegenerating(false);
+    setActionError(undefined);
+    setError(code === "UNAUTHENTICATED" ? "Your session expired. Sign in again to open this report." : "This report is no longer available to your account.");
+    setLoading(false);
+  }, [cancelPolling, discardActive, invalidateDownloads]);
 
   const startPolling = useCallback(() => {
     cancelPolling();
@@ -72,6 +116,7 @@ export function ReportDetailView({ reportId, loadReport, saveRevision, regenerat
         if (pollingGeneration.current !== generation || nextController.signal.aborted) return;
         hasLoadedReport.current = true;
         setReport(response.report);
+        setWorkspaceEvidence('workspaceEvidence' in response ? response.workspaceEvidence : undefined);
         setLoading(false);
         if (response.report.status === "pending" || response.report.status === "processing") {
           timer.current = window.setTimeout(() => void poll(), pollIntervalMs);
@@ -79,16 +124,22 @@ export function ReportDetailView({ reportId, loadReport, saveRevision, regenerat
       } catch (cause) {
         if (pollingGeneration.current !== generation || nextController.signal.aborted) return;
         if (cause instanceof DOMException && cause.name === "AbortError") return;
+        const code = failureCode(cause);
+        if (isAuthorizationFailure(code)) {
+          invalidateProtectedReport(code);
+          return;
+        }
         setError(hasLoadedReport.current ? "Trace could not refresh this report. It will retry automatically." : "Trace could not load this report. Try again.");
         setLoading(false);
         timer.current = window.setTimeout(() => void poll(), pollIntervalMs);
       }
     };
     void poll();
-  }, [cancelPolling, loadReport, pollIntervalMs, reportId]);
+  }, [cancelPolling, invalidateProtectedReport, loadReport, pollIntervalMs, reportId]);
 
   useEffect(() => {
     setReport(undefined);
+    setWorkspaceEvidence(undefined);
     hasLoadedReport.current = false;
     setContributorLabels({});
     setLoading(true);
@@ -96,15 +147,13 @@ export function ReportDetailView({ reportId, loadReport, saveRevision, regenerat
     setRegenerating(false);
     setDownloadingId(undefined);
     setActionError(undefined);
-    downloadController.current?.abort();
-    downloadController.current = undefined;
+    invalidateDownloads();
     startPolling();
     return () => {
       cancelPolling();
-      downloadController.current?.abort();
-      downloadController.current = undefined;
+      invalidateDownloads();
     };
-  }, [cancelPolling, reportId, startPolling]);
+  }, [cancelPolling, invalidateDownloads, reportId, startPolling]);
 
   useEffect(() => {
     if (!report?.content || !resolveContributorLabels) return;
@@ -112,12 +161,19 @@ export function ReportDetailView({ reportId, loadReport, saveRevision, regenerat
     setContributorLabels({});
     void resolveContributorLabels(report, labelController.signal)
       .then((resolved) => { if (!labelController.signal.aborted) setContributorLabels(resolved); })
-      .catch((cause) => { if (!(cause instanceof DOMException && cause.name === "AbortError")) setContributorLabels({}); });
+      .catch((cause) => {
+        if (labelController.signal.aborted) return;
+        if (cause instanceof DOMException && cause.name === "AbortError") return;
+        const code = failureCode(cause);
+        if (isAuthorizationFailure(code)) invalidateProtectedReport(code);
+        else setContributorLabels({});
+      });
     return () => labelController.abort();
-  }, [report, resolveContributorLabels]);
+  }, [invalidateProtectedReport, report, resolveContributorLabels]);
 
   const acceptSavedRevision = useCallback((savedReport: ReportDetail) => {
     cancelPolling();
+    invalidateDownloads();
     hasLoadedReport.current = true;
     setReport(savedReport);
     setLoading(false);
@@ -125,11 +181,12 @@ export function ReportDetailView({ reportId, loadReport, saveRevision, regenerat
     if (savedReport.status === "pending" || savedReport.status === "processing") {
       timer.current = window.setTimeout(startPolling, pollIntervalMs);
     }
-  }, [cancelPolling, pollIntervalMs, startPolling]);
+  }, [cancelPolling, invalidateDownloads, pollIntervalMs, startPolling]);
 
   async function regenerate() {
     if (!regenerateReport || !report?.revision || !["completed", "failed"].includes(report.status) || editorDirty || regenerating) return;
     cancelPolling();
+    invalidateDownloads();
     const generation = pollingGeneration.current;
     const actionController = new AbortController();
     controller.current = actionController;
@@ -144,7 +201,11 @@ export function ReportDetailView({ reportId, loadReport, saveRevision, regenerat
       }
     } catch (cause) {
       if (actionController.signal.aborted || pollingGeneration.current !== generation) return;
-      const code = typeof cause === "object" && cause !== null && "code" in cause ? String(cause.code) : "";
+      const code = failureCode(cause);
+      if (isAuthorizationFailure(code)) {
+        invalidateProtectedReport(code);
+        return;
+      }
       setActionError(code === "REPORT_REVISION_CONFLICT" ? "A newer revision exists. Reload the latest report before regenerating." : code === "RATE_LIMITED" ? "Too many regeneration requests. Wait before trying again; your current revision is unchanged." : code === "CSRF_INVALID" ? "Your security session expired. Refresh the page before regenerating." : code === "UNAUTHENTICATED" ? "Your session expired. Sign in again before regenerating." : code === "REPORT_NOT_EDITABLE" ? "This report can no longer be regenerated in its current state." : code === "REPORT_GENERATION_UNAVAILABLE" ? "Report regeneration is temporarily unavailable. Try again later." : code === "REPORT_NOT_FOUND" ? "This report is no longer available." : "Trace could not regenerate this report. Your current revision is unchanged.");
     } finally {
       if (!actionController.signal.aborted && pollingGeneration.current === generation) setRegenerating(false);
@@ -164,7 +225,11 @@ export function ReportDetailView({ reportId, loadReport, saveRevision, regenerat
       deliverDownload(downloaded);
     } catch (cause) {
       if (actionController.signal.aborted || downloadController.current !== actionController) return;
-      const code = typeof cause === "object" && cause !== null && "code" in cause ? String(cause.code) : "";
+      const code = failureCode(cause);
+      if (isAuthorizationFailure(code)) {
+        invalidateProtectedReport(code);
+        return;
+      }
       setActionError(code === "REPORT_ARTIFACT_NOT_FOUND" ? "This report file is unavailable or expired. Refresh the report and try again." : code === "UNAUTHENTICATED" ? "Your session expired. Sign in again before downloading." : code === "INVALID_RESPONSE" ? "Trace rejected an invalid or corrupted report file. Refresh and try again." : code === "REPORT_NOT_FOUND" ? "This report is no longer available." : "Trace could not download this report file. Try again.");
     } finally {
       if (downloadController.current === actionController) {
@@ -192,6 +257,22 @@ export function ReportDetailView({ reportId, loadReport, saveRevision, regenerat
     {error ? <div className="report-notice-error" role="alert"><span>{error}</span><Button className="trace-button-secondary" onClick={startPolling}>Retry now</Button></div> : null}
     {report.status === "pending" || report.status === "processing" ? <Card className="report-progress-card" role="status"><strong>{report.status === "pending" ? "Waiting to begin" : "Building your report"}</strong><span>This page refreshes automatically while generation is active.</span></Card> : null}
     {report.status === "failed" && <Card className="report-state-card report-state-error" role="alert"><h3>Report generation failed</h3><p>{report.errorMessage}</p></Card>}
+    {report.status === "completed" && report.revision ? <Card className="report-currentness" aria-label="Report currentness and activity">
+      <div><span>Currentness</span><strong>Current revision {report.revision}</strong><small>Completed {report.completedAt ? new Date(report.completedAt).toLocaleString() : ""} · {report.revisionSource === "manual" ? "Manually edited" : "AI generated"}</small></div>
+      <div><span>Activity evidence</span><strong>{report.facts.commitCount === 0 ? "No activity recorded" : `${report.facts.commitCount} ${report.facts.commitCount === 1 ? "commit" : "commits"} recorded`}</strong><small>Facts are deterministic for this report snapshot.</small></div>
+    </Card> : null}
+    {workspaceEvidence ? <Card className="workspace-report-evidence" aria-label="Frozen workspace report evidence">
+      <header><div><span>Immutable snapshot</span><h3>Frozen report evidence</h3></div><strong>{evidenceTriggerLabel(workspaceEvidence.trigger)}</strong></header>
+      <dl>
+        <div><dt>Reporting window</dt><dd>{formatEvidenceInstant(workspaceEvidence.windowStart)} – {formatEvidenceInstant(workspaceEvidence.windowEnd)}</dd></div>
+        <div><dt>Data cutoff</dt><dd>{formatEvidenceInstant(workspaceEvidence.dataCutoffAt)}</dd></div>
+        <div><dt>Activity result</dt><dd>{workspaceEvidence.noActivity ? "No activity in this frozen window" : "Activity recorded in this frozen window"}</dd></div>
+      </dl>
+      <ul>{workspaceEvidence.repositories.map((repository) => <li key={repository.repositoryId}>
+        <div><strong>{repository.fullName}</strong><small>{repository.activityCount} {repository.activityCount === 1 ? "activity item" : "activity items"} · {repository.baselineOnly ? "Baseline evidence" : "Incremental evidence"}</small></div>
+        <div><span>{repository.accessState === "ACTIVE" ? "GitHub access active when frozen" : "GitHub access unavailable when frozen"}</span><small>{repository.coverage ? `${repository.coverage.analyzedFiles}/${repository.coverage.eligibleFiles} eligible files analyzed` : "Coverage unavailable for this snapshot"}</small></div>
+      </li>)}</ul>
+    </Card> : null}
     <section className="report-facts" aria-label="Deterministic report facts">
       {[["Repositories", report.facts.repositoryCount], ["Contributors", report.facts.contributorCount], ["Commits", report.facts.commitCount], ["Files changed", report.facts.filesChanged], ["Additions", report.facts.additions], ["Deletions", report.facts.deletions]].map(([label, value]) => <Card key={label}><span>{label}</span><strong>{value}</strong>{label === "Commits" && <small>{value} {value === 1 ? "commit" : "commits"}</small>}</Card>)}
     </section>
@@ -199,6 +280,6 @@ export function ReportDetailView({ reportId, loadReport, saveRevision, regenerat
       <header><div><span>Verified output</span><h3>Report files</h3></div><small>Files are checked against their recorded type, size, and SHA-256 checksum before download.</small></header>
       <ul>{currentArtifacts.map((artifact) => { const kind = artifact.kind === "pdf" ? "PDF" : "TEX"; return <li key={artifact.id}><div><strong>{artifact.fileName}</strong><small>{kind} · Revision {artifact.revision} · {formatBytes(artifact.sizeBytes)}</small></div>{downloadArtifact ? <Button className="trace-button-secondary" disabled={downloadingId !== undefined} onClick={() => void download(artifact)}>{downloadingId === artifact.id ? "Downloading…" : artifact.kind === "pdf" ? `Download ${artifact.fileName}` : `Download source ${artifact.fileName}`}</Button> : null}</li>; })}</ul>
     </Card> : null}
-    {report.content && saveRevision ? <ReportEditor report={report} saveRevision={saveRevision} contributorLabels={contributorLabels} onReloadLatest={startPolling} onDirtyChange={setEditorDirty} onSaved={acceptSavedRevision} /> : report.content ? <Card className="report-content-preview"><span>Structured preview</span><h3>Executive summary</h3><p>{report.content.executiveSummary}</p></Card> : null}
+    {report.content && saveRevision ? <ReportEditor report={report} saveRevision={saveRevision} contributorLabels={contributorLabels} onReloadLatest={startPolling} onDirtyChange={setEditorDirty} onSaved={acceptSavedRevision} onAuthorizationFailure={invalidateProtectedReport} /> : report.content ? <Card className="report-content-preview"><span>Structured report content</span><h3>Executive summary</h3><p>{report.content.executiveSummary}</p>{report.content.repositories.map((repository, repositoryIndex) => <section key={repository.repositoryId} aria-label={`Repository evidence ${repositoryIndex + 1}`}><h4>Repository evidence {repositoryIndex + 1}</h4><p>{repository.summary}</p>{repository.contributors.map((contributor, contributorIndex) => <div key={contributor.contributorId}><h5>Contributor {contributorIndex + 1}</h5><p>{contributor.summary}</p>{contributor.accomplishments.length ? <ul>{contributor.accomplishments.map((item) => <li key={item}>{item}</li>)}</ul> : <p>No accomplishments recorded.</p>}</div>)}</section>)}</Card> : null}
   </div>;
 }

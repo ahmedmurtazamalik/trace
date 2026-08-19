@@ -15,6 +15,7 @@ const routes = {
   "/repositories": "Repositories",
   "/activity": "Activity",
   "/reports": "Reports",
+  "/workspaces": "Workspaces",
   "/github": "GitHub",
   "/settings": "Settings",
   "/login": "Welcome back.",
