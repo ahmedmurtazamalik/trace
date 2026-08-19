@@ -7,8 +7,7 @@
     "start": "node --env-file-if-exists=../../.env dist/src/main.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "eslint src test",
-    "test": "jest --runInBand",
-    "test:coverage": "jest --runInBand --coverage"
+    "test": "jest --runInBand"
   },
   "dependencies": {
     "@trace/database": "workspace:*",
