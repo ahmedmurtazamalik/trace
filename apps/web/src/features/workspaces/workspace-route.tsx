@@ -1,38 +1,52 @@
 'use client';
 
+import { useState } from 'react';
 import { useAuthSession } from '@/auth/session-provider';
 import { listRepositories } from '@/api/repositories';
 import {
-  addWorkspaceMember,
+  acceptWorkspaceInvitation,
   archiveWorkspace,
   assignWorkspaceRepository,
   createWorkspace,
+  createWorkspaceInvitation,
+  declineWorkspaceInvitation,
   disableWorkspaceReportSchedule,
   generateWorkspaceReport,
   getWorkspace,
   getWorkspaceAnalysis,
+  getWorkspaceInvitation,
   getWorkspaceReportSchedule,
+  listMyWorkspaceInvitations,
+  listWorkspaceInvitations,
   listWorkspaceReportOccurrences,
   listWorkspaceReports,
   listWorkspaces,
   removeWorkspaceMember,
   removeWorkspaceRepository,
+  revokeWorkspaceInvitation,
   updateWorkspace,
   updateWorkspaceMemberRole,
   updateWorkspaceReportSchedule,
   startWorkspaceBaseline,
 } from '@/api/workspaces';
 import { WorkspaceExperience } from './workspace-experience';
+import { WorkspaceInvitationCenter } from './workspace-invitation-center';
 
 export function WorkspaceRoute() {
   const { csrfToken } = useAuthSession();
+  const [workspaceVersion, setWorkspaceVersion] = useState(0);
   if (!csrfToken) return <div className="inline-alert error" role="alert">Authenticated session is missing CSRF protection.</div>;
-  return <WorkspaceExperience
+  return <>
+    <WorkspaceInvitationCenter csrfToken={csrfToken} loadInvitations={listMyWorkspaceInvitations} loadInvitation={getWorkspaceInvitation} acceptInvitation={acceptWorkspaceInvitation} declineInvitation={declineWorkspaceInvitation} onAccepted={() => setWorkspaceVersion((current) => current + 1)} />
+    <WorkspaceExperience
+    key={workspaceVersion}
     csrfToken={csrfToken}
     loadWorkspaces={listWorkspaces}
     loadWorkspace={getWorkspace}
     createWorkspace={createWorkspace}
-    addMember={addWorkspaceMember}
+    createInvitation={createWorkspaceInvitation}
+    loadInvitations={listWorkspaceInvitations}
+    revokeInvitation={revokeWorkspaceInvitation}
     assignRepository={assignWorkspaceRepository}
     updateWorkspace={updateWorkspace}
     archiveWorkspace={archiveWorkspace}
@@ -48,5 +62,6 @@ export function WorkspaceRoute() {
     disableSchedule={disableWorkspaceReportSchedule}
     loadOccurrences={listWorkspaceReportOccurrences}
     loadReports={listWorkspaceReports}
-  />;
+    />
+  </>;
 }

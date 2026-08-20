@@ -1,6 +1,6 @@
 import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import type { RepositoryListResponse, WorkspaceDetailResponse, WorkspaceListResponse, WorkspaceReportOccurrence } from '@trace/shared';
+import type { RepositoryListResponse, WorkspaceDetailResponse, WorkspaceInvitation, WorkspaceListResponse, WorkspaceReportOccurrence } from '@trace/shared';
 import { describe, expect, it, vi } from 'vitest';
 import { WorkspaceApiError } from '@/api/workspaces';
 import { WorkspaceExperience } from './workspace-experience';
@@ -50,13 +50,25 @@ const completedReport = {
   revision: 1, downloadAvailable: true,
 };
 
+const invitation: WorkspaceInvitation = {
+  id: 'invitation_1',
+  workspace: { id: 'workspace_1', name: 'Product Delivery' },
+  invitedUser: { id: 'user_3', username: 'new.developer', displayName: null },
+  invitedBy: { id: 'user_1', username: 'ali.manager', displayName: 'Ali' },
+  role: 'DEVELOPER', status: 'PENDING', acceptancePath: '/invitations/invitation_1',
+  expiresAt: '2026-08-27T08:00:00.000Z', createdAt: '2026-08-20T08:00:00.000Z',
+  acceptedAt: null, declinedAt: null, revokedAt: null,
+};
+
 function renderExperience(overrides: Partial<React.ComponentProps<typeof WorkspaceExperience>> = {}) {
   const props = {
     csrfToken: 'csrf-live',
     loadWorkspaces: vi.fn().mockResolvedValue({ items: [managerSummary, developerSummary] } satisfies WorkspaceListResponse),
     loadWorkspace: vi.fn().mockImplementation(async (id: string) => id === managerSummary.id ? managerDetail : { ...managerDetail, workspace: developerSummary }),
     createWorkspace: vi.fn().mockImplementation(async ({ name }: { name: string }) => ({ workspace: { ...managerSummary, id: 'workspace_new', name } })),
-    addMember: vi.fn().mockResolvedValue({ member: { userId: 'user_3', username: 'new.developer', displayName: null, role: 'DEVELOPER', joinedAt: '2026-08-18T08:10:00.000Z' } }),
+    createInvitation: vi.fn().mockResolvedValue({ invitation, copyablePath: '/invitations/invitation_1#token=0123456789abcdefghijklmnopqrstuvwxyzABCDEFG' }),
+    loadInvitations: vi.fn().mockResolvedValue({ items: [] }),
+    revokeInvitation: vi.fn().mockResolvedValue({ invitation: { ...invitation, status: 'REVOKED', revokedAt: '2026-08-20T09:00:00.000Z' } }),
     assignRepository: vi.fn().mockResolvedValue({ repository: repositories.items[1] }),
     updateWorkspace: vi.fn().mockResolvedValue({ workspace: { ...managerSummary, name: 'Delivery Platform' } }),
     archiveWorkspace: vi.fn().mockResolvedValue({ workspace: { ...managerSummary, archivedAt: '2026-08-18T09:00:00.000Z' } }),
@@ -143,6 +155,8 @@ describe('workspace experience', () => {
   });
 
   it('creates a workspace and sends manager mutations with the session CSRF token', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } });
     const props = renderExperience();
     await screen.findByText('Product Delivery');
     await userEvent.type(screen.getByRole('textbox', { name: 'Workspace name' }), 'Release Team');
@@ -152,14 +166,31 @@ describe('workspace experience', () => {
     await userEvent.click(screen.getByRole('button', { name: /Open Product Delivery/i }));
     await screen.findByRole('heading', { name: 'Manager tools' });
     await userEvent.type(screen.getByRole('textbox', { name: 'Trace username' }), 'new.developer');
-    await userEvent.click(screen.getByRole('button', { name: 'Add member' }));
-    expect(props.addMember).toHaveBeenCalledWith('workspace_1', { username: 'new.developer', role: 'DEVELOPER' }, 'csrf-live', { signal: expect.any(AbortSignal) });
+    await userEvent.click(screen.getByRole('button', { name: 'Send invitation' }));
+    expect(props.createInvitation).toHaveBeenCalledWith('workspace_1', { username: 'new.developer', role: 'DEVELOPER' }, 'csrf-live', { signal: expect.any(AbortSignal) });
+    expect(await screen.findByText(/invited @new\.developer/i)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: /Copy invitation link for @new\.developer/i }));
+    expect(writeText).toHaveBeenCalledWith('http://localhost:3000/invitations/invitation_1#token=0123456789abcdefghijklmnopqrstuvwxyzABCDEFG');
+    expect(screen.getAllByText('2 members · 1 repository').length).toBeGreaterThan(0);
 
     await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Repository' }), 'repo_2');
     await userEvent.click(screen.getByRole('button', { name: 'Assign repository' }));
     expect(props.assignRepository).toHaveBeenCalledWith('workspace_1', { repositoryId: 'repo_2' }, 'csrf-live', { signal: expect.any(AbortSignal) });
     expect(await screen.findByRole('status')).toHaveTextContent(/assigned trace\/api/i);
-    expect(screen.getByText('3 members · 2 repositories')).toBeInTheDocument();
+    expect(screen.getByText('2 members · 2 repositories')).toBeInTheDocument();
+  });
+
+  it('lists pending invitations for Managers and revokes without changing membership', async () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    const props = renderExperience({ loadInvitations: vi.fn().mockResolvedValue({ items: [invitation] }) });
+    await userEvent.click(await screen.findByRole('button', { name: /Open Product Delivery/i }));
+    expect(await screen.findByText('@new.developer')).toBeInTheDocument();
+    expect(screen.getByText('Developer · Pending')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Revoke invitation for @new.developer' }));
+    expect(props.revokeInvitation).toHaveBeenCalledWith('workspace_1', 'invitation_1', 'csrf-live', { signal: expect.any(AbortSignal) });
+    expect(await screen.findByText('Developer · Revoked')).toBeInTheDocument();
+    expect(managerDetail.members).toHaveLength(2);
+    vi.restoreAllMocks();
   });
 
   it('keeps developer workspaces read-only', async () => {
@@ -310,17 +341,17 @@ describe('workspace experience', () => {
   it('clears Manager drafts and re-resolves membership after a deferred authorization failure', async () => {
     let rejectMutation!: (reason: unknown) => void;
     let mutationSignal: AbortSignal | undefined;
-    const addMember = vi.fn((_id, _input, _csrf, options?: { signal?: AbortSignal }) => {
+    const createInvitation = vi.fn((_id, _input, _csrf, options?: { signal?: AbortSignal }) => {
       mutationSignal = options?.signal;
-      return new Promise<{ member: typeof managerDetail.members[number] }>((_resolve, reject) => { rejectMutation = reject; });
+      return new Promise<{ invitation: WorkspaceInvitation; copyablePath: string }>((_resolve, reject) => { rejectMutation = reject; });
     });
     const developerDetail = { ...managerDetail, workspace: developerSummary };
     const loadWorkspace = vi.fn().mockResolvedValueOnce(managerDetail).mockResolvedValueOnce(developerDetail);
-    renderExperience({ addMember, loadWorkspace });
+    renderExperience({ createInvitation, loadWorkspace });
     await userEvent.click(await screen.findByRole('button', { name: /Open Product Delivery/i }));
     await screen.findByRole('heading', { name: 'Manager tools' });
     await userEvent.type(screen.getByRole('textbox', { name: 'Trace username' }), 'late.developer');
-    await userEvent.click(screen.getByRole('button', { name: 'Add member' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Send invitation' }));
     expect(mutationSignal).toBeInstanceOf(AbortSignal);
 
     await act(async () => rejectMutation(new WorkspaceApiError('WORKSPACE_MANAGER_REQUIRED', 'Only workspace managers can change members or repositories.', 403)));

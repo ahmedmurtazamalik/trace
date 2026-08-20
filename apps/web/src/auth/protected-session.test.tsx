@@ -5,8 +5,9 @@ import { AuthSessionProvider } from "./session-provider";
 import { ProtectedSession } from "./protected-session";
 
 const replace = vi.fn();
+let pathname = "/reports";
 vi.mock("next/navigation", () => ({
-  usePathname: () => "/reports",
+  usePathname: () => pathname,
   useSearchParams: () => new URLSearchParams("range=week"),
   useRouter: () => ({ replace }),
 }));
@@ -23,10 +24,23 @@ describe("ProtectedSession", () => {
   });
 
   it("redirects anonymous users with an encoded local return path", async () => {
+    window.location.hash = "";
     replace.mockReset();
     render(<AuthSessionProvider loadSession={vi.fn().mockRejectedValue(new AuthApiError("UNAUTHENTICATED", "expired", 401))}><ProtectedSession>Private</ProtectedSession></AuthSessionProvider>);
     await waitFor(() => expect(replace).toHaveBeenCalledWith("/login?returnTo=%2Freports%3Frange%3Dweek"));
     expect(screen.queryByText("Private")).not.toBeInTheDocument();
+  });
+
+  it("preserves an invitation token only in the login fragment", async () => {
+    pathname = "/invitations/invitation_1";
+    window.location.hash = "#token=0123456789abcdefghijklmnopqrstuvwxyzABCDEFG";
+    replace.mockReset();
+    render(<AuthSessionProvider loadSession={vi.fn().mockRejectedValue(new AuthApiError("UNAUTHENTICATED", "expired", 401))}><ProtectedSession>Private</ProtectedSession></AuthSessionProvider>);
+    await waitFor(() => expect(replace).toHaveBeenCalledWith("/login?returnTo=%2Finvitations%2Finvitation_1%3Frange%3Dweek#token=0123456789abcdefghijklmnopqrstuvwxyzABCDEFG"));
+    const destination = String(replace.mock.calls[0]?.[0]);
+    expect(destination.slice(0, destination.indexOf("#"))).not.toContain("token");
+    pathname = "/reports";
+    window.location.hash = "";
   });
 
   it("renders protected content only for an authenticated session", () => {

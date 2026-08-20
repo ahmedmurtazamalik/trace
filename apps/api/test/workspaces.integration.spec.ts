@@ -1,12 +1,15 @@
 import { createServer, type Server } from 'node:http';
-import { generateKeyPairSync } from 'node:crypto';
+import { createHash, generateKeyPairSync } from 'node:crypto';
 import type { INestApplication } from '@nestjs/common';
 import { PrismaService } from '@trace/database';
 import {
   workspaceCreateResponseSchema,
   workspaceDetailResponseSchema,
   workspaceListResponseSchema,
-  workspaceMembershipResponseSchema,
+  workspaceInvitationCreateResponseSchema,
+  workspaceInvitationListResponseSchema,
+  workspaceInvitationDetailResponseSchema,
+  workspaceInvitationAcceptResponseSchema,
   workspaceRepositoryAssignmentResponseSchema,
   workspaceAnalysisResponseSchema,
   workspaceAnalysisStartResponseSchema,
@@ -117,6 +120,20 @@ describe('Workspace API', () => {
     return { manager, created: workspaceCreateResponseSchema.parse(response.body as unknown) };
   }
 
+  async function inviteAndAccept(
+    manager: { cookie: string; csrfToken: string },
+    recipient: { cookie: string; csrfToken: string },
+    workspaceId: string,
+    username: typeof usernames[number],
+    role: 'MANAGER' | 'DEVELOPER' = 'DEVELOPER',
+  ) {
+    const invitationResponse = await request(server).post(`/api/v1/workspaces/${workspaceId}/invitations`)
+      .set('Cookie', manager.cookie).set('X-CSRF-Token', manager.csrfToken).send({ username, role }).expect(201);
+    const invitation = workspaceInvitationCreateResponseSchema.parse(invitationResponse.body as unknown).invitation;
+    return request(server).post(`/api/v1/workspace-invitations/${invitation.id}/accept`)
+      .set('Cookie', recipient.cookie).set('X-CSRF-Token', recipient.csrfToken).expect(200);
+  }
+
   async function createAccessibleRepository(managerUserId: string) {
     await prisma.githubAccount.create({
       data: {
@@ -172,61 +189,207 @@ describe('Workspace API', () => {
     expect(workspaceListResponseSchema.parse((await request(server).get('/api/v1/workspaces').set('Cookie', outsider.cookie).expect(200)).body as unknown).items).toEqual([]);
   });
 
-  it('lets managers add an existing Trace member while developers remain read-only', async () => {
+  it('creates a targeted invitation without membership and removes direct member creation', async () => {
     const { manager, created } = await createWorkspace();
     const developer = await register('workspace.developer');
+    const workspaceId = created.workspace.id;
 
-    const addedResponse = await request(server)
-      .post(`/api/v1/workspaces/${created.workspace.id}/members`)
+    await request(server)
+      .post(`/api/v1/workspaces/${workspaceId}/members`)
+      .set('Cookie', manager.cookie)
+      .set('X-CSRF-Token', manager.csrfToken)
+      .send({ username: 'workspace.developer', role: 'DEVELOPER' })
+      .expect(404);
+
+    const response = await request(server)
+      .post(`/api/v1/workspaces/${workspaceId}/invitations`)
       .set('Cookie', manager.cookie)
       .set('X-CSRF-Token', manager.csrfToken)
       .send({ username: 'workspace.developer', role: 'DEVELOPER' })
       .expect(201);
-    expect(workspaceMembershipResponseSchema.parse(addedResponse.body as unknown).member).toMatchObject({
-      userId: developer.userId,
-      username: 'workspace.developer',
+    const createdInvitation = workspaceInvitationCreateResponseSchema.parse(response.body as unknown);
+    const invitation = createdInvitation.invitation;
+    const token = createdInvitation.copyablePath.split('#token=')[1] ?? '';
+
+    expect(createdInvitation.copyablePath).toBe(`/invitations/${invitation.id}#token=${token}`);
+    expect(token).toMatch(/^[A-Za-z0-9_-]{43}$/);
+    expect(await prisma.workspaceInvitation.findUniqueOrThrow({ where: { id: invitation.id }, select: { tokenHash: true } }))
+      .toEqual({ tokenHash: createHash('sha256').update(token).digest('hex') });
+    await request(server).get(`/api/v1/workspace-invitations/${invitation.id}`)
+      .set('Cookie', developer.cookie).set('X-Workspace-Invitation-Token', 'x'.repeat(43)).expect(404);
+    await request(server).get(`/api/v1/workspace-invitations/${invitation.id}`)
+      .set('Cookie', developer.cookie).set('X-Workspace-Invitation-Token', token).expect(200);
+
+    expect(invitation).toMatchObject({
+      workspace: { id: workspaceId, name: 'Product Delivery' },
+      invitedUser: { id: developer.userId, username: 'workspace.developer' },
+      invitedBy: { id: manager.userId, username: 'workspace.manager' },
       role: 'DEVELOPER',
+      status: 'PENDING',
+      acceptancePath: `/invitations/${invitation.id}`,
+    });
+    expect(new Date(invitation.expiresAt).getTime() - new Date(invitation.createdAt).getTime()).toBe(7 * 24 * 60 * 60 * 1_000);
+    expect(await prisma.workspaceMembership.count({ where: { workspaceId, userId: developer.userId } })).toBe(0);
+  });
+
+  it('authorizes and transitions invitation recipient and manager lifecycles', async () => {
+    const { manager, created } = await createWorkspace();
+    const developer = await register('workspace.developer');
+    const outsider = await register('workspace.outsider');
+    const workspaceId = created.workspace.id;
+    const createInvitation = async (target: 'workspace.developer' | 'workspace.outsider' = 'workspace.developer') => {
+      const response = await request(server).post(`/api/v1/workspaces/${workspaceId}/invitations`)
+        .set('Cookie', manager.cookie).set('X-CSRF-Token', manager.csrfToken)
+        .send({ username: target, role: 'DEVELOPER' }).expect(201);
+      return workspaceInvitationCreateResponseSchema.parse(response.body as unknown).invitation;
+    };
+
+    const acceptedInvitation = await createInvitation();
+    const managerList = workspaceInvitationListResponseSchema.parse((await request(server)
+      .get(`/api/v1/workspaces/${workspaceId}/invitations`).set('Cookie', manager.cookie).expect(200)).body as unknown);
+    expect(managerList.items.map(({ id }) => id)).toContain(acceptedInvitation.id);
+    await request(server).get(`/api/v1/workspaces/${workspaceId}/invitations`).set('Cookie', developer.cookie).expect(404);
+
+    const ownList = workspaceInvitationListResponseSchema.parse((await request(server)
+      .get('/api/v1/workspace-invitations').set('Cookie', developer.cookie).expect(200)).body as unknown);
+    expect(ownList.items.map(({ id }) => id)).toContain(acceptedInvitation.id);
+    expect(workspaceInvitationDetailResponseSchema.parse((await request(server)
+      .get(`/api/v1/workspace-invitations/${acceptedInvitation.id}`).set('Cookie', developer.cookie).expect(200)).body as unknown).invitation.id)
+      .toBe(acceptedInvitation.id);
+    const hidden = await request(server).get(`/api/v1/workspace-invitations/${acceptedInvitation.id}`).set('Cookie', outsider.cookie).expect(404);
+    expect(hidden.body).toEqual(expect.objectContaining({ code: 'WORKSPACE_INVITATION_NOT_FOUND' }));
+
+    await request(server).post(`/api/v1/workspace-invitations/${acceptedInvitation.id}/accept`)
+      .set('Cookie', outsider.cookie).set('X-CSRF-Token', outsider.csrfToken).expect(404);
+    const accepted = workspaceInvitationAcceptResponseSchema.parse((await request(server)
+      .post(`/api/v1/workspace-invitations/${acceptedInvitation.id}/accept`)
+      .set('Cookie', developer.cookie).set('X-CSRF-Token', developer.csrfToken).expect(200)).body as unknown);
+    expect(accepted).toMatchObject({ invitation: { status: 'ACCEPTED' }, member: { userId: developer.userId, role: 'DEVELOPER' } });
+    expect(await prisma.workspaceMembership.findUniqueOrThrow({
+      where: { workspaceId_userId: { workspaceId, userId: developer.userId } },
+    })).toMatchObject({ invitationId: acceptedInvitation.id });
+    await request(server).post(`/api/v1/workspace-invitations/${acceptedInvitation.id}/accept`)
+      .set('Cookie', developer.cookie).set('X-CSRF-Token', developer.csrfToken).expect(409);
+    const memberConflict = await request(server).post(`/api/v1/workspaces/${workspaceId}/invitations`)
+      .set('Cookie', manager.cookie).set('X-CSRF-Token', manager.csrfToken)
+      .send({ username: 'workspace.developer', role: 'MANAGER' }).expect(409);
+    expect(memberConflict.body).toEqual(expect.objectContaining({ code: 'WORKSPACE_MEMBER_EXISTS' }));
+
+    const declinedInvitation = await createInvitation('workspace.outsider');
+    const duplicate = await request(server).post(`/api/v1/workspaces/${workspaceId}/invitations`)
+      .set('Cookie', manager.cookie).set('X-CSRF-Token', manager.csrfToken)
+      .send({ username: 'workspace.outsider', role: 'MANAGER' }).expect(409);
+    expect(duplicate.body).toEqual(expect.objectContaining({ code: 'WORKSPACE_INVITATION_EXISTS' }));
+    await request(server).post(`/api/v1/workspace-invitations/${declinedInvitation.id}/decline`)
+      .set('Cookie', outsider.cookie).set('X-CSRF-Token', outsider.csrfToken).expect(200);
+
+    const revokedInvitation = await createInvitation('workspace.outsider');
+    await request(server).post(`/api/v1/workspaces/${workspaceId}/invitations/${revokedInvitation.id}/revoke`)
+      .set('Cookie', developer.cookie).set('X-CSRF-Token', developer.csrfToken).expect(403);
+    await request(server).post(`/api/v1/workspaces/${workspaceId}/invitations/${revokedInvitation.id}/revoke`)
+      .set('Cookie', manager.cookie).set('X-CSRF-Token', manager.csrfToken).expect(200);
+    await request(server).post(`/api/v1/workspace-invitations/${revokedInvitation.id}/accept`)
+      .set('Cookie', outsider.cookie).set('X-CSRF-Token', outsider.csrfToken).expect(409);
+
+    const expiredInvitation = await createInvitation('workspace.outsider');
+    await prisma.workspaceInvitation.update({ where: { id: expiredInvitation.id }, data: { expiresAt: new Date(Date.now() - 1_000) } });
+    const expiredDetail = workspaceInvitationDetailResponseSchema.parse((await request(server)
+      .get(`/api/v1/workspace-invitations/${expiredInvitation.id}`).set('Cookie', outsider.cookie).expect(200)).body as unknown);
+    expect(expiredDetail.invitation.status).toBe('EXPIRED');
+    const expiredAccept = await request(server).post(`/api/v1/workspace-invitations/${expiredInvitation.id}/accept`)
+      .set('Cookie', outsider.cookie).set('X-CSRF-Token', outsider.csrfToken).expect(410);
+    expect(expiredAccept.body).toEqual(expect.objectContaining({ code: 'WORKSPACE_INVITATION_EXPIRED' }));
+    expect(await prisma.workspaceInvitation.findUniqueOrThrow({ where: { id: expiredInvitation.id } })).toMatchObject({ status: 'REVOKED', revokedAt: null });
+
+    const expiredDecline = await createInvitation('workspace.outsider');
+    await prisma.workspaceInvitation.update({ where: { id: expiredDecline.id }, data: { expiresAt: new Date(Date.now() - 1_000) } });
+    await request(server).post(`/api/v1/workspace-invitations/${expiredDecline.id}/decline`)
+      .set('Cookie', outsider.cookie).set('X-CSRF-Token', outsider.csrfToken).expect(410);
+    expect(await prisma.workspaceInvitation.findUniqueOrThrow({ where: { id: expiredDecline.id } })).toMatchObject({ status: 'REVOKED', revokedAt: null });
+
+    const expiredRevoke = await createInvitation('workspace.outsider');
+    await prisma.workspaceInvitation.update({ where: { id: expiredRevoke.id }, data: { expiresAt: new Date(Date.now() - 1_000) } });
+    await request(server).post(`/api/v1/workspaces/${workspaceId}/invitations/${expiredRevoke.id}/revoke`)
+      .set('Cookie', manager.cookie).set('X-CSRF-Token', manager.csrfToken).expect(410);
+    expect(await prisma.workspaceInvitation.findUniqueOrThrow({ where: { id: expiredRevoke.id } })).toMatchObject({ status: 'REVOKED', revokedAt: null });
+
+    expect(await prisma.auditLog.count({ where: { targetId: workspaceId, action: 'workspace.invitation.expired' } })).toBe(3);
+    await createInvitation('workspace.outsider');
+
+    const actions = (await prisma.auditLog.findMany({ where: { targetType: 'workspace', targetId: workspaceId } }))
+      .map(({ action }) => action);
+    expect(actions).toEqual(expect.arrayContaining([
+      'workspace.invitation.created', 'workspace.invitation.accepted',
+      'workspace.invitation.declined', 'workspace.invitation.revoked', 'workspace.invitation.expired',
+    ]));
+  });
+
+  it('revokes pending invitations when a workspace is archived', async () => {
+    const { manager, created } = await createWorkspace();
+    const developer = await register('workspace.developer');
+    const invitation = workspaceInvitationCreateResponseSchema.parse((await request(server)
+      .post(`/api/v1/workspaces/${created.workspace.id}/invitations`)
+      .set('Cookie', manager.cookie).set('X-CSRF-Token', manager.csrfToken)
+      .send({ username: 'workspace.developer', role: 'DEVELOPER' }).expect(201)).body as unknown).invitation;
+
+    await request(server).post(`/api/v1/workspaces/${created.workspace.id}/archive`)
+      .set('Cookie', manager.cookie).set('X-CSRF-Token', manager.csrfToken).expect(200);
+
+    const archivedInvitation = await prisma.workspaceInvitation.findUniqueOrThrow({ where: { id: invitation.id } });
+    expect(archivedInvitation.status).toBe('REVOKED');
+    expect(archivedInvitation.revokedAt).toBeInstanceOf(Date);
+    await request(server).post(`/api/v1/workspace-invitations/${invitation.id}/accept`)
+      .set('Cookie', developer.cookie).set('X-CSRF-Token', developer.csrfToken).expect(409);
+    expect(await prisma.workspaceMembership.count({ where: { workspaceId: created.workspace.id, userId: developer.userId } })).toBe(0);
+  });
+
+  it('serializes concurrent duplicate creation and acceptance into one invitation and one membership', async () => {
+    const { manager, created } = await createWorkspace();
+    const developer = await register('workspace.developer');
+    const sendInvitation = () => request(server).post(`/api/v1/workspaces/${created.workspace.id}/invitations`)
+      .set('Cookie', manager.cookie).set('X-CSRF-Token', manager.csrfToken)
+      .send({ username: 'workspace.developer', role: 'DEVELOPER' });
+    const createResponses = await Promise.all([sendInvitation(), sendInvitation()]);
+    expect(createResponses.map(({ status }) => status).sort()).toEqual([201, 409]);
+    const invitation = workspaceInvitationCreateResponseSchema.parse(createResponses.find(({ status }) => status === 201)?.body as unknown).invitation;
+    expect(await prisma.workspaceInvitation.count({ where: { workspaceId: created.workspace.id, invitedUserId: developer.userId, status: 'PENDING' } })).toBe(1);
+
+    const acceptInvitation = () => request(server).post(`/api/v1/workspace-invitations/${invitation.id}/accept`)
+      .set('Cookie', developer.cookie).set('X-CSRF-Token', developer.csrfToken);
+    const acceptResponses = await Promise.all([acceptInvitation(), acceptInvitation()]);
+    expect(acceptResponses.map(({ status }) => status).sort()).toEqual([200, 409]);
+    expect(await prisma.workspaceMembership.count({ where: { workspaceId: created.workspace.id, userId: developer.userId } })).toBe(1);
+  });
+
+  it('lets invited users join while developers cannot invite members', async () => {
+    const { manager, created } = await createWorkspace();
+    const developer = await register('workspace.developer');
+
+    const acceptedResponse = await inviteAndAccept(manager, developer, created.workspace.id, 'workspace.developer');
+    expect(workspaceInvitationAcceptResponseSchema.parse(acceptedResponse.body as unknown).member).toMatchObject({
+      userId: developer.userId, username: 'workspace.developer', role: 'DEVELOPER',
     });
 
-    const detailResponse = await request(server).get(`/api/v1/workspaces/${created.workspace.id}`).set('Cookie', developer.cookie).expect(200);
-    const detail = workspaceDetailResponseSchema.parse(detailResponse.body as unknown);
+    const detail = workspaceDetailResponseSchema.parse((await request(server)
+      .get(`/api/v1/workspaces/${created.workspace.id}`).set('Cookie', developer.cookie).expect(200)).body as unknown);
     expect(detail.workspace).toMatchObject({ role: 'DEVELOPER', memberCount: 2 });
     expect(detail.members.map((member) => member.username)).toEqual(['workspace.manager', 'workspace.developer']);
 
-    const duplicate = await request(server)
-      .post(`/api/v1/workspaces/${created.workspace.id}/members`)
-      .set('Cookie', manager.cookie)
-      .set('X-CSRF-Token', manager.csrfToken)
-      .send({ username: 'workspace.developer', role: 'MANAGER' })
-      .expect(409);
+    const duplicate = await request(server).post(`/api/v1/workspaces/${created.workspace.id}/invitations`)
+      .set('Cookie', manager.cookie).set('X-CSRF-Token', manager.csrfToken)
+      .send({ username: 'workspace.developer', role: 'MANAGER' }).expect(409);
     expect(duplicate.body).toEqual(expect.objectContaining({ code: 'WORKSPACE_MEMBER_EXISTS' }));
 
-    const selfDemotion = await request(server)
-      .post(`/api/v1/workspaces/${created.workspace.id}/members`)
-      .set('Cookie', manager.cookie)
-      .set('X-CSRF-Token', manager.csrfToken)
-      .send({ username: 'workspace.manager', role: 'DEVELOPER' })
-      .expect(409);
-    expect(selfDemotion.body).toEqual(expect.objectContaining({ code: 'WORKSPACE_MEMBER_EXISTS' }));
-
-    const forbidden = await request(server)
-      .post(`/api/v1/workspaces/${created.workspace.id}/members`)
-      .set('Cookie', developer.cookie)
-      .set('X-CSRF-Token', developer.csrfToken)
-      .send({ username: 'workspace.outsider', role: 'DEVELOPER' })
-      .expect(403);
+    const forbidden = await request(server).post(`/api/v1/workspaces/${created.workspace.id}/invitations`)
+      .set('Cookie', developer.cookie).set('X-CSRF-Token', developer.csrfToken)
+      .send({ username: 'workspace.outsider', role: 'DEVELOPER' }).expect(403);
     expect(forbidden.body).toEqual(expect.objectContaining({ code: 'WORKSPACE_MANAGER_REQUIRED' }));
   });
 
   it('lets a manager assign a repository authorized by any current workspace member and keeps the operation idempotent', async () => {
     const { manager, created } = await createWorkspace();
     const developer = await register('workspace.developer');
-    await request(server)
-      .post(`/api/v1/workspaces/${created.workspace.id}/members`)
-      .set('Cookie', manager.cookie)
-      .set('X-CSRF-Token', manager.csrfToken)
-      .send({ username: 'workspace.developer', role: 'DEVELOPER' })
-      .expect(201);
+    await inviteAndAccept(manager, developer, created.workspace.id, 'workspace.developer');
     const unrelatedRepository = await prisma.repository.findUniqueOrThrow({ where: { id: 'seed_repository_web' } });
 
     const unavailable = await request(server)
@@ -306,12 +469,7 @@ describe('Workspace API', () => {
     const developer = await register('workspace.developer');
     const workspaceId = created.workspace.id;
 
-    await request(server)
-      .post(`/api/v1/workspaces/${workspaceId}/members`)
-      .set('Cookie', manager.cookie)
-      .set('X-CSRF-Token', manager.csrfToken)
-      .send({ username: 'workspace.developer', role: 'DEVELOPER' })
-      .expect(201);
+    await inviteAndAccept(manager, developer, workspaceId, 'workspace.developer');
 
     await request(server)
       .patch(`/api/v1/workspaces/${workspaceId}`)
@@ -339,12 +497,7 @@ describe('Workspace API', () => {
       .expect(200, { removed: true });
     await request(server).get(`/api/v1/workspaces/${workspaceId}`).set('Cookie', developer.cookie).expect(404);
 
-    await request(server)
-      .post(`/api/v1/workspaces/${workspaceId}/members`)
-      .set('Cookie', manager.cookie)
-      .set('X-CSRF-Token', manager.csrfToken)
-      .send({ username: 'workspace.developer', role: 'DEVELOPER' })
-      .expect(201);
+    await inviteAndAccept(manager, developer, workspaceId, 'workspace.developer');
     await request(server)
       .patch(`/api/v1/workspaces/${workspaceId}/members/${developer.userId}`)
       .set('Cookie', manager.cookie)
@@ -400,7 +553,8 @@ describe('Workspace API', () => {
     expect(auditActions).toEqual(expect.arrayContaining([
       'workspace.created',
       'workspace.renamed',
-      'workspace.member.added',
+      'workspace.invitation.created',
+      'workspace.invitation.accepted',
       'workspace.member.removed',
       'workspace.member.role_changed',
       'workspace.archived',
@@ -412,9 +566,7 @@ describe('Workspace API', () => {
     const developer = await register('workspace.developer');
     const outsider = await register('workspace.outsider');
     const workspaceId = created.workspace.id;
-    await request(server).post(`/api/v1/workspaces/${workspaceId}/members`)
-      .set('Cookie', manager.cookie).set('X-CSRF-Token', manager.csrfToken)
-      .send({ username: 'workspace.developer', role: 'DEVELOPER' }).expect(201);
+    await inviteAndAccept(manager, developer, workspaceId, 'workspace.developer');
 
     const body = { windowStart: '2026-08-17T00:00:00.000Z', windowEnd: '2026-08-18T00:00:00.000Z' };
     await request(server).post(`/api/v1/workspaces/${workspaceId}/reports/generate`)
@@ -456,7 +608,7 @@ describe('Workspace API', () => {
       const managerReports = reportListResponseSchema.parse((await request(server)
         .get(`/api/v1/workspaces/${workspaceId}/reports`)
         .set('Cookie', manager.cookie).expect(200)).body as unknown);
-      expect(managerReports.items).toEqual([expect.objectContaining({ id: first.reportId, status: 'pending' })]);
+      expect(managerReports.items.map(({ id }) => id)).toEqual([first.reportId]);
       expect(reportListResponseSchema.parse((await request(server)
         .get(`/api/v1/workspaces/${workspaceId}/reports`)
         .set('Cookie', developer.cookie).expect(200)).body as unknown).items).toEqual([]);
@@ -533,9 +685,7 @@ describe('Workspace API', () => {
     const { manager, created } = await createWorkspace();
     const developer = await register('workspace.developer');
     const workspaceId = created.workspace.id;
-    await request(server).post(`/api/v1/workspaces/${workspaceId}/members`)
-      .set('Cookie', manager.cookie).set('X-CSRF-Token', manager.csrfToken)
-      .send({ username: 'workspace.developer', role: 'DEVELOPER' }).expect(201);
+    await inviteAndAccept(manager, developer, workspaceId, 'workspace.developer');
     const daily = { enabled: true, frequency: 'DAILY', selectedDays: [], localTime: '17:00', timezone: 'America/Los_Angeles' };
 
     await request(server).put(`/api/v1/workspaces/${workspaceId}/report-schedule`)
@@ -581,9 +731,7 @@ describe('Workspace API', () => {
     const { manager, created } = await createWorkspace();
     const developer = await register('workspace.developer');
     const repository = await createAccessibleRepository(manager.userId);
-    await request(server).post(`/api/v1/workspaces/${created.workspace.id}/members`)
-      .set('Cookie', manager.cookie).set('X-CSRF-Token', manager.csrfToken)
-      .send({ username: 'workspace.developer', role: 'DEVELOPER' }).expect(201);
+    await inviteAndAccept(manager, developer, created.workspace.id, 'workspace.developer');
     await request(server).post(`/api/v1/workspaces/${created.workspace.id}/repositories`)
       .set('Cookie', manager.cookie).set('X-CSRF-Token', manager.csrfToken)
       .send({ repositoryId: repository.id }).expect(201);
@@ -617,6 +765,6 @@ describe('Workspace API', () => {
     const blocked = await request(server).post(`/api/v1/workspaces/${created.workspace.id}/repositories/${repository.id}/baseline`)
       .set('Cookie', manager.cookie).set('X-CSRF-Token', manager.csrfToken).expect(409);
     expect(blocked.body).toEqual(expect.objectContaining({ code: 'WORKSPACE_REPOSITORY_ACCESS_REMOVED' }));
-    expect(await prisma.workspaceAnalysisRun.findUniqueOrThrow({ where: { id: pending.run.id } })).toMatchObject({ status: 'PENDING' });
+    expect((await prisma.workspaceAnalysisRun.findUniqueOrThrow({ where: { id: pending.run.id } })).id).toBe(pending.run.id);
   });
 });

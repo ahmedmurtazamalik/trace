@@ -137,6 +137,19 @@ A completed live report lists artifacts for its current revision.
 
 Demo mode serves checksum-consistent synthetic PDF bytes solely to validate the browser download flow; this is not evidence of real storage, LaTeX compilation, or generated report content.
 
+## Invite colleagues to a workspace
+
+Open **Workspaces**. Only Workspace Managers can send or revoke invitations.
+
+1. Open the Workspace and enter an existing colleague's exact Trace username under **Invite colleague**.
+2. Choose **Developer** or **Manager**, then select **Send invitation**.
+3. Copy the invitation link and share it privately, or ask the colleague to open their **Workspace invitations** inbox.
+4. The colleague signs into the exact invited Trace account and chooses **Accept** or **Decline**.
+5. Membership and Workspace access begin only after acceptance. Creating or sharing an invitation does not add the recipient.
+6. Managers can review invitation status and revoke a pending invitation. Invitations expire after seven days.
+
+A forwarded link does not grant another account access. Expired, revoked, used, and wrong-account links show the same safe unavailable state. Trace does not send invitation email in this version.
+
 ## Session expiration and safe errors
 
 Protected content remains hidden while Trace verifies the session. If the session expires, Trace returns to sign-in and preserves only the local page path. Network, validation, rate-limit, conflict, provider, and service errors are mapped to safe messages; backend internals and raw provider responses are not displayed.

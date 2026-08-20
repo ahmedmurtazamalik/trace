@@ -5,7 +5,11 @@ import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } fro
 import { Badge, Button, Card } from '@trace/ui';
 import type {
   RepositoryListResponse,
-  WorkspaceAddMemberRequest,
+  WorkspaceInvitation,
+  WorkspaceInvitationCreateRequest,
+  WorkspaceInvitationCreateResponse,
+  WorkspaceInvitationDecisionResponse,
+  WorkspaceInvitationListResponse,
   WorkspaceAssignRepositoryRequest,
   WorkspaceCreateRequest,
   WorkspaceCreateResponse,
@@ -41,7 +45,9 @@ interface WorkspaceExperienceProps {
   loadWorkspaces(options?: { signal?: AbortSignal }): Promise<WorkspaceListResponse>;
   loadWorkspace(id: string, options?: { signal?: AbortSignal }): Promise<WorkspaceDetailResponse>;
   createWorkspace(input: WorkspaceCreateRequest, csrfToken: string, options?: { signal?: AbortSignal }): Promise<WorkspaceCreateResponse>;
-  addMember(id: string, input: WorkspaceAddMemberRequest, csrfToken: string, options?: { signal?: AbortSignal }): Promise<WorkspaceMembershipResponse>;
+  createInvitation(id: string, input: WorkspaceInvitationCreateRequest, csrfToken: string, options?: { signal?: AbortSignal }): Promise<WorkspaceInvitationCreateResponse>;
+  loadInvitations(id: string, options?: { signal?: AbortSignal }): Promise<WorkspaceInvitationListResponse>;
+  revokeInvitation(id: string, invitationId: string, csrfToken: string, options?: { signal?: AbortSignal }): Promise<WorkspaceInvitationDecisionResponse>;
   assignRepository(id: string, input: WorkspaceAssignRepositoryRequest, csrfToken: string, options?: { signal?: AbortSignal }): Promise<WorkspaceRepositoryAssignmentResponse>;
   updateWorkspace(id: string, input: WorkspaceUpdateRequest, csrfToken: string, options?: { signal?: AbortSignal }): Promise<WorkspaceUpdateResponse>;
   archiveWorkspace(id: string, csrfToken: string, options?: { signal?: AbortSignal }): Promise<WorkspaceArchiveResponse>;
@@ -116,7 +122,9 @@ export function WorkspaceExperience({
   loadWorkspaces,
   loadWorkspace,
   createWorkspace,
-  addMember,
+  createInvitation,
+  loadInvitations,
+  revokeInvitation,
   assignRepository,
   updateWorkspace,
   archiveWorkspace,
@@ -152,6 +160,8 @@ export function WorkspaceExperience({
   const [schedule, setSchedule] = useState<WorkspaceReportSchedule | null>(null);
   const [occurrences, setOccurrences] = useState<WorkspaceReportOccurrence[]>([]);
   const [completedReports, setCompletedReports] = useState<ReportSummary[]>([]);
+  const [invitations, setInvitations] = useState<WorkspaceInvitation[]>([]);
+  const [copyableInvitationPaths, setCopyableInvitationPaths] = useState<Record<string, string>>({});
   const [reportWindowStart, setReportWindowStart] = useState(() => localInput(new Date(Date.now() - 7 * 24 * 60 * 60 * 1_000)));
   const [reportWindowEnd, setReportWindowEnd] = useState(() => localInput(new Date()));
   const [frequency, setFrequency] = useState<WorkspaceReportScheduleRequest['frequency']>('WEEKDAYS');
@@ -190,18 +200,20 @@ export function WorkspaceExperience({
     setSchedule(null);
     setOccurrences([]);
     setCompletedReports([]);
+    setInvitations([]);
     setAvailableRepositories([]);
     try {
       const response = await loadWorkspace(id, { signal: controller.signal });
       if (generation !== requestGeneration.current) return;
       const canManage = response.workspace.role === 'MANAGER' && response.workspace.archivedAt === null;
-      const [analysisResponse, scheduleResponse, occurrenceResponse, repositories, reportResponse] = canManage
+      const [analysisResponse, scheduleResponse, occurrenceResponse, repositories, reportResponse, invitationResponse] = canManage
         ? await Promise.all([
           loadAnalysis(id, { signal: controller.signal }),
           loadSchedule(id, { signal: controller.signal }),
           loadOccurrences(id, { signal: controller.signal }),
           loadRepositories({ visibility: 'active' }, { signal: controller.signal }),
           Promise.resolve({ items: [], pageInfo: { nextCursor: null, hasNextPage: false } } as ReportListResponse),
+          loadInvitations(id, { signal: controller.signal }),
         ])
         : await Promise.all([
           Promise.resolve({ items: [] } as WorkspaceAnalysisResponse),
@@ -209,6 +221,7 @@ export function WorkspaceExperience({
           Promise.resolve({ items: [] } as WorkspaceReportOccurrenceListResponse),
           Promise.resolve({ items: [], pageInfo: { nextCursor: null, hasNextPage: false } } as RepositoryListResponse),
           loadReports(id, { limit: 100, status: 'completed' }, { signal: controller.signal }),
+          Promise.resolve({ items: [] } as WorkspaceInvitationListResponse),
         ]);
       if (generation !== requestGeneration.current) return;
       setDetail(response);
@@ -217,6 +230,7 @@ export function WorkspaceExperience({
       setSchedule(scheduleResponse.schedule);
       setOccurrences(occurrenceResponse.items);
       setCompletedReports(reportResponse.items.filter((item) => item.status === 'completed'));
+      setInvitations(invitationResponse.items);
       setAvailableRepositories(repositories.items.filter((item) => item.accessible && !item.removed));
       const rule = scheduleResponse.schedule;
       if (rule) {
@@ -237,7 +251,7 @@ export function WorkspaceExperience({
     } finally {
       if (generation === requestGeneration.current) setDetailLoading(false);
     }
-  }, [loadAnalysis, loadOccurrences, loadRepositories, loadReports, loadSchedule, loadWorkspace]);
+  }, [loadAnalysis, loadInvitations, loadOccurrences, loadRepositories, loadReports, loadSchedule, loadWorkspace]);
 
   useEffect(() => () => {
     requestGeneration.current += 1;
@@ -298,6 +312,7 @@ export function WorkspaceExperience({
     setSchedule(null);
     setOccurrences([]);
     setCompletedReports([]);
+    setInvitations([]);
     setAvailableRepositories([]);
     setRenameName('');
     setUsername('');
@@ -396,24 +411,39 @@ export function WorkspaceExperience({
     finally { setSubmitting(false); }
   }
 
-  async function handleMember(event: FormEvent<HTMLFormElement>) {
+  async function handleInvitation(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!detail) return;
     const normalized = username.trim().toLowerCase();
-    if (!normalized) { setError('Enter the existing Trace username to add.'); return; }
+    if (!normalized) { setError('Enter the existing Trace username to invite.'); return; }
     await runManagerMutation(detail.workspace.id,
-      (signal) => addMember(detail.workspace.id, { username: normalized, role: memberRole }, csrfToken, { signal }),
+      (signal) => createInvitation(detail.workspace.id, { username: normalized, role: memberRole }, csrfToken, { signal }),
       (response) => {
-      const isNewMember = !detail.members.some((item) => item.userId === response.member.userId);
-      setDetail((current) => current ? {
-        ...current,
-        workspace: { ...current.workspace, memberCount: isNewMember ? current.workspace.memberCount + 1 : current.workspace.memberCount },
-        members: [...current.members.filter((item) => item.userId !== response.member.userId), response.member],
-      } : current);
-      if (isNewMember) setWorkspaces((current) => current.map((workspace) => workspace.id === detail.workspace.id ? { ...workspace, memberCount: workspace.memberCount + 1 } : workspace));
-      setUsername('');
-      setStatus(`Added @${response.member.username} as ${response.member.role === 'MANAGER' ? 'manager' : 'developer'}.`);
+        setInvitations((current) => [response.invitation, ...current.filter((item) => item.id !== response.invitation.id)]);
+        setCopyableInvitationPaths((current) => ({ ...current, [response.invitation.id]: response.copyablePath }));
+        setUsername('');
+        setStatus(`Invited @${response.invitation.invitedUser.username} as ${response.invitation.role === 'MANAGER' ? 'manager' : 'developer'}. Membership begins only after acceptance.`);
       });
+  }
+
+  async function handleRevokeInvitation(invitation: WorkspaceInvitation) {
+    if (!detail || !window.confirm(`Revoke the invitation for @${invitation.invitedUser.username}?`)) return;
+    await runManagerMutation(detail.workspace.id,
+      (signal) => revokeInvitation(detail.workspace.id, invitation.id, csrfToken, { signal }),
+      (response) => {
+        setInvitations((current) => current.map((item) => item.id === response.invitation.id ? response.invitation : item));
+        setStatus(`Revoked the invitation for @${response.invitation.invitedUser.username}.`);
+      });
+  }
+
+  async function copyInvitationLink(invitation: WorkspaceInvitation, copyablePath: string) {
+    try {
+      await navigator.clipboard.writeText(`${window.location.origin}${copyablePath}`);
+      setStatus(`Copied the invitation link for @${invitation.invitedUser.username}.`);
+      setError(undefined);
+    } catch {
+      setError('Trace could not copy the invitation link. Open it and copy the address from your browser.');
+    }
   }
 
   async function handleRepository(event: FormEvent<HTMLFormElement>) {
@@ -629,8 +659,14 @@ export function WorkspaceExperience({
           <div className="subsection-heading"><ShieldCheck size={18} aria-hidden="true" /><div><h3 id="manager-tools-title">Manager tools</h3><p>Manage this workspace without changing anyone’s GitHub permissions.</p></div></div>
           <div className="manager-tool-grid">
             <form onSubmit={handleRename}><h4>Workspace settings</h4><label htmlFor="workspace-rename">New workspace name</label><input id="workspace-rename" value={renameName} onChange={(event) => setRenameName(event.target.value)} maxLength={100} /><Button type="submit" disabled={submitting}>Save workspace name</Button><Button className="secondary" type="button" disabled={submitting} onClick={() => void handleArchive()}>Archive workspace</Button></form>
-            <form onSubmit={handleMember}><h4><UserPlus size={16} aria-hidden="true" /> Add member</h4><label htmlFor="workspace-username">Trace username</label><input id="workspace-username" value={username} onChange={(event) => setUsername(event.target.value)} placeholder="username" />
-              <label htmlFor="workspace-role">Workspace role</label><select id="workspace-role" value={memberRole} onChange={(event) => setMemberRole(event.target.value as 'MANAGER' | 'DEVELOPER')}><option value="DEVELOPER">Developer</option><option value="MANAGER">Manager</option></select><Button type="submit" disabled={submitting}>Add member</Button></form>
+            <section className="workspace-invitation-tool" aria-labelledby="workspace-invite-title">
+              <form onSubmit={handleInvitation}><h4 id="workspace-invite-title"><UserPlus size={16} aria-hidden="true" /> Invite colleague</h4><p className="field-help">They become a member only after accepting from their Trace account.</p><label htmlFor="workspace-username">Trace username</label><input id="workspace-username" value={username} onChange={(event) => setUsername(event.target.value)} placeholder="username" />
+                <label htmlFor="workspace-role">Workspace role</label><select id="workspace-role" value={memberRole} onChange={(event) => setMemberRole(event.target.value as 'MANAGER' | 'DEVELOPER')}><option value="DEVELOPER">Developer</option><option value="MANAGER">Manager</option></select><Button type="submit" disabled={submitting}>Send invitation</Button></form>
+              <div className="workspace-pending-invitations"><h4>Invitations</h4>{invitations.length === 0 ? <p className="muted">No invitations yet.</p> : <ul className="workspace-list">{invitations.map((invitation) => {
+                const copyablePath = copyableInvitationPaths[invitation.id];
+                return <li key={invitation.id}><div><strong>@{invitation.invitedUser.username}</strong><span>{invitation.role === 'MANAGER' ? 'Manager' : 'Developer'} · {titleCase(invitation.status)}</span></div><div className="workspace-row-actions">{copyablePath ? <Button className="secondary" type="button" disabled={submitting} aria-label={`Copy invitation link for @${invitation.invitedUser.username}`} onClick={() => void copyInvitationLink(invitation, copyablePath)}>Copy link</Button> : null}{invitation.status === 'PENDING' ? <Button className="secondary" type="button" disabled={submitting} aria-label={`Revoke invitation for @${invitation.invitedUser.username}`} onClick={() => void handleRevokeInvitation(invitation)}>Revoke</Button> : null}</div></li>;
+              })}</ul>}</div>
+            </section>
             <form onSubmit={handleRepository}><h4><FolderGit2 size={16} aria-hidden="true" /> Assign repository</h4><label htmlFor="workspace-repository">Repository</label><select id="workspace-repository" value={repositoryId} onChange={(event) => setRepositoryId(event.target.value)}><option value="">Choose a repository</option>{assignableRepositories.map((repository) => <option key={repository.id} value={repository.id}>{repository.fullName}</option>)}</select><p className="field-help">Only active repositories authorized for your account appear here.</p><Button type="submit" disabled={submitting || assignableRepositories.length === 0}>Assign repository</Button></form>
           </div>
         </section> : <div className="developer-boundary"><ShieldCheck size={18} aria-hidden="true" /><div><strong>Developer access is read-only</strong><p>You can review this workspace. A manager controls membership and repository assignments.</p></div></div>}
