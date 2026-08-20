@@ -5,7 +5,7 @@ import { reportWorkerConfiguration, startReportWorker } from '../../src/reports/
 class SignalProcess extends EventEmitter { exitCode: number | undefined }
 
 describe('report worker application', () => {
-  it('composes Prisma, configured provider, queue processing, and cleanup', async () => {
+  it('composes Prisma, Codex-capable provider selection, queue processing, and cleanup', async () => {
     const connect = jest.fn().mockResolvedValue(undefined);
     const disconnect = jest.fn().mockResolvedValue(undefined);
     const process = jest.fn().mockResolvedValue(undefined);
@@ -53,9 +53,15 @@ describe('report worker application', () => {
     expect(reportWorkerConfiguration({
       ...base,
       NODE_ENV: 'production',
-      REPORT_LLM_PROVIDER: 'configured',
+      REPORT_LLM_PROVIDER: 'codex',
       REPORT_LATEX_IMAGE: `sha256:${'a'.repeat(64)}`,
     })).toMatchObject({ latexImage: `sha256:${'a'.repeat(64)}` });
+    expect(() => reportWorkerConfiguration({
+      ...base,
+      NODE_ENV: 'production',
+      REPORT_LLM_PROVIDER: 'configured',
+      REPORT_LATEX_IMAGE: `sha256:${'a'.repeat(64)}`,
+    })).toThrow('Invalid report worker configuration.');
   });
 
   it('rejects fake provider defaults in production and incomplete settings', async () => {

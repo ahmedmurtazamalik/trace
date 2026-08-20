@@ -290,11 +290,10 @@ Register callback URLs that exactly match the configured API routes. In producti
 
 | Variable | Purpose | Local behavior |
 | --- | --- | --- |
-| `REPORT_LLM_PROVIDER` | `fake` or configured external provider | `fake` |
-| `LLM_API_KEY` | External provider credential | blank for fake provider |
-| `REPORT_LLM_ENDPOINT` | Configured provider endpoint | optional locally |
-| `REPORT_LLM_MODEL` | Configured provider model | optional locally |
-| `REPORT_PROVIDER_ATTEMPTS` | Bounded narrative-generation attempts | `3` |
+| `REPORT_LLM_PROVIDER` | `fake` or authenticated local `codex` CLI | `fake` |
+| `REPORT_CODEX_COMMAND` | Codex CLI executable path/name | `codex` |
+| `REPORT_CODEX_MODEL` | Explicit Codex model | `gpt-5.6-sol` |
+| `REPORT_CODEX_TIMEOUT_MS` | Per-inference process timeout (1–75 seconds; two calls remain below the report lease) | `75000` |
 | `REPORT_WORKER_CONCURRENCY` | Report worker concurrency | `2` |
 | `REPORT_LATEX_IMAGE` | XeLaTeX compiler image | `trace-latex:local` |
 | `REPORT_LATEX_TIMEOUT_MS` | Compiler timeout | `30000` |

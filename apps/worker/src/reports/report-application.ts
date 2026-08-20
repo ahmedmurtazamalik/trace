@@ -3,7 +3,7 @@ import { artifactStorageFromEnvironment } from '@trace/report-storage';
 import { isAbsolute } from 'node:path';
 import { DockerLatexCompiler } from '../latex/latex-compiler';
 import { ReportQueueWorker, type ReportQueueWorkerOptions } from '../queues/reports/report.worker';
-import { reportProviderFromEnvironment } from './configured-report-provider';
+import { reportProviderFromEnvironment } from './codex-cli-report-provider';
 import { ReportArtifactProcessor } from './report-artifact.processor';
 import type { ReportDeliveryContext } from './report-delivery';
 import { ReportProcessor } from './report.processor';
@@ -29,7 +29,7 @@ export async function startReportWorker(options: ReportApplicationOptions): Prom
   let connected = false;
   try {
     const provider = reportProviderFromEnvironment(options.environment);
-    const generation = new ReportProcessor(prisma, provider, { maximumAttempts: configuration.providerAttempts });
+    const generation = new ReportProcessor(prisma, provider);
     const processor = options.processor ?? new ReportArtifactProcessor(
       prisma,
       generation,
@@ -94,7 +94,6 @@ export function reportWorkerConfiguration(environment: NodeJS.ProcessEnv): {
   redisUrl: string;
   queueName: string;
   concurrency: number;
-  providerAttempts: number;
   latexImage: string;
   latexWorkRoot?: string;
   compileTimeoutMs: number;
@@ -116,6 +115,7 @@ export function reportWorkerConfiguration(environment: NodeJS.ProcessEnv): {
     || (latexWorkRoot !== undefined && !isAbsolute(latexWorkRoot))
     || (nodeEnvironment === 'production' && latexWorkRoot === undefined)
     || (nodeEnvironment === 'production' && !/(?:@sha256:|^sha256:)[a-f0-9]{64}$/.test(latexImage))
+    || (provider !== 'fake' && provider !== 'codex')
     || (nodeEnvironment === 'production' && provider === 'fake')
   ) throw new Error('Invalid report worker configuration.');
   return {
@@ -123,7 +123,6 @@ export function reportWorkerConfiguration(environment: NodeJS.ProcessEnv): {
     redisUrl,
     queueName: 'report-generation',
     concurrency: boundedInteger(environment.REPORT_WORKER_CONCURRENCY, 2, 1, 16),
-    providerAttempts: boundedInteger(environment.REPORT_PROVIDER_ATTEMPTS, 3, 1, 5),
     latexImage,
     latexWorkRoot,
     compileTimeoutMs: boundedInteger(environment.REPORT_LATEX_TIMEOUT_MS, 30_000, 5_000, 120_000),

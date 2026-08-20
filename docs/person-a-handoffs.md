@@ -317,7 +317,7 @@ Final recorded results:
 
 - Added a strict versioned parser for immutable Day 8 report snapshots and a configurable structured-output provider boundary.
 - Added a deterministic fake provider for local development and tests. Production rejects the fake provider.
-- Added a bounded HTTPS configured provider using JSON-only responses, fixed temperature, request timeout, response-size limits, and closed provider errors.
+- Replaced the HTTPS/Gemini-compatible provider with authenticated local Codex CLI inference using strict JSON-schema output, ephemeral child processes, read-only sandboxing, process deadlines, byte bounds, request-local identifier aliases, grounded validation, and one repair attempt.
 - Validated generated content with the frozen shared report schema and exact repository/contributor membership from the immutable snapshot; unknown, duplicate, missing, and cross-repository identifiers fail validation.
 - Added the `report-generation` BullMQ consumer for only `generate-report` jobs carrying a bounded `{ reportId }` reference.
 - Added bounded provider/schema retries and a closed `Report generation failed.` terminal error that does not persist provider details.
@@ -327,15 +327,16 @@ Final recorded results:
 
 ### Configuration
 
-- `REPORT_LLM_PROVIDER=fake|configured` (`fake` is forbidden in production).
-- `REPORT_LLM_ENDPOINT` must be an HTTPS JSON chat-completions-compatible endpoint when configured.
-- `REPORT_LLM_MODEL` and `LLM_API_KEY` are required for the configured provider.
-- `REPORT_PROVIDER_ATTEMPTS` is bounded to 1–5 (default 3).
+- `REPORT_LLM_PROVIDER=fake|codex` (`fake` is forbidden in production).
+- `REPORT_CODEX_COMMAND` defaults to `codex`; production images pin the CLI version.
+- `REPORT_CODEX_MODEL` defaults to `gpt-5.6-sol`; `REPORT_CODEX_TIMEOUT_MS` is bounded to 1–75 seconds so the maximum two CLI calls remain below the 180-second report lease.
+- Production mounts a dedicated authenticated CLI home through `TRACE_CODEX_HOME`.
+- The API queue owns the fixed three-delivery retry budget. Each delivery permits one initial Codex call and at most one schema/grounding repair call.
 - `REPORT_WORKER_CONCURRENCY` is bounded to 1–16 (default 2).
 - Queue name is frozen as `report-generation` on both API producer and worker consumer.
 - A short database claim stores a renewable processing token and expiry; provider network I/O occurs outside transactions, and a fenced transaction persists only the owning token's result.
 - Schema/transient provider retries are bounded inside the processor. BullMQ uses three backed-off attempts only for sanitized infrastructure/job failures; permanent malformed jobs are unrecoverable, retained failed jobs are retried, and retained completed jobs are replaced when reconciliation still finds no revision.
-- Configured provider endpoints are restricted to the built-in OpenAI API host, HTTPS default port, no redirects, and bounded request/response bodies.
+- Codex runs through direct argv and stdin with disabled agent tools, a sanitized environment, bounded prompt/output files, and strict schema/grounding validation.
 
 ### Deferred by plan
 
@@ -396,7 +397,7 @@ Final recorded results:
 - Moved immutable report-object writes outside database transactions onto report/revision/generation/token-scoped attempt keys under an abort deadline shorter than the lease. Sibling writes share cancellation, are all settled after any failure, and filesystem mutation runs in killable child-process boundaries rather than relying on partial syscall cancellation. Final activation reacquires the report lock and requires the exact live token/revision/generation lease; expired work may leave only unreachable staged objects and cannot create active artifact rows or complete a report.
 - Bounded report-detail artifact reads to the current revision and serialized the detail snapshot with report lifecycle mutation.
 - Added durable audit rows for GitHub connection/install/disconnect, repository synchronization/tracking, and report create/revision/regeneration mutations.
-- Minimized configured-provider disclosure by replacing database IDs, activity IDs, and commit SHAs with request-local aliases. Private repository names, contributor identities, timestamps, activity types, aggregate facts, and commit messages remain explicit provider prose inputs.
+- Minimized Codex-provider disclosure by replacing database IDs, activity IDs, and commit SHAs with request-local aliases. Private repository names, contributor identities, timestamps, activity types, aggregate facts, and commit messages remain explicit provider prose inputs.
 - Upgraded both Vitest consumers and pinned patched Vite `6.4.3`; full and production lockfile audits report no known vulnerabilities.
 
 ### Verification
@@ -469,7 +470,7 @@ Final recorded results:
 
 - Docker socket access is root-equivalent on the host. Restrict worker deployment/admin access and dedicate the Docker host or replace the socket boundary before stronger multi-tenant operation.
 - `REPORT_LATEX_WORK_ROOT` is a host bind path and must exist with UID `1000` write access at the identical container path.
-- Automated acceptance proves local configured-provider startup but not a real LLM response, live GitHub OAuth/App installation/webhook delivery, or production infrastructure/backup restoration.
+- Automated acceptance proves local Codex CLI startup; authenticated model inference, live GitHub OAuth/App installation/webhook delivery, and production infrastructure/backup restoration remain environment-specific release gates.
 - Nest may report API exit `143` after completing SIGTERM shutdown hooks; forced exit `137` or a grace-period timeout remains a failure.
 
 ### Next-day joint gate
@@ -548,7 +549,7 @@ Final recorded results:
 ### Risks
 
 - Live GitHub OAuth, App installation ownership, and provider webhook delivery require real provider credentials and remain an external operational acceptance gate.
-- A real configured LLM response plus provider retention/region/deletion guarantees require operator credentials and policy acceptance; deterministic fake and bounded configured-provider behavior are repository-tested.
+- A real Codex response plus provider retention/region/deletion guarantees require operator credentials and policy acceptance; deterministic fake and bounded Codex-provider behavior are repository-tested.
 - Production backup restoration, secret injection, networking, persistent report volume permissions, and target-platform Docker/socket policy require the actual deployment environment.
 - Password-reset delivery remains intentionally fail-closed until an approved bounded delivery provider is configured.
 - Docker socket access remains host-root-equivalent; restrict deployment access or replace that boundary before stronger multi-tenant operation.

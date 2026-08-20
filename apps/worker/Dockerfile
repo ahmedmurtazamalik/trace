@@ -39,6 +39,7 @@ RUN apt-get update \
   && apt-get install --yes --no-install-recommends ca-certificates docker.io openssl \
   && rm -rf /var/lib/apt/lists/*
 ENV NODE_ENV=production
+ENV PATH=/app/node_modules/.bin:${PATH}
 WORKDIR /app
 COPY --from=build --chown=node:node /opt/trace-worker ./
 COPY --from=build --chown=node:node /workspace/infrastructure/scripts/verify-worker-drain.mjs ./operations/verify-worker-drain.mjs

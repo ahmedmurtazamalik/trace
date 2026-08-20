@@ -10,6 +10,7 @@
     "test": "jest --runInBand"
   },
   "dependencies": {
+    "@openai/codex": "0.146.0",
     "@trace/database": "workspace:*",
     "@trace/report-storage": "workspace:*",
     "@trace/shared": "workspace:*",

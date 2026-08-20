@@ -111,7 +111,6 @@ describe('loadConfig', () => {
       GITHUB_APP_CLIENT_ID: '',
       GITHUB_APP_CLIENT_SECRET: '',
       GITHUB_WEBHOOK_SECRET: '',
-      LLM_API_KEY: '',
       STORAGE_BUCKET: '',
       STORAGE_ENDPOINT: '',
       STORAGE_ACCESS_KEY: '',
@@ -119,7 +118,6 @@ describe('loadConfig', () => {
     });
 
     expect(config.github).toEqual({});
-    expect(config.llmApiKey).toBeUndefined();
     expect(config.storage).toEqual({});
   });
 });

@@ -111,11 +111,11 @@ services:
       REDIS_URL: ${REDIS_URL:?Set REDIS_URL}
       GITHUB_APP_ID: ${GITHUB_APP_ID:?Set GITHUB_APP_ID}
       GITHUB_APP_PRIVATE_KEY: ${GITHUB_APP_PRIVATE_KEY:?Set GITHUB_APP_PRIVATE_KEY}
-      REPORT_LLM_PROVIDER: configured
-      REPORT_LLM_ENDPOINT: ${REPORT_LLM_ENDPOINT:-https://api.openai.com/v1/chat/completions}
-      REPORT_LLM_MODEL: ${REPORT_LLM_MODEL:?Set REPORT_LLM_MODEL}
-      LLM_API_KEY: ${LLM_API_KEY:?Set LLM_API_KEY}
-      REPORT_PROVIDER_ATTEMPTS: ${REPORT_PROVIDER_ATTEMPTS:-3}
+      REPORT_LLM_PROVIDER: codex
+      REPORT_CODEX_COMMAND: /app/node_modules/.bin/codex
+      REPORT_CODEX_MODEL: ${REPORT_CODEX_MODEL:-gpt-5.6-sol}
+      REPORT_CODEX_TIMEOUT_MS: ${REPORT_CODEX_TIMEOUT_MS:-75000}
+      CODEX_HOME: /var/lib/trace/codex
       REPORT_WORKER_CONCURRENCY: ${REPORT_WORKER_CONCURRENCY:-2}
       WORKER_SHUTDOWN_TIMEOUT_MS: ${WORKER_SHUTDOWN_TIMEOUT_MS:-210000}
       REPORT_LATEX_IMAGE: ${REPORT_LATEX_IMAGE:?Set REPORT_LATEX_IMAGE to an immutable digest}
@@ -133,6 +133,7 @@ services:
     stop_grace_period: 240s
     volumes:
       - trace_report_artifacts:/var/lib/trace/reports
+      - ${TRACE_CODEX_HOME:?Set TRACE_CODEX_HOME to a dedicated authenticated Codex home}:/var/lib/trace/codex
       - ${REPORT_LATEX_WORK_ROOT:?Set REPORT_LATEX_WORK_ROOT}:${REPORT_LATEX_WORK_ROOT:?Set REPORT_LATEX_WORK_ROOT}
       - ${DOCKER_SOCKET:?Set DOCKER_SOCKET to the host Docker socket path}:/var/run/docker.sock:ro
     networks: [data, egress]

@@ -9,6 +9,7 @@ TEMP_ROOT=$(mktemp -d "/tmp/trace-backend-smoke-${TOKEN}.XXXXXX")
 ENV_FILE="$TEMP_ROOT/smoke.env"
 PRIVATE_KEY_FILE="$TEMP_ROOT/github-app.pem"
 LATEX_WORK_ROOT="$TEMP_ROOT/latex-work"
+CODEX_HOME_PATH="${TRACE_CODEX_ACCEPTANCE_HOME:-$TEMP_ROOT/codex-home}"
 API_IMAGE="trace-api-smoke:$TOKEN"
 MIGRATION_IMAGE="trace-migrate-smoke:$TOKEN"
 WORKER_IMAGE="trace-worker-smoke:$TOKEN"
@@ -41,6 +42,11 @@ DOCKER_SOCKET=${TRACE_DOCKER_SOCKET:-/var/run/docker.sock}
 test -S "$DOCKER_SOCKET" || { printf 'Docker socket is not available: %s\n' "$DOCKER_SOCKET" >&2; exit 1; }
 stat -c '%g' "$DOCKER_SOCKET" >/dev/null
 mkdir -m 700 "$LATEX_WORK_ROOT"
+if [ -n "${TRACE_CODEX_ACCEPTANCE_HOME:-}" ]; then
+  test -d "$CODEX_HOME_PATH" || { printf 'Codex acceptance home is not a directory\n' >&2; exit 1; }
+else
+  mkdir -m 700 "$CODEX_HOME_PATH"
+fi
 openssl genpkey -quiet -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out "$PRIVATE_KEY_FILE"
 PRIVATE_KEY_ESCAPED=''
 while IFS= read -r line; do PRIVATE_KEY_ESCAPED+="${line}\\n"; done < "$PRIVATE_KEY_FILE"
@@ -49,7 +55,6 @@ POSTGRES_PASSWORD=$(openssl rand -hex 24)
 SESSION_SECRET=$(openssl rand -hex 32)
 WEBHOOK_SECRET=$(openssl rand -hex 32)
 CLIENT_SECRET=$(openssl rand -hex 24)
-LLM_KEY=$(openssl rand -hex 24)
 DOCKER_GID=$(stat -c '%g' "$DOCKER_SOCKET")
 API_PORT=$(python3 - <<'PY'
 import socket
@@ -87,8 +92,8 @@ umask 077
   printf 'GITHUB_CALLBACK_URL=https://api.trace.example.test/api/v1/github/callback\n'
   printf 'GITHUB_INSTALLATION_CALLBACK_URL=https://api.trace.example.test/api/v1/github/installation/callback\n'
   printf 'GITHUB_WEBHOOK_SECRET=%s\n' "$WEBHOOK_SECRET"
-  printf 'REPORT_LLM_MODEL=smoke-model\n'
-  printf 'LLM_API_KEY=%s\n' "$LLM_KEY"
+  printf 'REPORT_CODEX_MODEL=gpt-5.6-sol\n'
+  printf 'TRACE_CODEX_HOME=%s\n' "$CODEX_HOME_PATH"
   printf 'REPORT_LATEX_IMAGE=%s\n' "$LATEX_IMAGE_ID"
   printf 'REPORT_LATEX_WORK_ROOT=%s\n' "$LATEX_WORK_ROOT"
   printf 'DOCKER_GID=%s\n' "$DOCKER_GID"
@@ -116,6 +121,10 @@ curl --fail --silent "http://127.0.0.1:$API_PORT/ready" | grep -q '"status":"rea
 test "$("${COMPOSE[@]}" ps --all --format json migrate | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const rows=s.trim().split(/\\n/).filter(Boolean).map(JSON.parse);process.stdout.write(String(rows[0]?.ExitCode ?? ''))})")" = 0
 test "$("${COMPOSE[@]}" exec --no-TTY api id -u)" = 1000
 test "$("${COMPOSE[@]}" exec --no-TTY worker id -u)" = 1000
+"${COMPOSE[@]}" exec --no-TTY worker codex --version | grep -q 'codex-cli 0.146.0'
+if [ -n "${TRACE_CODEX_ACCEPTANCE_HOME:-}" ]; then
+  "${COMPOSE[@]}" exec --no-TTY worker codex login status >/dev/null
+fi
 "${COMPOSE[@]}" exec --no-TTY worker docker version --format '{{.Client.Version}}' >/dev/null
 "${COMPOSE[@]}" exec --no-TTY worker node - <<'NODE'
 const { DockerLatexCompiler } = require('./dist/src/latex/latex-compiler.js');

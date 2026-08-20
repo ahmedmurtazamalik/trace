@@ -32,8 +32,8 @@ const composeEnvironment = () => {
     GITHUB_CALLBACK_URL: 'https://api.example.test/api/v1/github/callback',
     GITHUB_INSTALLATION_CALLBACK_URL: 'https://api.example.test/api/v1/github/installation/callback',
     GITHUB_WEBHOOK_SECRET: 'w'.repeat(32),
-    REPORT_LLM_MODEL: 'example',
-    LLM_API_KEY: 'example',
+    REPORT_CODEX_MODEL: 'gpt-5.6-sol',
+    TRACE_CODEX_HOME: '/tmp/trace-codex',
     REPORT_LATEX_IMAGE: `sha256:${digest}`,
     REPORT_LATEX_WORK_ROOT: '/tmp/trace-latex',
     DOCKER_GID: '1',
@@ -98,11 +98,13 @@ test('release image validator accepts only immutable image references', async ()
 });
 
 test('production API and worker images run as non-root services', async () => {
-  const [api, worker, dockerignore] = await Promise.all([
+  const [api, worker, workerPackageText, dockerignore] = await Promise.all([
     read('apps/api/Dockerfile'),
     read('apps/worker/Dockerfile'),
+    read('apps/worker/package.json'),
     read('.dockerignore'),
   ]);
+  const workerPackage = JSON.parse(workerPackageText);
 
   assert.match(api, /^FROM .* AS runtime$/m);
   assert.match(api, /^# syntax=docker\/dockerfile:1\.7@sha256:[a-f0-9]{64}$/m);
@@ -123,6 +125,8 @@ test('production API and worker images run as non-root services', async () => {
   assert.match(worker, /^USER node$/m);
   assert.match(worker, /CMD \["node", "dist\/src\/main\.js"\]/);
   assert.match(worker, /docker\.io/);
+  assert.match(worker, /ENV PATH=\/app\/node_modules\/\.bin:/);
+  assert.equal(workerPackage.dependencies['@openai/codex'], '0.146.0');
 
   assert.match(dockerignore, /^\.env\*$/m);
   assert.match(dockerignore, /^node_modules$/m);
@@ -160,6 +164,11 @@ test('production-like backend Compose gates startup on migration and dependency 
   }
   const workerService = serviceBlock(compose, 'worker');
   assert.match(workerService, /WORKER_SHUTDOWN_TIMEOUT_MS: \$\{WORKER_SHUTDOWN_TIMEOUT_MS:-210000\}/);
+  assert.match(workerService, /REPORT_LLM_PROVIDER: codex/);
+  assert.match(workerService, /REPORT_CODEX_COMMAND: \/app\/node_modules\/\.bin\/codex/);
+  assert.match(workerService, /REPORT_CODEX_MODEL: \$\{REPORT_CODEX_MODEL:-gpt-5\.6-sol\}/);
+  assert.match(workerService, /CODEX_HOME: \/var\/lib\/trace\/codex/);
+  assert.match(workerService, /\$\{TRACE_CODEX_HOME:\?/);
   assert.match(workerService, /stop_grace_period: 240s/);
   assert.match(workerService, /\$\{DOCKER_SOCKET:\?/);
 

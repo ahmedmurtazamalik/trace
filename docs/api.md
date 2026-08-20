@@ -224,7 +224,7 @@ The API publishes one BullMQ job named `process-github-webhook`, using determini
 
 ## Frozen Day 8–10 report contract
 
-The report protocol is frozen in `packages/shared/src/reports.ts`; validated list/detail fixtures live under `packages/shared/test/fixtures/reports/`. The implemented report lifecycle includes authenticated create/list/detail handlers, deterministic factual aggregation, immutable input snapshots, durable queue publication, configured-provider generation, immutable revision history, deterministic controlled LaTeX rendering, fenced artifact storage, regeneration, and owner-authorized download streaming.
+The report protocol is frozen in `packages/shared/src/reports.ts`; validated list/detail fixtures live under `packages/shared/test/fixtures/reports/`. The implemented report lifecycle includes authenticated create/list/detail handlers, deterministic factual aggregation, immutable input snapshots, durable queue publication, Codex CLI provider generation, immutable revision history, deterministic controlled LaTeX rendering, fenced artifact storage, regeneration, and owner-authorized download streaming.
 
 Canonical routes for those days are:
 

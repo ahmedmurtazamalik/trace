@@ -104,7 +104,7 @@ After building, start the queue workers with:
 corepack pnpm --filter @trace/worker start
 ```
 
-The worker start script loads the same repository-root `.env`. GitHub activity processing requires real `GITHUB_APP_ID` and `GITHUB_APP_PRIVATE_KEY` values and fails closed while those optional local placeholders remain blank. The deterministic report provider remains available for local development; production requires its separately documented configured provider and immutable compiler/storage settings.
+The worker start script loads the same repository-root `.env`. GitHub activity processing requires real `GITHUB_APP_ID` and `GITHUB_APP_PRIVATE_KEY` values and fails closed while those optional local placeholders remain blank. The deterministic report provider remains available for local development and tests. For real local inference, authenticate `codex` first, then set `REPORT_LLM_PROVIDER=codex`; production additionally requires the dedicated `TRACE_CODEX_HOME` mount and immutable compiler/storage settings documented in `backend-operations.md`.
 
 ## Quality gates
 

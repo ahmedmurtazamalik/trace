@@ -24,7 +24,6 @@ const rawEnvironmentSchema = z
     GITHUB_INSTALLATION_CALLBACK_URL: optionalEnvironmentValue(z.url()),
     GITHUB_WEBHOOK_SECRET: optionalEnvironmentValue(z.string().min(1)),
     PASSWORD_RESET_OUTBOX_DIRECTORY: optionalEnvironmentValue(z.string().min(1)),
-    LLM_API_KEY: optionalEnvironmentValue(z.string().min(1)),
     STORAGE_BUCKET: optionalEnvironmentValue(z.string().min(1)),
     STORAGE_ENDPOINT: optionalEnvironmentValue(z.url()),
     STORAGE_ACCESS_KEY: optionalEnvironmentValue(z.string().min(1)),
@@ -126,7 +125,6 @@ export function loadConfig(environment: NodeJS.ProcessEnv | Record<string, strin
     passwordReset: {
       outboxDirectory: value.PASSWORD_RESET_OUTBOX_DIRECTORY,
     },
-    llmApiKey: value.LLM_API_KEY,
     storage: {
       bucket: value.STORAGE_BUCKET,
       endpoint: value.STORAGE_ENDPOINT,

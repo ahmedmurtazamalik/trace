@@ -20,7 +20,7 @@ Required backend values:
 | `GITHUB_CALLBACK_URL` | API | Public HTTPS OAuth callback URL |
 | `GITHUB_INSTALLATION_CALLBACK_URL` | API | Public HTTPS installation callback URL |
 | `GITHUB_WEBHOOK_SECRET` | API | At least 32 random, non-placeholder characters |
-| `REPORT_LLM_MODEL`, `LLM_API_KEY` | worker | Configured report provider model and secret |
+| `REPORT_CODEX_MODEL`, `TRACE_CODEX_HOME` | worker | Explicit Codex model and dedicated authenticated CLI home |
 | `REPORT_LATEX_IMAGE` | worker | Immutable registry digest (`name@sha256:…`) or local full image ID (`sha256:…`) |
 | `REPORT_LATEX_WORK_ROOT` | worker/host | Absolute host directory bind-mounted at the identical path in the worker |
 | `DOCKER_SOCKET`, `DOCKER_GID` | worker/host | Host socket path and its numeric owning group; the socket is mounted at `/var/run/docker.sock` in the worker |
@@ -28,9 +28,9 @@ Required backend values:
 | `TRACE_API_IMAGE`, `TRACE_MIGRATION_IMAGE`, `TRACE_WORKER_IMAGE` | Compose | Full local `sha256:…` IDs or registry `name@sha256:…` digests; no tags |
 | `POSTGRES_PASSWORD` | PostgreSQL | Random database password matching `DATABASE_URL` |
 
-Optional controls include `LOG_LEVEL`, `REPORT_PROVIDER_ATTEMPTS`, `REPORT_WORKER_CONCURRENCY`, `REPORT_LATEX_TIMEOUT_MS`, and `TRACE_API_PORT`.
+Optional controls include `LOG_LEVEL`, `REPORT_WORKER_CONCURRENCY`, `REPORT_LATEX_TIMEOUT_MS`, and `TRACE_API_PORT`.
 
-Use restrictive file permissions (`0600`) for environment files. Rotate the session secret, GitHub OAuth secret, webhook secret, App private key, LLM key, and database password through the deployment platform. A rotation that changes connectivity requires a controlled restart.
+Use restrictive file permissions (`0600`) for environment files. Rotate the session secret, GitHub OAuth secret, webhook secret, App private key, dedicated Codex CLI authentication, and database password through the deployment platform. A rotation that changes connectivity requires a controlled restart.
 
 ## Build and deploy
 
@@ -97,7 +97,9 @@ Compose mounts the same `trace_report_artifacts` volume at `/var/lib/trace/repor
 
 ## LLM provider
 
-Production forces `REPORT_LLM_PROVIDER=configured`. The supported endpoint is the HTTPS OpenAI chat-completions host enforced in code. Store `LLM_API_KEY` as a secret, pin the intended model, monitor provider authentication/rate failures, and never substitute the deterministic test provider in production. Provider unavailability must fail jobs safely rather than fabricate reports.
+Production report generation invokes the pinned Codex CLI from the worker with `REPORT_LLM_PROVIDER=codex`. Set `REPORT_CODEX_MODEL` explicitly and mount a dedicated authenticated CLI home through `TRACE_CODEX_HOME`; do not mount a developer's general-purpose home directory. The worker runs `codex exec` ephemerally in a fresh temporary directory, ignores repository/user instructions, uses a read-only sandbox, constrains output with a strict JSON schema, bounds prompt/response sizes, and makes at most one schema-repair attempt. Stable database identifiers and commit SHAs are request-locally aliased before inference and restored only after grounded validation.
+
+Codex CLI authentication is an operational credential. Restrict filesystem permissions and account scope, rotate or revoke it through the approved Codex account workflow, and use only organization-approved automation credentials for a multi-user deployment. A personal subscription is suitable for local/internal development, not as a public shared inference backend. Codex unavailability, authentication failure, timeout, or invalid output must fail the report job safely rather than fabricate content. Keep the deterministic provider limited to local development and tests.
 
 ## LaTeX compiler
 
@@ -135,4 +137,4 @@ Run the destructive, isolated local smoke harness only on Linux with Docker Engi
 pnpm smoke:backend
 ```
 
-It uses a unique Compose project and temporary secrets, builds all backend images plus the LaTeX sandbox, resolves and validates immutable local image IDs, migrates a fresh database, checks `/health` and `/ready`, verifies API/worker UID `1000`, compiles a real PDF from inside the worker, drains active webhook and report jobs against Redis, sends bounded `SIGTERM` stops, requires worker exit `0` and API exit `0` or handled-signal `143`, rejects forced exit `137`, and removes containers, volumes, images, and temporary files.
+It uses a unique Compose project and temporary secrets, builds all backend images plus the LaTeX sandbox, resolves and validates immutable local image IDs, migrates a fresh database, checks `/health` and `/ready`, verifies API/worker UID `1000`, compiles a real PDF from inside the worker, drains active webhook and report jobs against Redis, sends bounded `SIGTERM` stops, requires worker exit `0` and API exit `0` or handled-signal `143`, rejects forced exit `137`, and removes containers, volumes, images, and temporary files. Set `TRACE_CODEX_ACCEPTANCE_HOME` to a dedicated authenticated Codex home to add a credential/readability preflight without copying authentication material.
