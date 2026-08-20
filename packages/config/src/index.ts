@@ -23,6 +23,19 @@ const rawEnvironmentSchema = z
     GITHUB_CALLBACK_URL: optionalEnvironmentValue(z.url()),
     GITHUB_INSTALLATION_CALLBACK_URL: optionalEnvironmentValue(z.url()),
     GITHUB_WEBHOOK_SECRET: optionalEnvironmentValue(z.string().min(1)),
+    SLACK_REPORT_WEBHOOK_URL: optionalEnvironmentValue(
+      z.url().refine((value) => {
+        const url = new URL(value);
+        return url.protocol === 'https:'
+          && url.hostname === 'hooks.slack.com'
+          && url.port === ''
+          && url.username === ''
+          && url.password === ''
+          && url.search === ''
+          && url.hash === ''
+          && /^\/services\/[^/]+\/[^/]+\/[^/]+$/.test(url.pathname);
+      }, { message: 'SLACK_REPORT_WEBHOOK_URL must be an HTTPS hooks.slack.com/services URL' }),
+    ),
     PASSWORD_RESET_OUTBOX_DIRECTORY: optionalEnvironmentValue(z.string().min(1)),
     STORAGE_BUCKET: optionalEnvironmentValue(z.string().min(1)),
     STORAGE_ENDPOINT: optionalEnvironmentValue(z.url()),
@@ -81,6 +94,9 @@ export interface TraceConfig {
   passwordReset: {
     outboxDirectory?: string;
   };
+  slack: {
+    reportWebhookUrl?: string;
+  };
   llmApiKey?: string;
   storage: {
     bucket?: string;
@@ -124,6 +140,9 @@ export function loadConfig(environment: NodeJS.ProcessEnv | Record<string, strin
     },
     passwordReset: {
       outboxDirectory: value.PASSWORD_RESET_OUTBOX_DIRECTORY,
+    },
+    slack: {
+      reportWebhookUrl: value.SLACK_REPORT_WEBHOOK_URL,
     },
     storage: {
       bucket: value.STORAGE_BUCKET,

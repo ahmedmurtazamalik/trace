@@ -14,6 +14,7 @@ Required backend values:
 | `REDIS_URL` | API, worker | Redis URL using the Compose hostname `redis` |
 | `SESSION_SECRET` | API | At least 32 random, non-placeholder characters |
 | `FRONTEND_ORIGIN` | API | Public HTTPS frontend origin |
+| `SLACK_REPORT_WEBHOOK_URL` | API (optional) | Secret incoming-webhook URL for the single managers-only report channel |
 | `GITHUB_APP_ID`, `GITHUB_APP_SLUG` | API/worker | GitHub App identity |
 | `GITHUB_APP_PRIVATE_KEY` | API/worker | PEM with literal newlines or escaped `\\n`; store only in a secret manager |
 | `GITHUB_APP_CLIENT_ID`, `GITHUB_APP_CLIENT_SECRET` | API | OAuth credentials for account and installation verification |

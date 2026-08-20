@@ -31,6 +31,7 @@ function renderRoute(role: 'MANAGER' | 'DEVELOPER') {
     loadReport: vi.fn().mockResolvedValue(report),
     saveRevision: vi.fn().mockResolvedValue(report),
     regenerateReport: vi.fn().mockResolvedValue(report),
+    shareReport: vi.fn().mockResolvedValue({ sent: true }),
     downloadArtifact: vi.fn().mockResolvedValue({ blob: new Blob(['pdf']), fileName: 'workspace-report.pdf' }),
   };
   render(<AuthSessionProvider initialSession={session}><WorkspaceReportRoute workspaceId="workspace/1" reportId="report/1" clients={clients} /></AuthSessionProvider>);
@@ -49,6 +50,7 @@ describe('workspace report route', () => {
     expect(screen.queryByRole('heading', { name: 'Frozen report evidence' })).not.toBeInTheDocument();
     expect(screen.queryByText(/manager-1|idempotency|provider failure/i)).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Regenerate report' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Send to Slack' })).not.toBeInTheDocument();
     expect(screen.queryByLabelText('Structured report editor')).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Download PDF' }));
     await waitFor(() => expect(clients.downloadArtifact).toHaveBeenCalled());
@@ -61,5 +63,8 @@ describe('workspace report route', () => {
     expect(screen.queryByRole('button', { name: 'Save revision' })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Regenerate report' }));
     await waitFor(() => expect(clients.regenerateReport).toHaveBeenCalledWith('workspace/1', 'report/1', { expectedRevision: 1 }, 'csrf-live', expect.any(AbortSignal)));
+    fireEvent.click(screen.getByRole('button', { name: 'Send to Slack' }));
+    await waitFor(() => expect(clients.shareReport).toHaveBeenCalledWith('workspace/1', 'report/1', 'csrf-live', expect.any(AbortSignal)));
+    expect(await screen.findByText('Report sent to Slack.')).toBeInTheDocument();
   });
 });

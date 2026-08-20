@@ -7,6 +7,7 @@ import { WorkspaceAnalysisQueue } from './workspace-analysis.queue';
 import { WorkspaceAnalysisService } from './workspace-analysis.service';
 import { WorkspaceReportScheduler } from './workspace-report.scheduler';
 import { WorkspaceReportsService } from './workspace-reports.service';
+import { WorkspaceReportSlackService } from './workspace-report-slack.service';
 import { WorkspacesService } from './workspaces.service';
 
 @Module({
@@ -18,6 +19,7 @@ import { WorkspacesService } from './workspaces.service';
     WorkspaceAnalysisPublisher,
     WorkspaceAnalysisService,
     WorkspaceReportsService,
+    WorkspaceReportSlackService,
     WorkspaceReportScheduler,
   ],
 })

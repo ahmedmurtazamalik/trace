@@ -10,6 +10,7 @@ import { formatPakistanDateTime } from "@/lib/pakistan-time";
 
 export type LoadReport = (reportId: string, signal?: AbortSignal) => Promise<ReportDetailResponse | WorkspaceReportDetailResponse>;
 export type RegenerateReport = (reportId: string, request: ReportRegenerationRequest, signal?: AbortSignal) => Promise<ReportRegenerationResponse>;
+export type ShareToSlack = (reportId: string, signal?: AbortSignal) => Promise<{ sent: true }>;
 export interface DownloadedArtifact { blob: Blob; fileName: string }
 export type DownloadArtifact = (reportId: string, artifact: ReportArtifact, signal?: AbortSignal) => Promise<DownloadedArtifact>;
 export type DeliverDownload = (artifact: DownloadedArtifact) => void;
@@ -42,9 +43,9 @@ function formatBytes(sizeBytes: number) {
   return `${(sizeBytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-interface Props { reportId: string; loadReport: LoadReport; saveRevision?: SaveReportRevision; regenerateReport?: RegenerateReport; downloadArtifact?: DownloadArtifact; deliverDownload?: DeliverDownload; resolveContributorLabels?: ResolveContributorLabels; pollIntervalMs?: number }
+interface Props { reportId: string; loadReport: LoadReport; saveRevision?: SaveReportRevision; regenerateReport?: RegenerateReport; shareToSlack?: ShareToSlack; downloadArtifact?: DownloadArtifact; deliverDownload?: DeliverDownload; resolveContributorLabels?: ResolveContributorLabels; pollIntervalMs?: number }
 
-export function ReportDetailView({ reportId, loadReport, saveRevision, regenerateReport, downloadArtifact, deliverDownload = deliverBrowserDownload, resolveContributorLabels, pollIntervalMs = 5000 }: Props) {
+export function ReportDetailView({ reportId, loadReport, saveRevision, regenerateReport, shareToSlack, downloadArtifact, deliverDownload = deliverBrowserDownload, resolveContributorLabels, pollIntervalMs = 5000 }: Props) {
   const { discardActive } = useReportDraftRecovery();
   const [report, setReport] = useState<ReportDetail>();
   const [workspaceEvidence, setWorkspaceEvidence] = useState<WorkspaceReportEvidence>();
@@ -54,11 +55,14 @@ export function ReportDetailView({ reportId, loadReport, saveRevision, regenerat
   const [editorDirty, setEditorDirty] = useState(false);
   const [regenerating, setRegenerating] = useState(false);
   const [downloadingId, setDownloadingId] = useState<string>();
+  const [sharingToSlack, setSharingToSlack] = useState(false);
+  const [slackSuccess, setSlackSuccess] = useState(false);
   const [actionError, setActionError] = useState<string>();
   const pollingGeneration = useRef(0);
   const controller = useRef<AbortController>();
   const downloadController = useRef<AbortController>();
   const downloadGeneration = useRef(0);
+  const slackController = useRef<AbortController>();
   const timer = useRef<number>();
   const hasLoadedReport = useRef(false);
 
@@ -86,6 +90,10 @@ export function ReportDetailView({ reportId, loadReport, saveRevision, regenerat
     setWorkspaceEvidence(undefined);
     setContributorLabels({});
     setDownloadingId(undefined);
+    slackController.current?.abort();
+    slackController.current = undefined;
+    setSharingToSlack(false);
+    setSlackSuccess(false);
     setRegenerating(false);
     setActionError(undefined);
     setError(code === "UNAUTHENTICATED" ? "Your session expired. Sign in again to open this report." : "This report is no longer available to your account.");
@@ -137,12 +145,17 @@ export function ReportDetailView({ reportId, loadReport, saveRevision, regenerat
     setEditorDirty(false);
     setRegenerating(false);
     setDownloadingId(undefined);
+    setSharingToSlack(false);
+    setSlackSuccess(false);
     setActionError(undefined);
     invalidateDownloads();
+    slackController.current?.abort();
+    slackController.current = undefined;
     startPolling();
     return () => {
       cancelPolling();
       invalidateDownloads();
+      slackController.current?.abort();
     };
   }, [cancelPolling, invalidateDownloads, reportId, startPolling]);
 
@@ -230,6 +243,33 @@ export function ReportDetailView({ reportId, loadReport, saveRevision, regenerat
     }
   }
 
+  async function share() {
+    if (!shareToSlack || report?.status !== "completed" || sharingToSlack) return;
+    slackController.current?.abort();
+    const actionController = new AbortController();
+    slackController.current = actionController;
+    setSharingToSlack(true);
+    setSlackSuccess(false);
+    setActionError(undefined);
+    try {
+      await shareToSlack(reportId, actionController.signal);
+      if (!actionController.signal.aborted && slackController.current === actionController) setSlackSuccess(true);
+    } catch (cause) {
+      if (actionController.signal.aborted || slackController.current !== actionController) return;
+      const code = failureCode(cause);
+      if (isAuthorizationFailure(code)) {
+        invalidateProtectedReport(code);
+        return;
+      }
+      setActionError(code === "SLACK_NOT_CONFIGURED" ? "Slack report sharing is not configured." : code === "RATE_LIMITED" ? "Too many Slack sends. Wait before trying again." : code === "CSRF_INVALID" ? "Your security session expired. Refresh the page before sending to Slack." : "Trace could not send this report to Slack. Try again.");
+    } finally {
+      if (slackController.current === actionController) {
+        slackController.current = undefined;
+        setSharingToSlack(false);
+      }
+    }
+  }
+
   if (loading && report === undefined) return <Card className="report-state-card" role="status">Loading report…</Card>;
   if (error && report === undefined) return <Card className="report-state-card report-state-error" role="alert"><p>{error}</p><Button className="trace-button-secondary" onClick={startPolling}>Retry</Button></Card>;
   if (report === undefined) return null;
@@ -240,11 +280,13 @@ export function ReportDetailView({ reportId, loadReport, saveRevision, regenerat
       <div><span className={`report-status report-status-${report.status}`}>{labels[report.status]}</span><h2>Development activity report</h2><p>{new Date(`${report.reportDate}T12:00:00.000Z`).toLocaleDateString("en-US", { dateStyle: "long", timeZone: "UTC" })} · {report.timezone}</p></div>
       <div className="report-detail-actions">
         {regenerateReport && report.revision ? <Button className="trace-button-secondary" disabled={!["completed", "failed"].includes(report.status) || editorDirty || regenerating} onClick={() => void regenerate()}>{regenerating ? "Regenerating…" : "Regenerate report"}</Button> : null}
+        {shareToSlack && currentPdf ? <Button className="trace-button-secondary" disabled={sharingToSlack} onClick={() => void share()}>{sharingToSlack ? "Sending…" : "Send to Slack"}</Button> : null}
         {currentPdf && downloadArtifact ? <Button disabled={downloadingId !== undefined} onClick={() => void download(currentPdf)}>{downloadingId === currentPdf.id ? "Downloading…" : "Download PDF"}</Button> : <Button disabled aria-label="Download PDF: download delivery is not available yet" title="PDF download delivery is not available yet.">Download PDF</Button>}
       </div>
     </Card>
     {editorDirty && regenerateReport ? <p className="report-action-hint">Save or cancel your narrative changes before regenerating.</p> : null}
     {actionError ? <div className="report-notice-error" role="alert"><span>{actionError}</span>{actionError.startsWith("A newer revision") || actionError.includes("Refresh") ? <Button className="trace-button-secondary" onClick={startPolling}>Refresh report</Button> : null}</div> : null}
+    {slackSuccess ? <div className="inline-alert" role="status">Report sent to Slack.</div> : null}
     {error ? <div className="report-notice-error" role="alert"><span>{error}</span><Button className="trace-button-secondary" onClick={startPolling}>Retry now</Button></div> : null}
     {report.status === "pending" || report.status === "processing" ? <Card className="report-progress-card" role="status"><strong>{report.status === "pending" ? "Waiting to begin" : "Building your report"}</strong><span>This page refreshes automatically while generation is active.</span></Card> : null}
     {report.status === "failed" && <Card className="report-state-card report-state-error" role="alert"><h3>Report generation failed</h3><p>{report.errorMessage}</p></Card>}

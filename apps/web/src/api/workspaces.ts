@@ -9,6 +9,7 @@ import {
   reportListResponseSchema,
   reportRegenerationRequestSchema,
   reportRegenerationResponseSchema,
+  reportSlackShareResponseSchema,
   reportRevisionUpdateRequestSchema,
   reportRevisionUpdateResponseSchema,
   workspaceAddMemberRequestSchema,
@@ -60,6 +61,7 @@ import {
   type ReportListResponse,
   type ReportRegenerationRequest,
   type ReportRegenerationResponse,
+  type ReportSlackShareResponse,
   type ReportRevisionUpdateRequest,
   type ReportRevisionUpdateResponse,
 } from '@trace/shared';
@@ -86,6 +88,8 @@ const messages: Record<ClientCode, string> = {
   REPORT_REVISION_CONFLICT: 'A newer revision exists. Reload it before editing again.',
   REPORT_ARTIFACT_NOT_FOUND: 'This report file is unavailable or has expired. Refresh the report and try again.',
   REPORT_GENERATION_UNAVAILABLE: 'Report generation is temporarily unavailable. Try again later.',
+  SLACK_NOT_CONFIGURED: 'Slack report sharing is not configured.',
+  SLACK_DELIVERY_FAILED: 'Trace could not send this report to Slack. Try again.',
   UNAUTHENTICATED: 'Your session has expired. Please sign in again.',
   CSRF_INVALID: 'Your security session is no longer valid. Please sign in again.',
   VALIDATION_ERROR: 'Check the workspace information and try again.',
@@ -232,6 +236,10 @@ export function updateWorkspaceReportRevision(id: string, reportId: string, inpu
 export function regenerateWorkspaceReport(id: string, reportId: string, input: ReportRegenerationRequest, csrfToken: string, options: Options = {}): Promise<ReportRegenerationResponse> {
   const body = reportRegenerationRequestSchema.parse(input);
   return request(`/api/v1/workspaces/${encodeURIComponent(id)}/reports/${encodeURIComponent(reportId)}/regenerate`, 'POST', reportRegenerationResponseSchema, options, csrfToken, body);
+}
+
+export function shareWorkspaceReportToSlack(id: string, reportId: string, csrfToken: string, options: Options = {}): Promise<ReportSlackShareResponse> {
+  return request(`/api/v1/workspaces/${encodeURIComponent(id)}/reports/${encodeURIComponent(reportId)}/share/slack`, 'POST', reportSlackShareResponseSchema, options, csrfToken);
 }
 
 export interface DownloadedWorkspaceReportArtifact { blob: Blob; fileName: string }

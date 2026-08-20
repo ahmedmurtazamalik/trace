@@ -22,6 +22,7 @@ import {
   updateWorkspaceReportRevision,
   regenerateWorkspaceReport,
   downloadWorkspaceReportArtifact,
+  shareWorkspaceReportToSlack,
 } from './workspaces';
 
 const summary = {
@@ -252,6 +253,17 @@ describe('workspace API client', () => {
       ['http://localhost:3001/api/v1/workspaces/workspace%2F1/reports/report%2F1/revision', 'PUT', { 'content-type': 'application/json', 'x-csrf-token': 'csrf-live' }, JSON.stringify(revision)],
       ['http://localhost:3001/api/v1/workspaces/workspace%2F1/reports/report%2F1/regenerate', 'POST', { 'content-type': 'application/json', 'x-csrf-token': 'csrf-live' }, JSON.stringify({ expectedRevision: 1 })],
     ]);
+  });
+
+  it('shares a workspace report to the fixed Slack channel with CSRF and encoded IDs', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ sent: true }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(shareWorkspaceReportToSlack('workspace/1', 'report/1', 'csrf-live')).resolves.toEqual({ sent: true });
+    expect(fetchMock).toHaveBeenCalledWith(
+      'http://localhost:3001/api/v1/workspaces/workspace%2F1/reports/report%2F1/share/slack',
+      expect.objectContaining({ method: 'POST', credentials: 'include', headers: { 'x-csrf-token': 'csrf-live' } }),
+    );
   });
 
   it('normalizes stale authentication without exposing backend details', async () => {

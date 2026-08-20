@@ -286,6 +286,10 @@ Never put database URLs, provider credentials, session secrets, or private keys 
 
 Register callback URLs that exactly match the configured API routes. In production, callback and frontend origins must use HTTPS.
 
+### Slack report sharing
+
+Set `SLACK_REPORT_WEBHOOK_URL` on the API to enable the Manager-only **Send to Slack** action for completed workspace reports. Create a Slack app, enable Incoming Webhooks, add one webhook for the managers-only destination channel, store that URL as a server secret, and restart the API. Trace sends the report's executive summary and authenticated report link; it does not send metrics or upload the PDF. The webhook is fixed to its selected channel and must never be exposed to the browser, logged, or committed.
+
 ### Report configuration
 
 | Variable | Purpose | Local behavior |
