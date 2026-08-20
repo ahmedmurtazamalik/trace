@@ -1,10 +1,10 @@
 import { HttpException, HttpStatus, Inject, Injectable } from '@nestjs/common';
+import { performance } from 'node:perf_hooks';
 import type { TraceConfig } from '@trace/config';
 import { Prisma, PrismaService } from '@trace/database';
 import { reportContentSchema } from '@trace/shared';
 import { TRACE_CONFIG } from '../../common/config/config.token';
 
-const MAX_SLACK_SUMMARY_LENGTH = 3_000;
 const SLACK_TIMEOUT_MS = 5_000;
 const SLACK_TRANSACTION_TIMEOUT_MS = 15_000;
 const SLACK_TRANSACTION_COMMIT_MARGIN_MS = 2_000;
@@ -25,13 +25,10 @@ function escapeSlack(value: string) {
 }
 
 export function formatSlackReportMessage(input: SlackReportMessage) {
-  const summary = input.executiveSummary.length > MAX_SLACK_SUMMARY_LENGTH
-    ? `${input.executiveSummary.slice(0, MAX_SLACK_SUMMARY_LENGTH - 1).trimEnd()}…`
-    : input.executiveSummary;
   return [
     `*${escapeSlack(input.workspaceName)} — Trace report for ${input.reportDate}*`,
     '',
-    escapeSlack(summary),
+    escapeSlack(input.executiveSummary),
     '',
     `<${input.reportUrl}|Open report and download the PDF in Trace>`,
   ].join('\n');
@@ -50,7 +47,7 @@ export class WorkspaceReportSlackService {
     let slackPosted = false;
     try {
       const delivered = await this.prisma.$transaction(async (transaction) => {
-        const transactionStartedAt = Date.now();
+        const transactionStartedAt = performance.now();
         await transaction.$executeRaw`SET LOCAL lock_timeout = '1000ms'`;
         const workspaces = await transaction.$queryRaw<Array<{ id: string }>>(
           Prisma.sql`SELECT id FROM workspaces WHERE id = ${workspaceId} FOR UPDATE`,
@@ -130,7 +127,7 @@ export class WorkspaceReportSlackService {
         });
 
         const remainingTransactionMs = SLACK_TRANSACTION_TIMEOUT_MS
-          - (Date.now() - transactionStartedAt)
+          - (performance.now() - transactionStartedAt)
           - SLACK_TRANSACTION_COMMIT_MARGIN_MS;
         if (remainingTransactionMs <= 0) return false;
         const posted = await this.postToSlack(webhookUrl, text, Math.min(SLACK_TIMEOUT_MS, remainingTransactionMs));
@@ -144,7 +141,8 @@ export class WorkspaceReportSlackService {
       // If Slack accepted the request but the transaction commit failed, report
       // success so the Manager is not encouraged to create a duplicate post.
       if (slackPosted) return { sent: true };
-      throw error;
+      if (error instanceof HttpException) throw error;
+      this.deliveryFailed();
     }
   }
 

@@ -1,3 +1,4 @@
+import { performance } from 'node:perf_hooks';
 import type { TraceConfig } from '@trace/config';
 import { WorkspaceReportSlackService, formatSlackReportMessage } from '../src/modules/workspaces/workspace-report-slack.service';
 
@@ -48,6 +49,18 @@ describe('Slack report message formatting', () => {
     expect(message).not.toMatch(/repositories|contributors|commits|files changed|additions|deletions/i);
     expect(message).not.toContain('@channel');
   });
+
+  it('preserves the complete stored executive summary', () => {
+    const executiveSummary = 'A'.repeat(20_000);
+    const message = formatSlackReportMessage({
+      workspaceName: 'Product Delivery',
+      reportDate: '2026-08-18',
+      executiveSummary,
+      reportUrl: 'https://trace.example/workspaces/workspace-1/reports/report-1',
+    });
+
+    expect(message).toContain(executiveSummary);
+  });
 });
 
 describe('workspace report Slack delivery', () => {
@@ -84,7 +97,7 @@ describe('workspace report Slack delivery', () => {
 
   it('does not start Slack delivery after lock acquisition consumes the transaction safety budget', async () => {
     const { instance, prisma } = slackService();
-    jest.spyOn(Date, 'now').mockReturnValueOnce(1_000).mockReturnValueOnce(15_000);
+    jest.spyOn(performance, 'now').mockReturnValueOnce(1_000).mockReturnValueOnce(15_000);
     const fetchMock = jest.spyOn(global, 'fetch');
 
     await expect(instance.share('manager-1', 'workspace-1', 'report-1')).rejects.toMatchObject({
@@ -104,6 +117,16 @@ describe('workspace report Slack delivery', () => {
     });
 
     await expect(instance.share('manager-1', 'workspace-1', 'report-1')).resolves.toEqual({ sent: true });
+  });
+
+  it('sanitizes lock and transaction failures before returning them to the client', async () => {
+    const { instance, prisma } = slackService();
+    prisma.$transaction.mockRejectedValueOnce(new Error('database lock timeout detail'));
+
+    await expect(instance.share('manager-1', 'workspace-1', 'report-1')).rejects.toMatchObject({
+      status: 502,
+      response: { code: 'SLACK_DELIVERY_FAILED', message: 'Slack delivery failed.' },
+    });
   });
 
   it('rejects Developers before reading or disclosing a report', async () => {

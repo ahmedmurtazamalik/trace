@@ -25,10 +25,10 @@ const report: WorkspaceReportDetailResponse = { report: {
   repositories: [{ repositoryId: 'repo-1', fullName: 'trace/web', accessState: 'ACCESS_REMOVED', coverage: null, baselineOnly: false, activityCount: 0 }],
 } };
 
-function renderRoute(role: 'MANAGER' | 'DEVELOPER') {
+function renderRoute(role: 'MANAGER' | 'DEVELOPER', reportResponse: WorkspaceReportDetailResponse = report) {
   const clients = {
     loadWorkspace: vi.fn().mockResolvedValue(workspace(role)),
-    loadReport: vi.fn().mockResolvedValue(report),
+    loadReport: vi.fn().mockResolvedValue(reportResponse),
     saveRevision: vi.fn().mockResolvedValue(report),
     regenerateReport: vi.fn().mockResolvedValue(report),
     shareReport: vi.fn().mockResolvedValue({ sent: true }),
@@ -54,6 +54,17 @@ describe('workspace report route', () => {
     expect(screen.queryByLabelText('Structured report editor')).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Download PDF' }));
     await waitFor(() => expect(clients.downloadArtifact).toHaveBeenCalled());
+  });
+
+  it('hides Slack sharing while a report with an older PDF is processing', async () => {
+    const processing: WorkspaceReportDetailResponse = {
+      ...report,
+      report: { ...report.report, status: 'processing', completedAt: null },
+    };
+    renderRoute('MANAGER', processing);
+
+    expect(await screen.findByText('Building your report')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Send to Slack' })).not.toBeInTheDocument();
   });
 
   it('provides Manager-only regeneration and read-only report content without exposing the removed narrative editor', async () => {
