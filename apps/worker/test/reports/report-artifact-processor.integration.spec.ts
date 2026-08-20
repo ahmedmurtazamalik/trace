@@ -408,14 +408,16 @@ describe('report artifact processor', () => {
   it('rejects finalization when only the render-revision obligation changes', async () => {
     let release: (() => void) | undefined;
     const wait = new Promise<void>((resolve) => { release = resolve; });
+    let markCompilerStarted: (() => void) | undefined;
+    const compilerStarted = new Promise<void>((resolve) => { markCompilerStarted = resolve; });
     const processor = new ReportArtifactProcessor(
       prisma,
       new ReportProcessor(prisma, new DeterministicReportProvider()),
-      compiler(async () => { await wait; return pdf; }),
+      compiler(async () => { markCompilerStarted?.(); await wait; return pdf; }),
       new MemoryStorage(),
     );
     const processing = processor.process(reportId);
-    await new Promise((resolve) => setTimeout(resolve, 75));
+    await compilerStarted;
     await prisma.report.update({ where: { id: reportId }, data: { renderRevision: 99 } });
     release?.();
 
