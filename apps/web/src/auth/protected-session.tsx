@@ -15,7 +15,11 @@ export function ProtectedSession({ children }: { children: ReactNode }) {
     if (status !== "anonymous" || isSigningOut) return;
     const query = searchParams.toString();
     const returnTo = `${pathname}${query ? `?${query}` : ""}`;
-    router.replace(`/login?returnTo=${encodeURIComponent(returnTo)}`);
+    const invitationHash = /^\/invitations\/[A-Za-z0-9_-]+$/.test(pathname)
+      && /^#token=[A-Za-z0-9_-]{43}$/.test(window.location.hash)
+      ? window.location.hash
+      : "";
+    router.replace(`/login?returnTo=${encodeURIComponent(returnTo)}${invitationHash}`);
   }, [isSigningOut, pathname, router, searchParams, status]);
 
   if (status === "authenticated") return children;

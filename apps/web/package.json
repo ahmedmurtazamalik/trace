@@ -11,6 +11,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:e2e": "playwright test",
+    "test:e2e:invitations-real": "tsc -p tsconfig.invitations-real.json --noEmit && playwright test --config=playwright.invitations-real.config.ts",
     "test:e2e:mock": "playwright test --config=playwright.mock.config.ts"
   },
   "dependencies": {

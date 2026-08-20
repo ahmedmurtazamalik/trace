@@ -49,6 +49,13 @@ enum WorkspaceRole {
   DEVELOPER
 }
 
+enum WorkspaceInvitationStatus {
+  PENDING
+  ACCEPTED
+  DECLINED
+  REVOKED
+}
+
 enum WorkspaceAnalysisStatus {
   UNINITIALIZED
   PENDING
@@ -113,6 +120,8 @@ model User {
   auditLogs            AuditLog[]
   createdWorkspaces   Workspace[]           @relation("WorkspaceCreator")
   workspaceMemberships WorkspaceMembership[]
+  workspaceInvitationsReceived WorkspaceInvitation[] @relation("WorkspaceInvitationRecipient")
+  workspaceInvitationsSent WorkspaceInvitation[] @relation("WorkspaceInvitationInviter")
   workspaceRepositoryAssignments WorkspaceRepository[] @relation("WorkspaceRepositoryAssigner")
   configuredWorkspaceReportSchedules WorkspaceReportSchedule[] @relation("WorkspaceReportScheduleConfigurer")
   requestedWorkspaceReportOccurrences WorkspaceReportOccurrence[] @relation("WorkspaceReportOccurrenceRequester")
@@ -243,6 +252,7 @@ model Workspace {
   updatedAt    DateTime              @updatedAt @map("updated_at")
   createdBy    User                  @relation("WorkspaceCreator", fields: [createdById], references: [id], onDelete: Restrict)
   memberships  WorkspaceMembership[]
+  invitations  WorkspaceInvitation[]
   repositories WorkspaceRepository[]
   analysisStates WorkspaceRepositoryAnalysis[]
   analysisRuns WorkspaceAnalysisRun[]
@@ -256,19 +266,46 @@ model Workspace {
 }
 
 model WorkspaceMembership {
-  id          String        @id @default(cuid())
-  workspaceId String        @map("workspace_id")
-  userId      String        @map("user_id")
-  role        WorkspaceRole
-  createdAt   DateTime      @default(now()) @map("created_at")
-  updatedAt   DateTime      @updatedAt @map("updated_at")
-  workspace   Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  user        User          @relation(fields: [userId], references: [id], onDelete: Restrict)
+  id           String        @id @default(cuid())
+  workspaceId  String        @map("workspace_id")
+  userId       String        @map("user_id")
+  invitationId String?       @unique @map("invitation_id")
+  role         WorkspaceRole
+  createdAt    DateTime      @default(now()) @map("created_at")
+  updatedAt    DateTime      @updatedAt @map("updated_at")
+  workspace    Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user         User          @relation(fields: [userId], references: [id], onDelete: Restrict)
+  invitation   WorkspaceInvitation? @relation(fields: [invitationId], references: [id], onDelete: Restrict)
 
   @@unique([workspaceId, userId])
   @@index([userId, role])
   @@index([workspaceId, role])
   @@map("workspace_memberships")
+}
+
+model WorkspaceInvitation {
+  id            String                    @id @default(cuid())
+  workspaceId   String                    @map("workspace_id")
+  invitedUserId String                    @map("invited_user_id")
+  invitedById   String                    @map("invited_by_id")
+  role          WorkspaceRole
+  status        WorkspaceInvitationStatus @default(PENDING)
+  tokenHash     String                    @unique @db.Char(64) @map("token_hash")
+  expiresAt     DateTime                  @map("expires_at")
+  acceptedAt    DateTime?                 @map("accepted_at")
+  declinedAt    DateTime?                 @map("declined_at")
+  revokedAt     DateTime?                 @map("revoked_at")
+  createdAt     DateTime                  @default(now()) @map("created_at")
+  updatedAt     DateTime                  @updatedAt @map("updated_at")
+  workspace     Workspace                 @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  invitedUser   User                      @relation("WorkspaceInvitationRecipient", fields: [invitedUserId], references: [id], onDelete: Restrict)
+  invitedBy     User                      @relation("WorkspaceInvitationInviter", fields: [invitedById], references: [id], onDelete: Restrict)
+  membership    WorkspaceMembership?
+
+  @@index([invitedUserId, status, expiresAt])
+  @@index([workspaceId, createdAt])
+  @@index([invitedById])
+  @@map("workspace_invitations")
 }
 
 model WorkspaceRepository {

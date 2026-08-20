@@ -1,20 +1,26 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
-  addWorkspaceMember,
+  acceptWorkspaceInvitation,
   archiveWorkspace,
   assignWorkspaceRepository,
+  createWorkspaceInvitation,
   createWorkspace,
+  declineWorkspaceInvitation,
   disableWorkspaceReportSchedule,
   generateWorkspaceReport,
+  getWorkspaceInvitation,
   getWorkspaceReport,
   getWorkspace,
   getWorkspaceAnalysis,
   getWorkspaceReportSchedule,
   listWorkspaceReportOccurrences,
   listWorkspaceReports,
+  listWorkspaceInvitations,
+  listMyWorkspaceInvitations,
   listWorkspaces,
   removeWorkspaceMember,
   removeWorkspaceRepository,
+  revokeWorkspaceInvitation,
   updateWorkspace,
   updateWorkspaceMemberRole,
   updateWorkspaceReportSchedule,
@@ -83,6 +89,18 @@ const analysis = {
   accessState: 'ACTIVE' as const, coverage: null, lastError: null, latestRun: null,
 };
 
+const invitation = {
+  id: 'invitation/1', workspace: { id: 'workspace/1', name: 'Product Delivery' },
+  invitedUser: { id: 'user_2', username: 'ali.dev', displayName: null },
+  invitedBy: { id: 'user_1', username: 'manager.dev', displayName: 'Manager' },
+  role: 'DEVELOPER' as const, status: 'PENDING' as const, acceptancePath: '/invitations/invitation_1',
+  expiresAt: '2026-08-25T08:05:00.000Z', createdAt: '2026-08-18T08:05:00.000Z',
+  acceptedAt: null, declinedAt: null, revokedAt: null,
+};
+
+const invitationToken = '0123456789abcdefghijklmnopqrstuvwxyzABCDEFG';
+const copyablePath = `/invitations/invitation_1#token=${invitationToken}`;
+
 function jsonResponse(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
 }
@@ -104,22 +122,65 @@ describe('workspace API client', () => {
     ]);
   });
 
+  it('lists scoped and current-user invitations and loads an invitation with encoded IDs', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(jsonResponse({ items: [invitation] }))
+      .mockResolvedValueOnce(jsonResponse({ items: [invitation] }))
+      .mockResolvedValueOnce(jsonResponse({ invitation }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(listWorkspaceInvitations('workspace/1')).resolves.toEqual({ items: [invitation] });
+    await expect(listMyWorkspaceInvitations()).resolves.toEqual({ items: [invitation] });
+    await expect(getWorkspaceInvitation('invitation/1', invitationToken)).resolves.toEqual({ invitation });
+    expect(fetchMock.mock.calls.map(([url, init]) => [url, init.method, init.credentials, init.headers])).toEqual([
+      ['http://localhost:3001/api/v1/workspaces/workspace%2F1/invitations', 'GET', 'include', undefined],
+      ['http://localhost:3001/api/v1/workspace-invitations', 'GET', 'include', undefined],
+      ['http://localhost:3001/api/v1/workspace-invitations/invitation%2F1', 'GET', 'include', { 'x-workspace-invitation-token': invitationToken }],
+    ]);
+  });
+
+  it('rejects malformed invitation success payloads through the frozen schemas', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({ items: [{ ...invitation, unexpected: true }] })));
+
+    await expect(listMyWorkspaceInvitations()).rejects.toMatchObject({ code: 'INVALID_RESPONSE' });
+  });
+
+  it('accepts, declines, and revokes invitations with encoded IDs and in-memory CSRF', async () => {
+    const member = { userId: 'user_2', username: 'ali.dev', displayName: null, role: 'DEVELOPER' as const, joinedAt: '2026-08-18T08:10:00.000Z' };
+    const accepted = { ...invitation, status: 'ACCEPTED' as const, acceptedAt: '2026-08-18T08:10:00.000Z' };
+    const declined = { ...invitation, status: 'DECLINED' as const, declinedAt: '2026-08-18T08:10:00.000Z' };
+    const revoked = { ...invitation, status: 'REVOKED' as const, revokedAt: '2026-08-18T08:10:00.000Z' };
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(jsonResponse({ invitation: accepted, member }))
+      .mockResolvedValueOnce(jsonResponse({ invitation: declined }))
+      .mockResolvedValueOnce(jsonResponse({ invitation: revoked }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await acceptWorkspaceInvitation('invitation/1', 'csrf-live', invitationToken);
+    await declineWorkspaceInvitation('invitation/1', 'csrf-live');
+    await revokeWorkspaceInvitation('workspace/1', 'invitation/1', 'csrf-live');
+    expect(fetchMock.mock.calls.map(([url, init]) => [url, init.method, init.headers, init.body])).toEqual([
+      ['http://localhost:3001/api/v1/workspace-invitations/invitation%2F1/accept', 'POST', { 'x-csrf-token': 'csrf-live', 'x-workspace-invitation-token': invitationToken }, undefined],
+      ['http://localhost:3001/api/v1/workspace-invitations/invitation%2F1/decline', 'POST', { 'x-csrf-token': 'csrf-live' }, undefined],
+      ['http://localhost:3001/api/v1/workspaces/workspace%2F1/invitations/invitation%2F1/revoke', 'POST', { 'x-csrf-token': 'csrf-live' }, undefined],
+    ]);
+  });
+
   it('creates a workspace and sends manager mutations with JSON and in-memory CSRF', async () => {
-    const member = { userId: 'user_2', username: 'ali.dev', displayName: null, role: 'DEVELOPER', joinedAt: '2026-08-18T08:05:00.000Z' };
     const repository = { id: 'repo_1', fullName: 'trace/web', private: true, defaultBranch: 'main', url: null, accessState: 'ACTIVE' };
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(jsonResponse({ workspace: summary }, 201))
-      .mockResolvedValueOnce(jsonResponse({ member }, 201))
+      .mockResolvedValueOnce(jsonResponse({ invitation, copyablePath }, 201))
       .mockResolvedValueOnce(jsonResponse({ repository }, 201));
     vi.stubGlobal('fetch', fetchMock);
 
     await createWorkspace({ name: 'Product Delivery' }, 'csrf-live');
-    await addWorkspaceMember('workspace_1', { username: 'ali.dev', role: 'DEVELOPER' }, 'csrf-live');
+    await createWorkspaceInvitation('workspace_1', { username: 'ali.dev', role: 'DEVELOPER' }, 'csrf-live');
     await assignWorkspaceRepository('workspace_1', { repositoryId: 'repo_1' }, 'csrf-live');
 
     expect(fetchMock.mock.calls.map(([url, init]) => [url, init.method, init.headers, init.body])).toEqual([
       ['http://localhost:3001/api/v1/workspaces', 'POST', { 'content-type': 'application/json', 'x-csrf-token': 'csrf-live' }, JSON.stringify({ name: 'Product Delivery' })],
-      ['http://localhost:3001/api/v1/workspaces/workspace_1/members', 'POST', { 'content-type': 'application/json', 'x-csrf-token': 'csrf-live' }, JSON.stringify({ username: 'ali.dev', role: 'DEVELOPER' })],
+      ['http://localhost:3001/api/v1/workspaces/workspace_1/invitations', 'POST', { 'content-type': 'application/json', 'x-csrf-token': 'csrf-live' }, JSON.stringify({ username: 'ali.dev', role: 'DEVELOPER' })],
       ['http://localhost:3001/api/v1/workspaces/workspace_1/repositories', 'POST', { 'content-type': 'application/json', 'x-csrf-token': 'csrf-live' }, JSON.stringify({ repositoryId: 'repo_1' })],
     ]);
   });
@@ -131,11 +192,25 @@ describe('workspace API client', () => {
     vi.stubGlobal('fetch', fetchMock);
 
     await expect(listWorkspaces()).rejects.toMatchObject({ code: 'INVALID_RESPONSE' });
-    await expect(addWorkspaceMember('workspace_1', { username: 'ali.dev', role: 'DEVELOPER' }, 'csrf-live')).rejects.toMatchObject({
+    await expect(createWorkspaceInvitation('workspace_1', { username: 'ali.dev', role: 'DEVELOPER' }, 'csrf-live')).rejects.toMatchObject({
       code: 'WORKSPACE_MANAGER_REQUIRED',
       message: 'Only workspace managers can change members or repositories.',
       status: 403,
       requestId: 'request-1',
+    });
+  });
+
+  it.each([
+    ['WORKSPACE_INVITATION_NOT_FOUND', 'This workspace invitation is no longer available.'],
+    ['WORKSPACE_INVITATION_EXISTS', 'A pending invitation already exists for that person.'],
+    ['WORKSPACE_INVITATION_EXPIRED', 'This workspace invitation has expired.'],
+    ['WORKSPACE_INVITATION_NOT_PENDING', 'This workspace invitation has already been resolved.'],
+    ['WORKSPACE_INVITATION_TARGET_INVALID', 'This workspace invitation is not available to your Trace account.'],
+  ] as const)('maps %s to a safe invitation message', async (code, message) => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({ code, message: 'private backend detail', requestId: 'request-invitation' }, 409)));
+
+    await expect(getWorkspaceInvitation('invitation_1')).rejects.toMatchObject({
+      code, message, status: 409, requestId: 'request-invitation',
     });
   });
 

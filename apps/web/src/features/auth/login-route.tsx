@@ -13,7 +13,12 @@ export function LoginRoute() {
   return <AuthShell title="Welcome back." description="Sign in to review your development activity." note="Your session stays in a secure HTTP-only cookie; Trace never stores it in browser storage.">
     <LoginForm sessionReady={status !== "loading"} onAuthenticated={(session) => {
       establishSession(session);
-      router.replace(safeReturnPath(searchParams.get("returnTo")));
+      const returnTo = safeReturnPath(searchParams.get("returnTo"));
+      const invitationHash = /^\/invitations\/[A-Za-z0-9_-]+(?:\?.*)?$/.test(returnTo)
+        && /^#token=[A-Za-z0-9_-]{43}$/.test(window.location.hash)
+        ? window.location.hash
+        : "";
+      router.replace(`${returnTo}${invitationHash}`);
     }} />
     <div className="auth-links"><Link href="/forgot-password">Forgot password?</Link></div>
   </AuthShell>;
