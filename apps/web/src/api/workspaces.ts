@@ -9,6 +9,7 @@ import {
   reportListResponseSchema,
   reportRegenerationRequestSchema,
   reportRegenerationResponseSchema,
+
   reportRevisionUpdateRequestSchema,
   reportRevisionUpdateResponseSchema,
   workspaceAssignRepositoryRequestSchema,
@@ -70,6 +71,7 @@ import {
   type ReportListResponse,
   type ReportRegenerationRequest,
   type ReportRegenerationResponse,
+
   type ReportRevisionUpdateRequest,
   type ReportRevisionUpdateResponse,
 } from '@trace/shared';
@@ -302,6 +304,7 @@ export function regenerateWorkspaceReport(id: string, reportId: string, input: R
   const body = reportRegenerationRequestSchema.parse(input);
   return request(`/api/v1/workspaces/${encodeURIComponent(id)}/reports/${encodeURIComponent(reportId)}/regenerate`, 'POST', reportRegenerationResponseSchema, options, csrfToken, body);
 }
+
 
 export interface DownloadedWorkspaceReportArtifact { blob: Blob; fileName: string }
 

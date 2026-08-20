@@ -25,12 +25,13 @@ const report: WorkspaceReportDetailResponse = { report: {
   repositories: [{ repositoryId: 'repo-1', fullName: 'trace/web', accessState: 'ACCESS_REMOVED', coverage: null, baselineOnly: false, activityCount: 0 }],
 } };
 
-function renderRoute(role: 'MANAGER' | 'DEVELOPER') {
+function renderRoute(role: 'MANAGER' | 'DEVELOPER', reportResponse: WorkspaceReportDetailResponse = report) {
   const clients = {
     loadWorkspace: vi.fn().mockResolvedValue(workspace(role)),
-    loadReport: vi.fn().mockResolvedValue(report),
+    loadReport: vi.fn().mockResolvedValue(reportResponse),
     saveRevision: vi.fn().mockResolvedValue(report),
     regenerateReport: vi.fn().mockResolvedValue(report),
+
     downloadArtifact: vi.fn().mockResolvedValue({ blob: new Blob(['pdf']), fileName: 'workspace-report.pdf' }),
   };
   render(<AuthSessionProvider initialSession={session}><WorkspaceReportRoute workspaceId="workspace/1" reportId="report/1" clients={clients} /></AuthSessionProvider>);
@@ -54,11 +55,23 @@ describe('workspace report route', () => {
     await waitFor(() => expect(clients.downloadArtifact).toHaveBeenCalled());
   });
 
+  it('keeps report actions unavailable while a report with an older PDF is processing', async () => {
+    const processing: WorkspaceReportDetailResponse = {
+      ...report,
+      report: { ...report.report, status: 'processing', completedAt: null },
+    };
+    renderRoute('MANAGER', processing);
+
+    expect(await screen.findByText('Building your report')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Regenerate report' })).toBeDisabled();
+  });
+
   it('provides Manager-only regeneration and read-only report content without exposing the removed narrative editor', async () => {
     const clients = renderRoute('MANAGER');
     await screen.findByRole('heading', { name: 'Code analysis' });
     expect(screen.getByLabelText('Executive summary')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Save revision' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Send to Slack' })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Regenerate report' }));
     await waitFor(() => expect(clients.regenerateReport).toHaveBeenCalledWith('workspace/1', 'report/1', { expectedRevision: 1 }, 'csrf-live', expect.any(AbortSignal)));
   });

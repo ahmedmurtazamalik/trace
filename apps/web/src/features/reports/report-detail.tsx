@@ -54,11 +54,13 @@ export function ReportDetailView({ reportId, loadReport, saveRevision, regenerat
   const [editorDirty, setEditorDirty] = useState(false);
   const [regenerating, setRegenerating] = useState(false);
   const [downloadingId, setDownloadingId] = useState<string>();
+
   const [actionError, setActionError] = useState<string>();
   const pollingGeneration = useRef(0);
   const controller = useRef<AbortController>();
   const downloadController = useRef<AbortController>();
   const downloadGeneration = useRef(0);
+
   const timer = useRef<number>();
   const hasLoadedReport = useRef(false);
 
@@ -86,6 +88,7 @@ export function ReportDetailView({ reportId, loadReport, saveRevision, regenerat
     setWorkspaceEvidence(undefined);
     setContributorLabels({});
     setDownloadingId(undefined);
+
     setRegenerating(false);
     setActionError(undefined);
     setError(code === "UNAUTHENTICATED" ? "Your session expired. Sign in again to open this report." : "This report is no longer available to your account.");
@@ -137,12 +140,15 @@ export function ReportDetailView({ reportId, loadReport, saveRevision, regenerat
     setEditorDirty(false);
     setRegenerating(false);
     setDownloadingId(undefined);
+
     setActionError(undefined);
     invalidateDownloads();
+
     startPolling();
     return () => {
       cancelPolling();
       invalidateDownloads();
+
     };
   }, [cancelPolling, invalidateDownloads, reportId, startPolling]);
 
@@ -230,6 +236,7 @@ export function ReportDetailView({ reportId, loadReport, saveRevision, regenerat
     }
   }
 
+
   if (loading && report === undefined) return <Card className="report-state-card" role="status">Loading report…</Card>;
   if (error && report === undefined) return <Card className="report-state-card report-state-error" role="alert"><p>{error}</p><Button className="trace-button-secondary" onClick={startPolling}>Retry</Button></Card>;
   if (report === undefined) return null;
@@ -240,11 +247,13 @@ export function ReportDetailView({ reportId, loadReport, saveRevision, regenerat
       <div><span className={`report-status report-status-${report.status}`}>{labels[report.status]}</span><h2>Development activity report</h2><p>{new Date(`${report.reportDate}T12:00:00.000Z`).toLocaleDateString("en-US", { dateStyle: "long", timeZone: "UTC" })} · {report.timezone}</p></div>
       <div className="report-detail-actions">
         {regenerateReport && report.revision ? <Button className="trace-button-secondary" disabled={!["completed", "failed"].includes(report.status) || editorDirty || regenerating} onClick={() => void regenerate()}>{regenerating ? "Regenerating…" : "Regenerate report"}</Button> : null}
+
         {currentPdf && downloadArtifact ? <Button disabled={downloadingId !== undefined} onClick={() => void download(currentPdf)}>{downloadingId === currentPdf.id ? "Downloading…" : "Download PDF"}</Button> : <Button disabled aria-label="Download PDF: download delivery is not available yet" title="PDF download delivery is not available yet.">Download PDF</Button>}
       </div>
     </Card>
     {editorDirty && regenerateReport ? <p className="report-action-hint">Save or cancel your narrative changes before regenerating.</p> : null}
     {actionError ? <div className="report-notice-error" role="alert"><span>{actionError}</span>{actionError.startsWith("A newer revision") || actionError.includes("Refresh") ? <Button className="trace-button-secondary" onClick={startPolling}>Refresh report</Button> : null}</div> : null}
+
     {error ? <div className="report-notice-error" role="alert"><span>{error}</span><Button className="trace-button-secondary" onClick={startPolling}>Retry now</Button></div> : null}
     {report.status === "pending" || report.status === "processing" ? <Card className="report-progress-card" role="status"><strong>{report.status === "pending" ? "Waiting to begin" : "Building your report"}</strong><span>This page refreshes automatically while generation is active.</span></Card> : null}
     {report.status === "failed" && <Card className="report-state-card report-state-error" role="alert"><h3>Report generation failed</h3><p>{report.errorMessage}</p></Card>}

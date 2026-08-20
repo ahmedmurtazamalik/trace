@@ -21,6 +21,7 @@ interface WorkspaceReportClients {
   loadReport(workspaceId: string, reportId: string, signal?: AbortSignal): Promise<WorkspaceReportDetailResponse>;
 
   regenerateReport(workspaceId: string, reportId: string, input: ReportRegenerationRequest, csrfToken: string, signal?: AbortSignal): Promise<ReportRegenerationResponse>;
+
   downloadArtifact(workspaceId: string, reportId: string, artifact: ReportArtifact, signal?: AbortSignal): Promise<DownloadedWorkspaceReportArtifact>;
 }
 
@@ -29,6 +30,7 @@ const liveClients: WorkspaceReportClients = {
   loadReport: (workspaceId, reportId, signal) => getWorkspaceReport(workspaceId, reportId, { signal }),
 
   regenerateReport: (workspaceId, reportId, input, csrfToken, signal) => regenerateWorkspaceReport(workspaceId, reportId, input, csrfToken, { signal }),
+
   downloadArtifact: (workspaceId, reportId, artifact, signal) => downloadWorkspaceReportArtifact(workspaceId, reportId, artifact, { signal }),
 };
 
@@ -66,11 +68,12 @@ export function WorkspaceReportRoute({ workspaceId, reportId, clients = liveClie
   const canManage = workspace.role === 'MANAGER' && workspace.archivedAt === null && Boolean(csrfToken);
   const loadReport = (id: string, signal?: AbortSignal) => clients.loadReport(workspaceId, id, signal);
   const regenerate = canManage ? (id: string, input: ReportRegenerationRequest, signal?: AbortSignal) => clients.regenerateReport(workspaceId, id, input, csrfToken!, signal) : undefined;
+
   const download = (id: string, artifact: ReportArtifact, signal?: AbortSignal) => clients.downloadArtifact(workspaceId, id, artifact, signal);
 
   return <div className="workspace-report-detail">
     <div className="workspace-report-context"><div><span className="eyebrow">Workspace report</span><h2>{workspace.name}</h2></div><Link href="/workspaces">Back to workspaces</Link></div>
-    {workspace.role === 'MANAGER' && !csrfToken ? <div className="inline-alert error" role="alert">Your security session expired. Refresh the page before regenerating; read-only report access remains available.</div> : null}
+    {workspace.role === 'MANAGER' && !csrfToken ? <div className="inline-alert error" role="alert">Your security session expired. Refresh the page before using report actions; read-only report access remains available.</div> : null}
     {workspace.archivedAt ? <div className="inline-alert" role="status">This workspace is archived. Historical reports remain available, but changes are disabled.</div> : null}
     <ReportDetailView reportId={reportId} loadReport={loadReport} regenerateReport={regenerate} downloadArtifact={download} />
   </div>;

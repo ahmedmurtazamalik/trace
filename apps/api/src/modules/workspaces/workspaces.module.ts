@@ -7,6 +7,7 @@ import { WorkspaceAnalysisQueue } from './workspace-analysis.queue';
 import { WorkspaceAnalysisService } from './workspace-analysis.service';
 import { WorkspaceReportScheduler } from './workspace-report.scheduler';
 import { WorkspaceReportsService } from './workspace-reports.service';
+
 import { WorkspacesService } from './workspaces.service';
 import { WorkspaceInvitationsService } from './workspace-invitations.service';
 import { WorkspaceInvitationsController } from './workspace-invitations.controller';
@@ -21,6 +22,7 @@ import { WorkspaceInvitationsController } from './workspace-invitations.controll
     WorkspaceAnalysisPublisher,
     WorkspaceAnalysisService,
     WorkspaceReportsService,
+
     WorkspaceReportScheduler,
   ],
 })

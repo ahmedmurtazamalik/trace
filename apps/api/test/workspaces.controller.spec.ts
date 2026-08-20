@@ -57,6 +57,7 @@ describe('WorkspacesController paid-work limits', () => {
     expect(reports.regenerate).not.toHaveBeenCalled();
   });
 
+
   it('bounds baseline collection more tightly before starting GitHub work', async () => {
     await controller.startAnalysis(session, 'workspace-1', 'repository-1', request);
 

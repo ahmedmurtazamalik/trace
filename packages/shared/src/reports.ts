@@ -208,6 +208,7 @@ export const reportErrorCodeSchema = z.enum([
   'REPORT_REVISION_CONFLICT',
   'REPORT_ARTIFACT_NOT_FOUND',
   'REPORT_GENERATION_UNAVAILABLE',
+
 ]);
 
 export type ReportStatus = z.infer<typeof reportStatusSchema>;
@@ -227,5 +228,6 @@ export type ReportRevisionUpdateRequest = z.infer<typeof reportRevisionUpdateReq
 export type ReportRegenerationRequest = z.infer<typeof reportRegenerationRequestSchema>;
 export type ReportRevisionUpdateResponse = z.infer<typeof reportRevisionUpdateResponseSchema>;
 export type ReportRegenerationResponse = z.infer<typeof reportRegenerationResponseSchema>;
+
 export type ReportDownloadQuery = z.infer<typeof reportDownloadQuerySchema>;
 export type ReportErrorCode = z.infer<typeof reportErrorCodeSchema>;

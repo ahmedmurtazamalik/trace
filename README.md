@@ -286,6 +286,12 @@ Never put database URLs, provider credentials, session secrets, or private keys 
 
 Register callback URLs that exactly match the configured API routes. In production, callback and frontend origins must use HTTPS.
 
+### Slack report sharing
+
+Set `SLACK_REPORT_WEBHOOK_URL` on the report worker to automatically notify one fixed managers-only channel after every successfully finalized personal or workspace report render generation. Create a Slack app, enable Incoming Webhooks, add one webhook for that channel, store the URL as a worker-only server secret, and restart the worker. Trace sends the stored executive summary and an authenticated Trace report link; it does not send metrics or upload the PDF. Regeneration increments the render generation, even when the report revision is unchanged, and therefore produces a new notification.
+
+Slack delivery begins only after the report and its current PDF artifact commit successfully. A Slack outage does not change a completed report to failed: Trace records render-generation-scoped system audit events and uses the report job's bounded retry policy for definitive or ambiguous delivery failures. Each attempt performs one webhook request, and a recorded success suppresses duplicates for that exact revision and render generation. Slack incoming webhooks provide no idempotency key, so the narrow crash window after Slack accepts a request but before Trace records success can produce a duplicate on retry; Trace favors eventual delivery over silently losing a report. The webhook must never be exposed to the browser, logged, or committed.
+
 ### Report configuration
 
 | Variable | Purpose | Local behavior |

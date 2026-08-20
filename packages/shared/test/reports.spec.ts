@@ -10,6 +10,7 @@ import {
   reportListResponseSchema,
   reportRegenerationRequestSchema,
   reportRegenerationResponseSchema,
+
   reportRevisionUpdateRequestSchema,
   reportRevisionUpdateResponseSchema,
 } from '../src';
@@ -123,6 +124,7 @@ describe('Frozen Day 8-10 report contract', () => {
     expect(reportCreateResponseSchema.parse({ report: summary })).toEqual({ report: summary });
     expect(reportRevisionUpdateResponseSchema.parse(detailFixture)).toEqual(detailFixture);
     expect(reportRegenerationResponseSchema.parse(detailFixture)).toEqual(detailFixture);
+
     expect(reportDownloadQuerySchema.parse({ artifactId: 'artifact_pdf_1' })).toEqual({ artifactId: 'artifact_pdf_1' });
     expect(reportErrorCodeSchema.options).toEqual([
       'REPORT_NOT_FOUND',

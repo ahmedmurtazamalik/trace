@@ -20,6 +20,7 @@ import type {
   WorkspaceReportDetailResponse,
   ReportDetailResponse,
   ReportListResponse,
+
 } from '@trace/shared';
 import type { Request, Response } from 'express';
 import { CurrentSession } from '../auth/current-session.decorator';
@@ -32,6 +33,7 @@ import { WorkspaceAnalysisService } from './workspace-analysis.service';
 import { WorkspaceReportsService } from './workspace-reports.service';
 import { WorkspaceInvitationsService } from './workspace-invitations.service';
 
+
 @Controller('workspaces')
 @UseGuards(SessionAuthGuard)
 export class WorkspacesController {
@@ -39,6 +41,7 @@ export class WorkspacesController {
     private readonly workspaces: WorkspacesService,
     private readonly analysis: WorkspaceAnalysisService,
     private readonly reports: WorkspaceReportsService,
+
     private readonly rateLimits: AuthRateLimitService,
     private readonly invitations: WorkspaceInvitationsService,
   ) {}
@@ -209,6 +212,7 @@ export class WorkspacesController {
     await this.consumePaidWork('workspace-report-regenerate', session.user.id, request, 20, 100, 1_000);
     return this.reports.regenerate(session.user.id, id, reportId, body);
   }
+
 
   @Get(':id/reports/:reportId/download')
   async downloadReport(

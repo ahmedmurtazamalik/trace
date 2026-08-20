@@ -23,6 +23,7 @@ const rawEnvironmentSchema = z
     GITHUB_CALLBACK_URL: optionalEnvironmentValue(z.url()),
     GITHUB_INSTALLATION_CALLBACK_URL: optionalEnvironmentValue(z.url()),
     GITHUB_WEBHOOK_SECRET: optionalEnvironmentValue(z.string().min(1)),
+
     PASSWORD_RESET_OUTBOX_DIRECTORY: optionalEnvironmentValue(z.string().min(1)),
     STORAGE_BUCKET: optionalEnvironmentValue(z.string().min(1)),
     STORAGE_ENDPOINT: optionalEnvironmentValue(z.url()),
@@ -81,6 +82,7 @@ export interface TraceConfig {
   passwordReset: {
     outboxDirectory?: string;
   };
+
   llmApiKey?: string;
   storage: {
     bucket?: string;
@@ -125,6 +127,7 @@ export function loadConfig(environment: NodeJS.ProcessEnv | Record<string, strin
     passwordReset: {
       outboxDirectory: value.PASSWORD_RESET_OUTBOX_DIRECTORY,
     },
+
     storage: {
       bucket: value.STORAGE_BUCKET,
       endpoint: value.STORAGE_ENDPOINT,

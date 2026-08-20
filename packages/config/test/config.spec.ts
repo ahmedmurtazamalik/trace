@@ -88,6 +88,7 @@ describe('loadConfig', () => {
     expect(config.github.clientSecret).toBeUndefined();
   });
 
+
   it('normalizes escaped newlines in the GitHub App private key', () => {
     const config = loadConfig({
       NODE_ENV: 'development',

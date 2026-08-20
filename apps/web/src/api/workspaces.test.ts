@@ -28,6 +28,7 @@ import {
   updateWorkspaceReportRevision,
   regenerateWorkspaceReport,
   downloadWorkspaceReportArtifact,
+
 } from './workspaces';
 
 const summary = {
@@ -328,6 +329,7 @@ describe('workspace API client', () => {
       ['http://localhost:3001/api/v1/workspaces/workspace%2F1/reports/report%2F1/regenerate', 'POST', { 'content-type': 'application/json', 'x-csrf-token': 'csrf-live' }, JSON.stringify({ expectedRevision: 1 })],
     ]);
   });
+
 
   it('normalizes stale authentication without exposing backend details', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({ code: 'UNAUTHORIZED', message: 'raw session detail', requestId: 'request-auth' }, 401)));
