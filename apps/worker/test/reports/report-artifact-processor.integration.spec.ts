@@ -4,6 +4,7 @@ import type { ArtifactStorage } from '@trace/report-storage';
 import { PDFDocument } from 'pdf-lib';
 import type { LatexCompiler } from '../../src/latex/latex-compiler';
 import { ReportArtifactProcessor } from '../../src/reports/report-artifact.processor';
+import { ReportNotificationRetryError } from '../../src/reports/report-delivery';
 import { DeterministicReportProvider, type ReportInputSnapshot } from '../../src/reports/report-provider';
 import { ReportProcessor } from '../../src/reports/report.processor';
 
@@ -130,8 +131,25 @@ describe('report artifact processor', () => {
   it('stores immutable artifacts and completes only after persistence and an atomic fenced finalization', async () => {
     const storage = new MemoryStorage();
     const generate = new ReportProcessor(prisma, new DeterministicReportProvider());
-    const notify = jest.fn().mockResolvedValue('delivered' as const);
-    const processor = new ReportArtifactProcessor(prisma, generate, compiler(), storage, 180_000, 30_000, { notify });
+    let pending: ReportNotificationRetryError['notification'] | undefined;
+    const stage = jest.fn((_transaction, notification: ReportNotificationRetryError['notification']) => {
+      pending = notification;
+      return Promise.resolve();
+    });
+    const recoverPending = jest.fn(() => Promise.resolve(pending ?? null));
+    const notify = jest.fn(() => {
+      pending = undefined;
+      return Promise.resolve('delivered' as const);
+    });
+    const processor = new ReportArtifactProcessor(
+      prisma,
+      generate,
+      compiler(),
+      storage,
+      180_000,
+      30_000,
+      { stage, recoverPending, notify },
+    );
 
     await processor.process(reportId);
     await processor.process(reportId);
@@ -149,7 +167,9 @@ describe('report artifact processor', () => {
     expect(report.completedAt).toBeInstanceOf(Date);
     expect(report.currentRevision).toMatchObject({ revision: 1, source: 'ai' });
     expect(report.artifacts).toHaveLength(2);
-    expect(notify).toHaveBeenCalledTimes(2);
+    expect(stage).toHaveBeenCalledTimes(1);
+    expect(recoverPending).toHaveBeenCalledTimes(3);
+    expect(notify).toHaveBeenCalledTimes(1);
     expect(notify).toHaveBeenCalledWith(expect.objectContaining({
       reportId,
       revisionId: report.currentRevision?.id,
@@ -161,20 +181,45 @@ describe('report artifact processor', () => {
     expect(storage.objects.size).toBe(2);
   });
 
-  it('keeps a finalized report completed while retrying a definitive Slack failure', async () => {
+  it('recovers a failed finalized generation before processing a newer report generation', async () => {
     const storage = new MemoryStorage();
     const generate = new ReportProcessor(prisma, new DeterministicReportProvider());
+    let pending: ReportNotificationRetryError['notification'] | undefined;
+    const recoverPending = jest.fn(() => Promise.resolve(pending ?? null));
+    const stage = jest.fn((_transaction, notification: ReportNotificationRetryError['notification']) => {
+      pending = notification;
+      return Promise.resolve();
+    });
     const notify = jest.fn()
       .mockResolvedValueOnce('retry' as const)
       .mockResolvedValueOnce('delivered' as const);
-    const processor = new ReportArtifactProcessor(prisma, generate, compiler(), storage, 180_000, 30_000, { notify });
+    const processor = new ReportArtifactProcessor(
+      prisma,
+      generate,
+      compiler(),
+      storage,
+      180_000,
+      30_000,
+      { stage, notify, recoverPending },
+    );
 
-    await expect(processor.process(reportId)).rejects.toThrow('REPORT_RENDER_RETRY');
+    try {
+      await processor.process(reportId);
+      throw new Error('Expected Slack delivery to require retry.');
+    } catch (error) {
+      expect(error).toBeInstanceOf(ReportNotificationRetryError);
+      expect((error as ReportNotificationRetryError).notification).toEqual(pending);
+    }
     await expect(prisma.report.findUniqueOrThrow({ where: { id: reportId } }))
       .resolves.toMatchObject({ status: 'completed' });
 
+    await prisma.report.update({ where: { id: reportId }, data: { renderGeneration: { increment: 1 } } });
     await expect(processor.process(reportId)).resolves.toBeUndefined();
+    expect(stage).toHaveBeenCalledTimes(1);
+    expect(recoverPending).toHaveBeenCalledTimes(3);
     expect(notify).toHaveBeenCalledTimes(2);
+    expect(notify).toHaveBeenNthCalledWith(1, expect.objectContaining({ renderGeneration: 1 }));
+    expect(notify).toHaveBeenNthCalledWith(2, expect.objectContaining({ renderGeneration: 1 }));
   });
 
   it('fails closed instead of rewriting mismatched existing artifact metadata', async () => {
@@ -280,7 +325,16 @@ describe('report artifact processor', () => {
     const storage = new MemoryStorage();
     const compileMock = jest.fn(() => Promise.resolve(pdf));
     const latexCompiler: LatexCompiler = { compile: compileMock };
-    const notify = jest.fn().mockResolvedValue('delivered' as const);
+    let pending: ReportNotificationRetryError['notification'] | undefined;
+    const stage = jest.fn((_transaction, notification: ReportNotificationRetryError['notification']) => {
+      pending = notification;
+      return Promise.resolve();
+    });
+    const recoverPending = jest.fn(() => Promise.resolve(pending ?? null));
+    const notify = jest.fn(() => {
+      pending = undefined;
+      return Promise.resolve<'delivered'>('delivered');
+    });
     const processor = new ReportArtifactProcessor(
       prisma,
       new ReportProcessor(prisma, new DeterministicReportProvider()),
@@ -288,7 +342,7 @@ describe('report artifact processor', () => {
       storage,
       180_000,
       30_000,
-      { notify },
+      { stage, recoverPending, notify },
     );
     await processor.process(reportId);
     const frozen = await prisma.reportRevision.findFirstOrThrow({ where: { reportId } });

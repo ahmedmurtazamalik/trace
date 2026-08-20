@@ -9,12 +9,23 @@ function notifier() {
   const auditCreate = jest.fn().mockResolvedValue({});
   const auditFindFirst = jest.fn().mockResolvedValue(null);
   const executeRaw = jest.fn().mockResolvedValue(1);
+  const queryRaw = jest.fn().mockResolvedValue([]);
+  const revisionFindFirst = jest.fn().mockResolvedValue(null);
   const transaction = { auditLog: { create: auditCreate, findFirst: auditFindFirst }, $executeRaw: executeRaw };
   const prisma = {
     auditLog: { create: auditCreate },
+    reportRevision: { findFirst: revisionFindFirst },
     $transaction: jest.fn((operation: (value: typeof transaction) => Promise<unknown>) => operation(transaction)),
+    $queryRaw: queryRaw,
   };
-  return { instance: new AutomaticSlackReportNotifier(prisma as never, configuration), auditCreate, auditFindFirst, executeRaw };
+  return {
+    instance: new AutomaticSlackReportNotifier(prisma as never, configuration),
+    auditCreate,
+    auditFindFirst,
+    executeRaw,
+    queryRaw,
+    revisionFindFirst,
+  };
 }
 
 function postedText(fetchMock: jest.SpiedFunction<typeof fetch>): string {
@@ -47,8 +58,32 @@ const personalReport = {
   workspaceName: null,
 };
 
+const workspaceMetadata = {
+  scope: 'workspace',
+  reportId: workspaceReport.reportId,
+  workspaceId: workspaceReport.workspaceId,
+  workspaceName: workspaceReport.workspaceName,
+  reportDate: workspaceReport.reportDate,
+  revisionId: workspaceReport.revisionId,
+  renderGeneration: workspaceReport.renderGeneration,
+  executiveSummary: workspaceReport.executiveSummary,
+};
+
 describe('automatic Slack report notifications', () => {
   beforeEach(() => jest.restoreAllMocks());
+
+  it('stages the bounded notification snapshot in the report-finalization transaction', async () => {
+    const { instance, auditCreate } = notifier();
+    await instance.stage({ auditLog: { create: auditCreate } } as never, workspaceReport);
+
+    expect(auditCreate).toHaveBeenCalledWith({ data: {
+      actorUserId: null,
+      action: 'report.slack_delivery_pending',
+      targetType: 'reportRenderGeneration',
+      targetId: 'revision-1:1',
+      metadata: workspaceMetadata,
+    } });
+  });
 
   it('posts a finalized workspace report with only its stored summary and authenticated Trace link', async () => {
     const { instance, auditCreate, executeRaw } = notifier();
@@ -77,14 +112,14 @@ describe('automatic Slack report notifications', () => {
       action: 'report.slack_delivery_attempted',
       targetType: 'reportRenderGeneration',
       targetId: 'revision-1:1',
-      metadata: { scope: 'workspace', workspaceId: 'workspace/1', revisionId: 'revision-1', renderGeneration: 1 },
+      metadata: workspaceMetadata,
     } });
     expect(auditCreate).toHaveBeenNthCalledWith(2, { data: {
       actorUserId: null,
       action: 'report.slack_delivery_succeeded',
       targetType: 'reportRenderGeneration',
       targetId: 'revision-1:1',
-      metadata: { scope: 'workspace', workspaceId: 'workspace/1', revisionId: 'revision-1', renderGeneration: 1 },
+      metadata: workspaceMetadata,
     } });
   });
 
@@ -111,7 +146,7 @@ describe('automatic Slack report notifications', () => {
       action: 'report.slack_delivery_failed',
       targetType: 'reportRenderGeneration',
       targetId: 'revision-1:1',
-      metadata: { scope: 'workspace', workspaceId: 'workspace/1', revisionId: 'revision-1', renderGeneration: 1 },
+      metadata: workspaceMetadata,
     } });
     expect(JSON.stringify(auditCreate.mock.calls)).not.toContain('provider secret detail');
     expect(JSON.stringify(auditCreate.mock.calls)).not.toContain('/T000/B000/secret');
@@ -125,12 +160,20 @@ describe('automatic Slack report notifications', () => {
       .mockResolvedValueOnce(new Response('ok', { status: 200 }));
 
     await expect(retrying.instance.notify(workspaceReport)).resolves.toBe('retry');
-    retrying.auditFindFirst.mockResolvedValue({ action: 'report.slack_delivery_attempted' });
+    retrying.auditFindFirst.mockResolvedValue(null);
     await expect(retrying.instance.notify(workspaceReport)).resolves.toBe('delivered');
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
-  it('suppresses recorded successes but retries an ambiguous attempted-only delivery', async () => {
+  it('retries an accepted post when durable success evidence cannot be recorded', async () => {
+    const ambiguous = notifier();
+    ambiguous.auditCreate.mockResolvedValueOnce({}).mockRejectedValueOnce(new Error('audit unavailable'));
+    jest.spyOn(global, 'fetch').mockResolvedValue(new Response('ok', { status: 200 }));
+
+    await expect(ambiguous.instance.notify(workspaceReport)).resolves.toBe('retry');
+  });
+
+  it('suppresses any recorded success even when a later audit row exists', async () => {
     const succeeded = notifier();
     succeeded.auditFindFirst.mockResolvedValue({ action: 'report.slack_delivery_succeeded' });
     const fetchMock = jest.spyOn(global, 'fetch').mockResolvedValue(new Response('ok', { status: 200 }));
@@ -138,11 +181,132 @@ describe('automatic Slack report notifications', () => {
     await expect(succeeded.instance.notify(workspaceReport)).resolves.toBe('delivered');
     expect(fetchMock).not.toHaveBeenCalled();
     expect(succeeded.auditCreate).not.toHaveBeenCalled();
+    expect(succeeded.auditFindFirst).toHaveBeenCalledWith({
+      where: {
+        targetType: 'reportRenderGeneration',
+        targetId: 'revision-1:1',
+        action: 'report.slack_delivery_succeeded',
+      },
+      select: { id: true },
+    });
 
     const attempted = notifier();
-    attempted.auditFindFirst.mockResolvedValue({ action: 'report.slack_delivery_attempted' });
+    attempted.auditFindFirst.mockResolvedValue(null);
     await expect(attempted.instance.notify(workspaceReport)).resolves.toBe('delivered');
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('recovers the oldest unresolved finalized generation from its authenticated durable snapshot', async () => {
+    const { instance, queryRaw, revisionFindFirst } = notifier();
+    const pending = {
+      ...workspaceMetadata,
+      reportId: 'report-1',
+      workspaceId: 'workspace-1',
+    };
+    queryRaw.mockResolvedValue([{ action: 'report.slack_delivery_pending', targetId: 'revision-1:1', metadata: pending }]);
+    revisionFindFirst.mockResolvedValue({
+      content: { executiveSummary: workspaceReport.executiveSummary, repositories: [] },
+      report: {
+        reportDate: new Date('2026-08-20T00:00:00.000Z'),
+        workspaceId: 'workspace-1',
+        workspace: { name: workspaceReport.workspaceName },
+      },
+    });
+
+    await expect(instance.recoverPending('report-1')).resolves.toEqual({
+      reportId: 'report-1',
+      revisionId: 'revision-1',
+      renderGeneration: 1,
+      reportDate: '2026-08-20',
+      executiveSummary: workspaceReport.executiveSummary,
+      workspaceId: 'workspace-1',
+      workspaceName: workspaceReport.workspaceName,
+    });
+    expect(queryRaw).toHaveBeenCalledTimes(1);
+    expect(revisionFindFirst).toHaveBeenCalledWith({
+      where: { id: 'revision-1', reportId: 'report-1' },
+      select: {
+        content: true,
+        report: {
+          select: {
+            reportDate: true,
+            workspaceId: true,
+          },
+        },
+      },
+    });
+  });
+
+  it('rejects an attempted-only row as a delivery obligation', async () => {
+    const { instance, queryRaw } = notifier();
+    queryRaw.mockResolvedValue([{
+      action: 'report.slack_delivery_attempted',
+      targetId: 'revision-1:1',
+      metadata: { ...workspaceMetadata, reportId: 'report-1', workspaceId: 'workspace-1' },
+    }]);
+
+    await expect(instance.recoverPending('report-1')).rejects.toThrow('REPORT_SLACK_OBLIGATION_INVALID');
+  });
+
+  it.each([
+    ['cross-report snapshot', { ...workspaceMetadata, reportId: 'other-report', workspaceId: 'workspace-1' }, 'revision-1:1', null],
+    ['mismatched target id', { ...workspaceMetadata, reportId: 'report-1', workspaceId: 'workspace-1' }, 'other-revision:1', null],
+    ['nonexistent revision', { ...workspaceMetadata, reportId: 'report-1', workspaceId: 'workspace-1' }, 'revision-1:1', null],
+    ['forged summary', { ...workspaceMetadata, reportId: 'report-1', workspaceId: 'workspace-1', executiveSummary: 'Forged' }, 'revision-1:1', {
+      content: { executiveSummary: workspaceReport.executiveSummary, repositories: [] },
+      report: {
+        reportDate: new Date('2026-08-20T00:00:00.000Z'),
+        workspaceId: 'workspace-1',
+        workspace: { name: workspaceReport.workspaceName },
+      },
+    }],
+    ['mismatched declared scope', {
+      ...workspaceMetadata,
+      scope: 'personal',
+      reportId: 'report-1',
+      workspaceId: 'workspace-1',
+    }, 'revision-1:1', null],
+    ['mismatched database scope', { ...workspaceMetadata, reportId: 'report-1', workspaceId: 'workspace-1' }, 'revision-1:1', {
+      content: { executiveSummary: workspaceReport.executiveSummary, repositories: [] },
+      report: {
+        reportDate: new Date('2026-08-20T00:00:00.000Z'),
+        workspaceId: 'other-workspace',
+        workspace: { name: workspaceReport.workspaceName },
+      },
+    }],
+  ])('rejects a syntactically valid %s obligation', async (_label, metadata, targetId, revision) => {
+    const { instance, queryRaw, revisionFindFirst } = notifier();
+    queryRaw.mockResolvedValue([{ action: 'report.slack_delivery_pending', targetId, metadata }]);
+    revisionFindFirst.mockResolvedValue(revision);
+
+    await expect(instance.recoverPending('report-1')).rejects.toThrow('REPORT_SLACK_OBLIGATION_INVALID');
+  });
+
+  it('preserves the frozen workspace title when the workspace is renamed before retry', async () => {
+    const { instance, queryRaw, revisionFindFirst } = notifier();
+    const frozen = {
+      ...workspaceMetadata,
+      reportId: 'report-1',
+      workspaceId: 'workspace-1',
+      workspaceName: 'Workspace name at finalization',
+    };
+    queryRaw.mockResolvedValue([{
+      action: 'report.slack_delivery_pending',
+      targetId: 'revision-1:1',
+      metadata: frozen,
+    }]);
+    revisionFindFirst.mockResolvedValue({
+      content: { executiveSummary: workspaceReport.executiveSummary, repositories: [] },
+      report: {
+        reportDate: new Date('2026-08-20T00:00:00.000Z'),
+        workspaceId: 'workspace-1',
+      },
+    });
+
+    await expect(instance.recoverPending('report-1')).resolves.toMatchObject({
+      workspaceId: 'workspace-1',
+      workspaceName: 'Workspace name at finalization',
+    });
   });
 
   it('delivers a new render generation of the same report revision', async () => {

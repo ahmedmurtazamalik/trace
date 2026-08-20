@@ -4,8 +4,8 @@ import type { ArtifactStorage } from '@trace/report-storage';
 import { reportContentSchema } from '@trace/shared';
 import { MAX_LATEX_BYTES, MAX_PDF_BYTES, validateCompiledPdf, type LatexCompiler } from '../latex/latex-compiler';
 import { renderReportLatex } from '../latex/report-latex-renderer';
-import { DIRECT_REPORT_DELIVERY, type ReportDeliveryContext } from './report-delivery';
-import type { ReportCompletionNotifier } from './report-slack-notifier';
+import { DIRECT_REPORT_DELIVERY, ReportNotificationRetryError, type ReportDeliveryContext } from './report-delivery';
+import type { FinalizedReportNotification, ReportCompletionNotifier } from './report-slack-notifier';
 import {
   markWorkspaceReportCompleted,
   markWorkspaceReportFailed,
@@ -27,7 +27,9 @@ interface CompletionClaim {
   workspaceName: string | null;
 }
 
-export interface ReportGenerationProcessor { process(reportId: string, delivery?: ReportDeliveryContext): Promise<void> }
+export interface ReportGenerationProcessor {
+  process(reportId: string, delivery?: ReportDeliveryContext): Promise<void>;
+}
 
 export class ReportArtifactProcessor {
   constructor(
@@ -48,14 +50,15 @@ export class ReportArtifactProcessor {
   }
 
   async process(reportId: string, delivery: ReportDeliveryContext = DIRECT_REPORT_DELIVERY): Promise<void> {
+    const retryNotification = await this.completionNotifier.recoverPending?.(reportId) ?? undefined;
+    if (retryNotification !== undefined) {
+      await this.deliverNotification(retryNotification);
+      return;
+    }
     await this.generation.process(reportId, delivery);
     const token = randomUUID();
     const claim = await this.claim(reportId, token);
     if (claim.kind === 'done') return;
-    if (claim.kind === 'completed') {
-      await this.notifyCompletion({ ...claim, reportId });
-      return;
-    }
     if (claim.kind === 'busy') throw new Error(RENDER_RETRY);
 
     const generationBaseKey = `users/${claim.userId}/reports/${reportId}/revisions/${claim.revision}/generations/${claim.generation}/attempts/${token}`;
@@ -117,17 +120,25 @@ export class ReportArtifactProcessor {
         latex: storedLatex === null ? stagedLatexKey : claim.artifactKeys.latex ?? stagedLatexKey,
         pdf: storedPdf === null ? stagedPdfKey : claim.artifactKeys.pdf ?? stagedPdfKey,
       });
-      await this.notifyCompletion({ ...claim, reportId });
-    } catch {
+      await this.deliverPending(reportId);
+    } catch (error) {
+      if (error instanceof ReportNotificationRetryError) throw error;
       await this.release(reportId, token, claim).catch(() => undefined);
       throw new Error(RENDER_RETRY);
     }
   }
 
-  private async notifyCompletion(claim: CompletionClaim): Promise<void> {
+  private async deliverPending(reportId: string): Promise<void> {
+    if (this.completionNotifier.recoverPending === undefined) return;
+    const notification = await this.completionNotifier.recoverPending(reportId);
+    if (notification === null) throw new Error(RENDER_RETRY);
+    await this.deliverNotification(notification);
+  }
+
+  private completionNotification(claim: CompletionClaim): FinalizedReportNotification | null {
     const content = reportContentSchema.safeParse(claim.content);
-    if (!content.success) return;
-    const outcome = await this.completionNotifier.notify({
+    if (!content.success) return null;
+    return {
       reportId: claim.reportId,
       revisionId: claim.revisionId,
       renderGeneration: claim.generation,
@@ -135,13 +146,16 @@ export class ReportArtifactProcessor {
       executiveSummary: content.data.executiveSummary,
       workspaceId: claim.workspaceId,
       workspaceName: claim.workspaceName,
-    }).catch(() => 'retry' as const);
-    if (outcome === 'retry') throw new Error(RENDER_RETRY);
+    };
+  }
+
+  private async deliverNotification(notification: FinalizedReportNotification): Promise<void> {
+    const outcome = await this.completionNotifier.notify(notification).catch(() => 'retry' as const);
+    if (outcome === 'retry') throw new ReportNotificationRetryError(notification);
   }
 
   private async claim(reportId: string, token: string): Promise<
     | { kind: 'done' }
-    | ({ kind: 'completed' } & Omit<CompletionClaim, 'reportId'>)
     | { kind: 'busy' }
     | { kind: 'claimed'; userId: string; workspaceId: string | null; workspaceName: string | null; reportDate: Date; revisionId: string; revision: number; generation: number; content: Prisma.JsonValue; inputSnapshot: Prisma.JsonValue; latexSource: string | null; artifactKeys: { latex: string | null; pdf: string | null } }
   > {
@@ -166,15 +180,7 @@ export class ReportArtifactProcessor {
       const revision = report?.currentRevision;
       if (report === null || revision === null || revision === undefined) return { kind: 'done' } as const;
       if (report.status === 'completed' && revision.artifacts.some(({ kind }) => kind === 'pdf')) {
-        return {
-          kind: 'completed',
-          revisionId: revision.id,
-          generation: report.renderGeneration,
-          reportDate: report.reportDate,
-          content: revision.content,
-          workspaceId: report.workspaceId,
-          workspaceName: report.workspace?.name ?? null,
-        } as const;
+        return { kind: 'done' } as const;
       }
       if (report.status !== 'processing') return { kind: 'done' } as const;
       const busy = await transaction.$queryRaw<Array<{ busy: boolean }>>`
@@ -256,7 +262,7 @@ export class ReportArtifactProcessor {
   private async persist(
     reportId: string,
     token: string,
-    claim: { userId: string; revisionId: string; revision: number; generation: number },
+    claim: Omit<CompletionClaim, 'reportId'> & { userId: string; revision: number },
     latex: Buffer,
     pdf: Buffer,
     keys: { latex: string; pdf: string },
@@ -346,6 +352,8 @@ export class ReportArtifactProcessor {
           AND "render_generation" = ${claim.generation}
       `;
       if (updated !== 1) throw new Error(RENDER_RETRY);
+      const notification = this.completionNotification({ ...claim, reportId });
+      if (notification !== null) await this.completionNotifier.stage?.(transaction, notification);
       await markWorkspaceReportCompleted(transaction, reportId);
     });
   }
