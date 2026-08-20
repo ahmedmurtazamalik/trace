@@ -9,12 +9,15 @@ import { WorkspaceReportScheduler } from './workspace-report.scheduler';
 import { WorkspaceReportsService } from './workspace-reports.service';
 
 import { WorkspacesService } from './workspaces.service';
+import { WorkspaceInvitationsService } from './workspace-invitations.service';
+import { WorkspaceInvitationsController } from './workspace-invitations.controller';
 
 @Module({
   imports: [AuthModule, ReportsModule],
-  controllers: [WorkspacesController],
+  controllers: [WorkspacesController, WorkspaceInvitationsController],
   providers: [
     WorkspacesService,
+    WorkspaceInvitationsService,
     WorkspaceAnalysisQueue,
     WorkspaceAnalysisPublisher,
     WorkspaceAnalysisService,

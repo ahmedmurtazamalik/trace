@@ -12,7 +12,6 @@ import {
 
   reportRevisionUpdateRequestSchema,
   reportRevisionUpdateResponseSchema,
-  workspaceAddMemberRequestSchema,
   workspaceAssignRepositoryRequestSchema,
   workspaceCreateRequestSchema,
   workspaceCreateResponseSchema,
@@ -24,6 +23,12 @@ import {
   workspaceMemberRemovalResponseSchema,
   workspaceMemberRoleUpdateRequestSchema,
   workspaceMembershipResponseSchema,
+  workspaceInvitationCreateRequestSchema,
+  workspaceInvitationCreateResponseSchema,
+  workspaceInvitationAcceptResponseSchema,
+  workspaceInvitationDecisionResponseSchema,
+  workspaceInvitationDetailResponseSchema,
+  workspaceInvitationListResponseSchema,
   workspaceRepositoryAssignmentResponseSchema,
   workspaceRepositoryRemovalResponseSchema,
   workspaceUpdateRequestSchema,
@@ -32,7 +37,6 @@ import {
   workspaceReportOccurrenceListResponseSchema,
   workspaceReportScheduleRequestSchema,
   workspaceReportScheduleResponseSchema,
-  type WorkspaceAddMemberRequest,
   type WorkspaceArchiveResponse,
   type WorkspaceAssignRepositoryRequest,
   type WorkspaceCreateRequest,
@@ -45,6 +49,12 @@ import {
   type WorkspaceMemberRemovalResponse,
   type WorkspaceMemberRoleUpdateRequest,
   type WorkspaceMembershipResponse,
+  type WorkspaceInvitationCreateRequest,
+  type WorkspaceInvitationCreateResponse,
+  type WorkspaceInvitationAcceptResponse,
+  type WorkspaceInvitationDecisionResponse,
+  type WorkspaceInvitationDetailResponse,
+  type WorkspaceInvitationListResponse,
   type WorkspaceRepositoryAssignmentResponse,
   type WorkspaceRepositoryRemovalResponse,
   type WorkspaceUpdateRequest,
@@ -82,6 +92,11 @@ const messages: Record<ClientCode, string> = {
   WORKSPACE_REPORT_TOO_LARGE: 'This report window contains too much activity. Choose a shorter window.',
   WORKSPACE_MEMBER_EXISTS: 'That person is already a workspace member.',
   WORKSPACE_LAST_MANAGER_REQUIRED: 'A workspace must retain at least one Manager.',
+  WORKSPACE_INVITATION_NOT_FOUND: 'This workspace invitation is no longer available.',
+  WORKSPACE_INVITATION_EXISTS: 'A pending invitation already exists for that person.',
+  WORKSPACE_INVITATION_EXPIRED: 'This workspace invitation has expired.',
+  WORKSPACE_INVITATION_NOT_PENDING: 'This workspace invitation has already been resolved.',
+  WORKSPACE_INVITATION_TARGET_INVALID: 'This workspace invitation is not available to your Trace account.',
   REPORT_NOT_FOUND: 'This workspace report is no longer available.',
   REPORT_ALREADY_EXISTS: 'A report already exists for this date.',
   REPORT_NOT_EDITABLE: 'This workspace report cannot be edited in its current state.',
@@ -152,9 +167,63 @@ export function createWorkspace(input: WorkspaceCreateRequest, csrfToken: string
   return request('/api/v1/workspaces', 'POST', workspaceCreateResponseSchema, options, csrfToken, body);
 }
 
-export function addWorkspaceMember(id: string, input: WorkspaceAddMemberRequest, csrfToken: string, options: Options = {}): Promise<WorkspaceMembershipResponse> {
-  const body = workspaceAddMemberRequestSchema.parse(input);
-  return request(`/api/v1/workspaces/${encodeURIComponent(id)}/members`, 'POST', workspaceMembershipResponseSchema, options, csrfToken, body);
+export function createWorkspaceInvitation(id: string, input: WorkspaceInvitationCreateRequest, csrfToken: string, options: Options = {}): Promise<WorkspaceInvitationCreateResponse> {
+  const body = workspaceInvitationCreateRequestSchema.parse(input);
+  return request(`/api/v1/workspaces/${encodeURIComponent(id)}/invitations`, 'POST', workspaceInvitationCreateResponseSchema, options, csrfToken, body);
+}
+
+export function listWorkspaceInvitations(id: string, options: Options = {}): Promise<WorkspaceInvitationListResponse> {
+  return request(`/api/v1/workspaces/${encodeURIComponent(id)}/invitations`, 'GET', workspaceInvitationListResponseSchema, options);
+}
+
+export function listMyWorkspaceInvitations(options: Options = {}): Promise<WorkspaceInvitationListResponse> {
+  return request('/api/v1/workspace-invitations', 'GET', workspaceInvitationListResponseSchema, options);
+}
+
+export function getWorkspaceInvitation(invitationId: string, tokenOrOptions?: string | Options, options: Options = {}): Promise<WorkspaceInvitationDetailResponse> {
+  const token = typeof tokenOrOptions === 'string' ? tokenOrOptions : undefined;
+  const requestOptions = typeof tokenOrOptions === 'string' ? options : tokenOrOptions ?? {};
+  return request(
+    `/api/v1/workspace-invitations/${encodeURIComponent(invitationId)}`,
+    'GET',
+    workspaceInvitationDetailResponseSchema,
+    requestOptions,
+    undefined,
+    undefined,
+    token === undefined ? {} : { 'x-workspace-invitation-token': token },
+  );
+}
+
+export function acceptWorkspaceInvitation(invitationId: string, csrfToken: string, tokenOrOptions?: string | Options, options: Options = {}): Promise<WorkspaceInvitationAcceptResponse> {
+  const token = typeof tokenOrOptions === 'string' ? tokenOrOptions : undefined;
+  const requestOptions = typeof tokenOrOptions === 'string' ? options : tokenOrOptions ?? {};
+  return request(
+    `/api/v1/workspace-invitations/${encodeURIComponent(invitationId)}/accept`,
+    'POST',
+    workspaceInvitationAcceptResponseSchema,
+    requestOptions,
+    csrfToken,
+    undefined,
+    token === undefined ? {} : { 'x-workspace-invitation-token': token },
+  );
+}
+
+export function declineWorkspaceInvitation(invitationId: string, csrfToken: string, tokenOrOptions?: string | Options, options: Options = {}): Promise<WorkspaceInvitationDecisionResponse> {
+  const token = typeof tokenOrOptions === 'string' ? tokenOrOptions : undefined;
+  const requestOptions = typeof tokenOrOptions === 'string' ? options : tokenOrOptions ?? {};
+  return request(
+    `/api/v1/workspace-invitations/${encodeURIComponent(invitationId)}/decline`,
+    'POST',
+    workspaceInvitationDecisionResponseSchema,
+    requestOptions,
+    csrfToken,
+    undefined,
+    token === undefined ? {} : { 'x-workspace-invitation-token': token },
+  );
+}
+
+export function revokeWorkspaceInvitation(id: string, invitationId: string, csrfToken: string, options: Options = {}): Promise<WorkspaceInvitationDecisionResponse> {
+  return request(`/api/v1/workspaces/${encodeURIComponent(id)}/invitations/${encodeURIComponent(invitationId)}/revoke`, 'POST', workspaceInvitationDecisionResponseSchema, options, csrfToken);
 }
 
 export function assignWorkspaceRepository(id: string, input: WorkspaceAssignRepositoryRequest, csrfToken: string, options: Options = {}): Promise<WorkspaceRepositoryAssignmentResponse> {

@@ -1,7 +1,6 @@
 import { HttpException, HttpStatus, Injectable } from '@nestjs/common';
 import { hasWorkspaceRepositoryAuthority, Prisma, PrismaService, type WorkspaceRole } from '@trace/database';
 import {
-  workspaceAddMemberRequestSchema,
   workspaceAssignRepositoryRequestSchema,
   workspaceCreateRequestSchema,
   workspaceMemberRoleUpdateRequestSchema,
@@ -104,42 +103,20 @@ export class WorkspacesService {
     const result = await this.prisma.$transaction(async (tx) => {
       await this.lockWorkspace(tx, workspaceId);
       await this.requireManager(tx, userId, workspaceId);
+      const archivedAt = new Date();
       const workspace = await tx.workspace.update({
         where: { id: workspaceId },
-        data: { archivedAt: new Date() },
+        data: { archivedAt },
         include: { _count: { select: { memberships: true, repositories: true } } },
       });
-      await this.audit(tx, userId, 'workspace.archived', workspaceId, null);
+      const revoked = await tx.workspaceInvitation.updateMany({
+        where: { workspaceId, status: 'PENDING' },
+        data: { status: 'REVOKED', revokedAt: archivedAt },
+      });
+      await this.audit(tx, userId, 'workspace.archived', workspaceId, { revokedPendingInvitationCount: revoked.count });
       return workspace;
     });
     return { workspace: this.summary(result, 'MANAGER') };
-  }
-
-  async addMember(managerUserId: string, workspaceId: string, input: unknown): Promise<WorkspaceMembershipResponse> {
-    const parsed = workspaceAddMemberRequestSchema.safeParse(input);
-    if (!parsed.success) this.validationError();
-    return this.prisma.$transaction(async (tx) => {
-      await this.lockWorkspace(tx, workspaceId);
-      await this.requireManager(tx, managerUserId, workspaceId);
-      const user = await tx.user.findUnique({ where: { username: parsed.data.username } });
-      if (user === null || user.disabledAt !== null) this.memberNotFound();
-      const existing = await tx.workspaceMembership.findUnique({
-        where: { workspaceId_userId: { workspaceId, userId: user.id } },
-        select: { id: true },
-      });
-      if (existing !== null) this.memberExists();
-      try {
-        const membership = await tx.workspaceMembership.create({
-          data: { workspaceId, userId: user.id, role: parsed.data.role },
-          include: { user: { select: { id: true, username: true, displayName: true } } },
-        });
-        await this.audit(tx, managerUserId, 'workspace.member.added', workspaceId, { userId: user.id, role: membership.role });
-        return { member: this.member(membership) };
-      } catch (error) {
-        if (this.prismaErrorCode(error) === 'P2002') this.memberExists();
-        throw error;
-      }
-    });
   }
 
   async updateMemberRole(managerUserId: string, workspaceId: string, userId: string, input: unknown): Promise<WorkspaceMembershipResponse> {

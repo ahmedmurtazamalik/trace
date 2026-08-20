@@ -4,6 +4,9 @@ import type {
   WorkspaceCreateResponse,
   WorkspaceDetailResponse,
   WorkspaceListResponse,
+  WorkspaceInvitationCreateResponse,
+  WorkspaceInvitationDecisionResponse,
+  WorkspaceInvitationListResponse,
   WorkspaceMemberRemovalResponse,
   WorkspaceMembershipResponse,
   WorkspaceRepositoryAssignmentResponse,
@@ -28,6 +31,7 @@ import { SessionAuthGuard } from '../auth/session-auth.guard';
 import { WorkspacesService } from './workspaces.service';
 import { WorkspaceAnalysisService } from './workspace-analysis.service';
 import { WorkspaceReportsService } from './workspace-reports.service';
+import { WorkspaceInvitationsService } from './workspace-invitations.service';
 
 
 @Controller('workspaces')
@@ -39,6 +43,7 @@ export class WorkspacesController {
     private readonly reports: WorkspaceReportsService,
 
     private readonly rateLimits: AuthRateLimitService,
+    private readonly invitations: WorkspaceInvitationsService,
   ) {}
 
   @Post()
@@ -70,10 +75,35 @@ export class WorkspacesController {
     return this.workspaces.archive(session.user.id, id);
   }
 
-  @Post(':id/members')
+  @Post(':id/invitations')
   @UseGuards(CsrfGuard)
-  addMember(@CurrentSession() session: AuthenticatedSession, @Param('id') id: string, @Body() body: unknown): Promise<WorkspaceMembershipResponse> {
-    return this.workspaces.addMember(session.user.id, id, body);
+  async createInvitation(
+    @CurrentSession() session: AuthenticatedSession,
+    @Param('id') id: string,
+    @Body() body: unknown,
+    @Req() request: Request,
+  ): Promise<WorkspaceInvitationCreateResponse> {
+    await this.consumePaidWork('workspace-invitation-create', session.user.id, request, 30, 150, 1_500);
+    return this.invitations.create(session.user.id, id, body);
+  }
+
+  @Get(':id/invitations')
+  listInvitations(
+    @CurrentSession() session: AuthenticatedSession,
+    @Param('id') id: string,
+  ): Promise<WorkspaceInvitationListResponse> {
+    return this.invitations.listWorkspace(session.user.id, id);
+  }
+
+  @Post(':id/invitations/:invitationId/revoke')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(CsrfGuard)
+  revokeInvitation(
+    @CurrentSession() session: AuthenticatedSession,
+    @Param('id') id: string,
+    @Param('invitationId') invitationId: string,
+  ): Promise<WorkspaceInvitationDecisionResponse> {
+    return this.invitations.revoke(session.user.id, id, invitationId);
   }
 
   @Patch(':id/members/:userId')

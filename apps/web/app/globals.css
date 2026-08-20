@@ -603,6 +603,15 @@ main#main-content { max-width: 1540px; margin: 0 auto; padding: clamp(1.65rem, 4
 .manager-tool-grid form { align-content: start; padding: 1rem; border: 1px solid #d6e3f0; border-radius: .8rem; background: white; }
 .manager-tool-grid h4 { display: flex; align-items: center; gap: .4rem; margin-bottom: .35rem; }
 .manager-tool-grid .trace-button { justify-self: start; margin-top: .35rem; }
+.workspace-invitation-tool { display: grid; min-width: 0; gap: 1rem; align-content: start; padding: 1rem; border: 1px solid #d6e3f0; border-radius: .8rem; background: white; }
+.workspace-invitation-tool form { padding: 0; border: 0; }
+.workspace-pending-invitations { min-width: 0; padding-top: .8rem; border-top: 1px solid #e2e8f0; }
+.workspace-pending-invitations .workspace-row-actions { display: flex; flex-wrap: wrap; }
+.workspace-invitation-center { display: grid; gap: .8rem; margin-bottom: 1.4rem; }
+.workspace-invitation-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .9rem; }
+.workspace-invitation-card { display: grid; min-width: 0; gap: .65rem; padding: 1rem; }
+.workspace-invitation-card h3, .workspace-invitation-card p { margin: 0; }
+.workspace-invitation-card .workspace-row-actions { display: flex; flex-wrap: wrap; }
 .field-help { margin: .1rem 0; color: #64748b; font-size: .68rem; line-height: 1.45; }
 .developer-boundary { display: flex; gap: .7rem; padding: .9rem; border: 1px solid #cbd5e1; border-radius: .8rem; color: #334155; background: #f8fafc; }
 .developer-boundary p { margin: .25rem 0 0; color: #64748b; font-size: .75rem; }
@@ -712,7 +721,7 @@ main#main-content { max-width: 1540px; margin: 0 auto; padding: clamp(1.65rem, 4
   .report-editor-actions > span { margin-right: 0; }
   .report-editor-actions .trace-button { width: 100%; }
   .report-editor fieldset, .report-contributor-editor { padding: .8rem; }
-  .workspace-create-band, .workspace-detail-grid, .manager-tool-grid, .reporting-summary-grid, .report-manager-grid { grid-template-columns: 1fr; }
+  .workspace-create-band, .workspace-detail-grid, .manager-tool-grid, .workspace-invitation-grid, .reporting-summary-grid, .report-manager-grid { grid-template-columns: 1fr; }
   .workspace-create-band { align-items: stretch; }
   .workspace-grid { grid-template-columns: 1fr; }
   .workspace-inline-controls, .workspace-detail-header { align-items: stretch; flex-direction: column; }

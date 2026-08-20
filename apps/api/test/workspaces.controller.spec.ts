@@ -14,7 +14,8 @@ describe('WorkspacesController paid-work limits', () => {
     regenerate: jest.fn().mockResolvedValue({}),
   };
   const rateLimits = { consume: jest.fn().mockResolvedValue(undefined) };
-  const controller = new WorkspacesController(workspaces, analysis as never, reports as never, rateLimits as never);
+  const invitations = { create: jest.fn().mockResolvedValue({}) };
+  const controller = new WorkspacesController(workspaces, analysis as never, reports as never, rateLimits as never, invitations as never);
 
   beforeEach(() => jest.clearAllMocks());
 

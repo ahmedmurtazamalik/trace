@@ -1,10 +1,14 @@
 import {
-  workspaceAddMemberRequestSchema,
   workspaceAssignRepositoryRequestSchema,
   workspaceCreateRequestSchema,
   workspaceCreateResponseSchema,
   workspaceDetailResponseSchema,
   workspaceErrorCodeSchema,
+  workspaceInvitationAcceptResponseSchema,
+  workspaceInvitationCreateRequestSchema,
+  workspaceInvitationCreateResponseSchema,
+  workspaceInvitationListResponseSchema,
+  workspaceInvitationStatusSchema,
   workspaceListResponseSchema,
   workspaceMemberRoleUpdateRequestSchema,
   workspaceRoleSchema,
@@ -40,12 +44,40 @@ describe('workspace contract', () => {
     expect(workspaceUpdateRequestSchema.safeParse({ archived: true }).success).toBe(false);
   });
 
-  it('freezes membership and repository mutations', () => {
-    expect(workspaceAddMemberRequestSchema.parse({ username: ' ali.dev ', role: 'DEVELOPER' })).toEqual({ username: 'ali.dev', role: 'DEVELOPER' });
+  it('freezes invitation, membership, and repository mutations', () => {
+    expect(workspaceInvitationCreateRequestSchema.parse({ username: ' ali.dev ', role: 'DEVELOPER' })).toEqual({ username: 'ali.dev', role: 'DEVELOPER' });
+    expect(workspaceInvitationCreateRequestSchema.safeParse({ username: 'ali.dev', role: 'DEVELOPER', invitedUserId: 'user_2' }).success).toBe(false);
     expect(workspaceMemberRoleUpdateRequestSchema.parse({ role: 'MANAGER' })).toEqual({ role: 'MANAGER' });
     expect(workspaceMemberRoleUpdateRequestSchema.safeParse({ role: 'OWNER' }).success).toBe(false);
     expect(workspaceAssignRepositoryRequestSchema.parse({ repositoryId: 'repo_1' })).toEqual({ repositoryId: 'repo_1' });
     expect(workspaceAssignRepositoryRequestSchema.safeParse({ repositoryId: '', trackingEnabled: true }).success).toBe(false);
+  });
+
+  it('freezes consent-based invitation responses without exposing credentials', () => {
+    expect(workspaceInvitationStatusSchema.options).toEqual(['PENDING', 'ACCEPTED', 'DECLINED', 'REVOKED', 'EXPIRED']);
+    const invitation = {
+      id: 'invitation_1',
+      workspace: { id: 'workspace_1', name: 'Product Delivery' },
+      invitedUser: { id: 'user_2', username: 'ali.dev', displayName: null },
+      invitedBy: { id: 'user_1', username: 'manager.dev', displayName: 'Manager Dev' },
+      role: 'DEVELOPER' as const,
+      status: 'PENDING' as const,
+      acceptancePath: '/invitations/invitation_1',
+      expiresAt: '2026-08-27T08:00:00.000Z',
+      createdAt: '2026-08-20T08:00:00.000Z',
+      acceptedAt: null,
+      declinedAt: null,
+      revokedAt: null,
+    };
+    const copyablePath = '/invitations/invitation_1#token=0123456789abcdefghijklmnopqrstuvwxyzABCDEFG';
+    expect(workspaceInvitationCreateResponseSchema.parse({ invitation, copyablePath })).toEqual({ invitation, copyablePath });
+    expect(workspaceInvitationCreateResponseSchema.safeParse({ invitation, copyablePath: '/invitations/invitation_1#token=short' }).success).toBe(false);
+    expect(workspaceInvitationListResponseSchema.parse({ items: [invitation] })).toEqual({ items: [invitation] });
+    expect(workspaceInvitationAcceptResponseSchema.parse({
+      invitation: { ...invitation, status: 'ACCEPTED', acceptedAt: '2026-08-20T08:05:00.000Z' },
+      member: { userId: 'user_2', username: 'ali.dev', displayName: null, role: 'DEVELOPER', joinedAt: '2026-08-20T08:05:00.000Z' },
+    }).member.userId).toBe('user_2');
+    expect(workspaceInvitationCreateResponseSchema.safeParse({ invitation: { ...invitation, token: 'secret' } }).success).toBe(false);
   });
 
   it('freezes strict list, create, and member-readable detail responses', () => {
@@ -80,6 +112,11 @@ describe('workspace contract', () => {
       'WORKSPACE_LAST_MANAGER_REQUIRED',
       'WORKSPACE_REPOSITORY_NOT_AVAILABLE',
       'WORKSPACE_REPOSITORY_NOT_ASSIGNED',
+      'WORKSPACE_INVITATION_NOT_FOUND',
+      'WORKSPACE_INVITATION_EXISTS',
+      'WORKSPACE_INVITATION_EXPIRED',
+      'WORKSPACE_INVITATION_NOT_PENDING',
+      'WORKSPACE_INVITATION_TARGET_INVALID',
     ]) {
       expect(workspaceErrorCodeSchema.parse(code)).toBe(code);
     }
