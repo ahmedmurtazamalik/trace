@@ -20,6 +20,7 @@ const NOOP_COMPLETION_NOTIFIER: ReportCompletionNotifier = { notify: () => Promi
 interface CompletionClaim {
   reportId: string;
   revisionId: string;
+  generation: number;
   reportDate: Date;
   content: Prisma.JsonValue;
   workspaceId: string | null;
@@ -129,6 +130,7 @@ export class ReportArtifactProcessor {
     const outcome = await this.completionNotifier.notify({
       reportId: claim.reportId,
       revisionId: claim.revisionId,
+      renderGeneration: claim.generation,
       reportDate: claim.reportDate.toISOString().slice(0, 10),
       executiveSummary: content.data.executiveSummary,
       workspaceId: claim.workspaceId,
@@ -167,6 +169,7 @@ export class ReportArtifactProcessor {
         return {
           kind: 'completed',
           revisionId: revision.id,
+          generation: report.renderGeneration,
           reportDate: report.reportDate,
           content: revision.content,
           workspaceId: report.workspaceId,

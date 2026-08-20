@@ -30,6 +30,7 @@ function postedText(fetchMock: jest.SpiedFunction<typeof fetch>): string {
 const workspaceReport = {
   reportId: 'report/1',
   revisionId: 'revision-1',
+  renderGeneration: 1,
   reportDate: '2026-08-20',
   executiveSummary: 'Authentication <work> is complete. @channel',
   workspaceId: 'workspace/1',
@@ -39,6 +40,7 @@ const workspaceReport = {
 const personalReport = {
   reportId: 'personal/1',
   revisionId: 'revision-personal-1',
+  renderGeneration: 1,
   reportDate: '2026-08-20',
   executiveSummary: 'A personal summary.',
   workspaceId: null,
@@ -73,16 +75,16 @@ describe('automatic Slack report notifications', () => {
     expect(auditCreate).toHaveBeenNthCalledWith(1, { data: {
       actorUserId: null,
       action: 'report.slack_delivery_attempted',
-      targetType: 'reportRevision',
-      targetId: 'revision-1',
-      metadata: { scope: 'workspace', workspaceId: 'workspace/1', revisionId: 'revision-1' },
+      targetType: 'reportRenderGeneration',
+      targetId: 'revision-1:1',
+      metadata: { scope: 'workspace', workspaceId: 'workspace/1', revisionId: 'revision-1', renderGeneration: 1 },
     } });
     expect(auditCreate).toHaveBeenNthCalledWith(2, { data: {
       actorUserId: null,
       action: 'report.slack_delivery_succeeded',
-      targetType: 'reportRevision',
-      targetId: 'revision-1',
-      metadata: { scope: 'workspace', workspaceId: 'workspace/1', revisionId: 'revision-1' },
+      targetType: 'reportRenderGeneration',
+      targetId: 'revision-1:1',
+      metadata: { scope: 'workspace', workspaceId: 'workspace/1', revisionId: 'revision-1', renderGeneration: 1 },
     } });
   });
 
@@ -107,9 +109,9 @@ describe('automatic Slack report notifications', () => {
     expect(auditCreate).toHaveBeenLastCalledWith({ data: {
       actorUserId: null,
       action: 'report.slack_delivery_failed',
-      targetType: 'reportRevision',
-      targetId: 'revision-1',
-      metadata: { scope: 'workspace', workspaceId: 'workspace/1', revisionId: 'revision-1' },
+      targetType: 'reportRenderGeneration',
+      targetId: 'revision-1:1',
+      metadata: { scope: 'workspace', workspaceId: 'workspace/1', revisionId: 'revision-1', renderGeneration: 1 },
     } });
     expect(JSON.stringify(auditCreate.mock.calls)).not.toContain('provider secret detail');
     expect(JSON.stringify(auditCreate.mock.calls)).not.toContain('/T000/B000/secret');
@@ -141,6 +143,24 @@ describe('automatic Slack report notifications', () => {
     attempted.auditFindFirst.mockResolvedValue({ action: 'report.slack_delivery_attempted' });
     await expect(attempted.instance.notify(workspaceReport)).resolves.toBe('delivered');
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('delivers a new render generation of the same report revision', async () => {
+    const regenerated = notifier();
+    regenerated.auditFindFirst.mockImplementation(({ where }: { where: { targetId: string } }) => (
+      Promise.resolve(where.targetId.endsWith(':1')
+        ? { action: 'report.slack_delivery_succeeded' }
+        : null)
+    ));
+    const fetchMock = jest.spyOn(global, 'fetch').mockResolvedValue(new Response('ok', { status: 200 }));
+
+    await expect(regenerated.instance.notify(workspaceReport)).resolves.toBe('delivered');
+    await expect(regenerated.instance.notify({ ...workspaceReport, renderGeneration: 2 })).resolves.toBe('delivered');
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(JSON.stringify(regenerated.auditCreate.mock.calls)).toContain(
+      '"targetType":"reportRenderGeneration","targetId":"revision-1:2"',
+    );
   });
 
   it('preserves the complete validated executive summary', () => {

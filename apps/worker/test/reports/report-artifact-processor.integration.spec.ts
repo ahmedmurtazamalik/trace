@@ -280,11 +280,15 @@ describe('report artifact processor', () => {
     const storage = new MemoryStorage();
     const compileMock = jest.fn(() => Promise.resolve(pdf));
     const latexCompiler: LatexCompiler = { compile: compileMock };
+    const notify = jest.fn().mockResolvedValue('delivered' as const);
     const processor = new ReportArtifactProcessor(
       prisma,
       new ReportProcessor(prisma, new DeterministicReportProvider()),
       latexCompiler,
       storage,
+      180_000,
+      30_000,
+      { notify },
     );
     await processor.process(reportId);
     const frozen = await prisma.reportRevision.findFirstOrThrow({ where: { reportId } });
@@ -318,6 +322,8 @@ describe('report artifact processor', () => {
     })).toEqual(originalArtifacts);
     expect(storage.objects).toEqual(originalObjects);
     expect(compileMock).toHaveBeenCalledTimes(1);
+    expect(notify).toHaveBeenNthCalledWith(1, expect.objectContaining({ revisionId: frozen.id, renderGeneration: 1 }));
+    expect(notify).toHaveBeenNthCalledWith(2, expect.objectContaining({ revisionId: frozen.id, renderGeneration: 2 }));
   });
 
   it('leaves a truthful processing obligation after transient storage failure and retries idempotently', async () => {

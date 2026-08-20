@@ -5,6 +5,7 @@ const SLACK_TIMEOUT_MS = 5_000;
 export interface FinalizedReportNotification {
   reportId: string;
   revisionId: string;
+  renderGeneration: number;
   reportDate: string;
   executiveSummary: string;
   workspaceId: string | null;
@@ -55,19 +56,21 @@ export class AutomaticSlackReportNotifier implements ReportCompletionNotifier {
   ) {}
 
   async notify(report: FinalizedReportNotification): Promise<'delivered' | 'retry'> {
+    const deliveryId = `${report.revisionId}:${report.renderGeneration}`;
     const metadata = {
       scope: report.workspaceId === null ? 'personal' : 'workspace',
       workspaceId: report.workspaceId,
       revisionId: report.revisionId,
+      renderGeneration: report.renderGeneration,
     };
     let claim: 'send' | 'delivered';
     try {
       claim = await this.prisma.$transaction(async (transaction) => {
-        await transaction.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${'report-slack:' + report.revisionId}, 0))`;
+        await transaction.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${'report-slack:' + deliveryId}, 0))`;
         const previous = await transaction.auditLog.findFirst({
           where: {
-            targetType: 'reportRevision',
-            targetId: report.revisionId,
+            targetType: 'reportRenderGeneration',
+            targetId: deliveryId,
             action: { in: [
               'report.slack_delivery_attempted',
               'report.slack_delivery_succeeded',
@@ -81,8 +84,8 @@ export class AutomaticSlackReportNotifier implements ReportCompletionNotifier {
         await transaction.auditLog.create({ data: {
           actorUserId: null,
           action: 'report.slack_delivery_attempted',
-          targetType: 'reportRevision',
-          targetId: report.revisionId,
+          targetType: 'reportRenderGeneration',
+          targetId: deliveryId,
           metadata,
         } });
         return 'send' as const;
@@ -109,8 +112,8 @@ export class AutomaticSlackReportNotifier implements ReportCompletionNotifier {
     await this.prisma.auditLog.create({ data: {
       actorUserId: null,
       action: delivered ? 'report.slack_delivery_succeeded' : 'report.slack_delivery_failed',
-      targetType: 'reportRevision',
-      targetId: report.revisionId,
+      targetType: 'reportRenderGeneration',
+      targetId: deliveryId,
       metadata,
     } }).catch(() => undefined);
     return delivered ? 'delivered' : 'retry';
