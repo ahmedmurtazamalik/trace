@@ -196,7 +196,6 @@ export const reportRegenerationRequestSchema = z.object({
 
 export const reportRevisionUpdateResponseSchema = reportDetailResponseSchema;
 export const reportRegenerationResponseSchema = reportDetailResponseSchema;
-export const reportSlackShareResponseSchema = z.object({ sent: z.literal(true) }).strict();
 
 export const reportDownloadQuerySchema = z.object({
   artifactId: z.string().min(1).max(256).regex(/^[a-zA-Z0-9_-]+$/),
@@ -209,8 +208,7 @@ export const reportErrorCodeSchema = z.enum([
   'REPORT_REVISION_CONFLICT',
   'REPORT_ARTIFACT_NOT_FOUND',
   'REPORT_GENERATION_UNAVAILABLE',
-  'SLACK_NOT_CONFIGURED',
-  'SLACK_DELIVERY_FAILED',
+
 ]);
 
 export type ReportStatus = z.infer<typeof reportStatusSchema>;
@@ -230,6 +228,6 @@ export type ReportRevisionUpdateRequest = z.infer<typeof reportRevisionUpdateReq
 export type ReportRegenerationRequest = z.infer<typeof reportRegenerationRequestSchema>;
 export type ReportRevisionUpdateResponse = z.infer<typeof reportRevisionUpdateResponseSchema>;
 export type ReportRegenerationResponse = z.infer<typeof reportRegenerationResponseSchema>;
-export type ReportSlackShareResponse = z.infer<typeof reportSlackShareResponseSchema>;
+
 export type ReportDownloadQuery = z.infer<typeof reportDownloadQuerySchema>;
 export type ReportErrorCode = z.infer<typeof reportErrorCodeSchema>;

@@ -7,6 +7,7 @@ import { reportProviderFromEnvironment } from './codex-cli-report-provider';
 import { ReportArtifactProcessor } from './report-artifact.processor';
 import type { ReportDeliveryContext } from './report-delivery';
 import { ReportProcessor } from './report.processor';
+import { AutomaticSlackReportNotifier } from './report-slack-notifier';
 import { beforeWorkerDeadline, workerShutdownDeadline, workerShutdownTimeoutMs, type WorkerStop } from '../shutdown-budget';
 
 interface ReportProcessorLike { process(reportId: string, delivery?: ReportDeliveryContext): Promise<void> }
@@ -30,6 +31,12 @@ export async function startReportWorker(options: ReportApplicationOptions): Prom
   try {
     const provider = reportProviderFromEnvironment(options.environment);
     const generation = new ReportProcessor(prisma, provider);
+    const notifier = configuration.slackWebhookUrl === undefined
+      ? undefined
+      : new AutomaticSlackReportNotifier(prisma, {
+        frontendOrigin: configuration.frontendOrigin,
+        webhookUrl: configuration.slackWebhookUrl,
+      });
     const processor = options.processor ?? new ReportArtifactProcessor(
       prisma,
       generation,
@@ -40,6 +47,8 @@ export async function startReportWorker(options: ReportApplicationOptions): Prom
       }),
       artifactStorageFromEnvironment(options.environment),
       configuration.compileTimeoutMs + 60_000,
+      30_000,
+      notifier,
     );
     await prisma.$connect();
     connected = true;
@@ -98,12 +107,16 @@ export function reportWorkerConfiguration(environment: NodeJS.ProcessEnv): {
   latexWorkRoot?: string;
   compileTimeoutMs: number;
   shutdownTimeoutMs: number;
+  frontendOrigin: string;
+  slackWebhookUrl?: string;
 } {
   const nodeEnvironment = environment.NODE_ENV;
   const databaseUrl = environment.DATABASE_URL;
   const redisUrl = environment.REDIS_URL;
   const provider = environment.REPORT_LLM_PROVIDER ?? 'fake';
   const latexWorkRoot = environment.REPORT_LATEX_WORK_ROOT;
+  const frontendOrigin = environment.FRONTEND_ORIGIN?.trim() || 'http://localhost:3000';
+  const slackWebhookUrl = environment.SLACK_REPORT_WEBHOOK_URL?.trim() || undefined;
   if (nodeEnvironment !== 'development' && nodeEnvironment !== 'test' && nodeEnvironment !== 'production') {
     throw new Error('Invalid report worker configuration.');
   }
@@ -117,6 +130,8 @@ export function reportWorkerConfiguration(environment: NodeJS.ProcessEnv): {
     || (nodeEnvironment === 'production' && !/(?:@sha256:|^sha256:)[a-f0-9]{64}$/.test(latexImage))
     || (provider !== 'fake' && provider !== 'codex')
     || (nodeEnvironment === 'production' && provider === 'fake')
+    || !validFrontendOrigin(frontendOrigin, nodeEnvironment === 'production')
+    || (slackWebhookUrl !== undefined && !validSlackWebhookUrl(slackWebhookUrl))
   ) throw new Error('Invalid report worker configuration.');
   return {
     databaseUrl,
@@ -127,7 +142,35 @@ export function reportWorkerConfiguration(environment: NodeJS.ProcessEnv): {
     latexWorkRoot,
     compileTimeoutMs: boundedInteger(environment.REPORT_LATEX_TIMEOUT_MS, 30_000, 5_000, 120_000),
     shutdownTimeoutMs: workerShutdownTimeoutMs(environment),
+    frontendOrigin,
+    slackWebhookUrl,
   };
+}
+
+function validFrontendOrigin(value: string, requireHttps: boolean): boolean {
+  try {
+    const url = new URL(value);
+    return (url.protocol === 'https:' || (!requireHttps && url.protocol === 'http:'))
+      && url.username === '' && url.password === '' && url.search === '' && url.hash === '';
+  } catch {
+    return false;
+  }
+}
+
+function validSlackWebhookUrl(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return url.protocol === 'https:'
+      && url.hostname === 'hooks.slack.com'
+      && url.port === ''
+      && url.username === ''
+      && url.password === ''
+      && url.search === ''
+      && url.hash === ''
+      && /^\/services\/[^/]+\/[^/]+\/[^/]+$/.test(url.pathname);
+  } catch {
+    return false;
+  }
 }
 
 

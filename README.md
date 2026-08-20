@@ -288,7 +288,9 @@ Register callback URLs that exactly match the configured API routes. In producti
 
 ### Slack report sharing
 
-Set `SLACK_REPORT_WEBHOOK_URL` on the API to enable the Manager-only **Send to Slack** action for completed workspace reports. Create a Slack app, enable Incoming Webhooks, add one webhook for the managers-only destination channel, store that URL as a server secret, and restart the API. Trace sends the report's executive summary and authenticated report link; it does not send metrics or upload the PDF. The webhook is fixed to its selected channel and must never be exposed to the browser, logged, or committed.
+Set `SLACK_REPORT_WEBHOOK_URL` on the report worker to automatically notify one fixed managers-only channel after every successfully finalized personal or workspace report revision. Create a Slack app, enable Incoming Webhooks, add one webhook for that channel, store the URL as a worker-only server secret, and restart the worker. Trace sends the stored executive summary and an authenticated Trace report link; it does not send metrics or upload the PDF. Regeneration produces a new finalized revision and therefore a new notification.
+
+Slack delivery begins only after the report and its current PDF artifact commit successfully. A Slack outage does not change a completed report to failed: Trace records revision-scoped system audit events and uses the report job's bounded retry policy for definitive or ambiguous delivery failures. Each attempt performs one webhook request, and a recorded success suppresses duplicates. Slack incoming webhooks provide no idempotency key, so the narrow crash window after Slack accepts a request but before Trace records success can produce a duplicate on retry; Trace favors eventual delivery over silently losing a report. The webhook must never be exposed to the browser, logged, or committed.
 
 ### Report configuration
 

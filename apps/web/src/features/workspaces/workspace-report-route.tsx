@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
-import type { ReportArtifact, WorkspaceReportDetailResponse, ReportRegenerationRequest, ReportRegenerationResponse, ReportSlackShareResponse, WorkspaceDetailResponse } from '@trace/shared';
+import type { ReportArtifact, WorkspaceReportDetailResponse, ReportRegenerationRequest, ReportRegenerationResponse, WorkspaceDetailResponse } from '@trace/shared';
 import { Card } from '@trace/ui';
 import { useAuthSession } from '@/auth/session-provider';
 import {
@@ -10,7 +10,6 @@ import {
   getWorkspace,
   getWorkspaceReport,
   regenerateWorkspaceReport,
-  shareWorkspaceReportToSlack,
 
   WorkspaceApiError,
   type DownloadedWorkspaceReportArtifact,
@@ -22,7 +21,7 @@ interface WorkspaceReportClients {
   loadReport(workspaceId: string, reportId: string, signal?: AbortSignal): Promise<WorkspaceReportDetailResponse>;
 
   regenerateReport(workspaceId: string, reportId: string, input: ReportRegenerationRequest, csrfToken: string, signal?: AbortSignal): Promise<ReportRegenerationResponse>;
-  shareReport(workspaceId: string, reportId: string, csrfToken: string, signal?: AbortSignal): Promise<ReportSlackShareResponse>;
+
   downloadArtifact(workspaceId: string, reportId: string, artifact: ReportArtifact, signal?: AbortSignal): Promise<DownloadedWorkspaceReportArtifact>;
 }
 
@@ -31,7 +30,7 @@ const liveClients: WorkspaceReportClients = {
   loadReport: (workspaceId, reportId, signal) => getWorkspaceReport(workspaceId, reportId, { signal }),
 
   regenerateReport: (workspaceId, reportId, input, csrfToken, signal) => regenerateWorkspaceReport(workspaceId, reportId, input, csrfToken, { signal }),
-  shareReport: (workspaceId, reportId, csrfToken, signal) => shareWorkspaceReportToSlack(workspaceId, reportId, csrfToken, { signal }),
+
   downloadArtifact: (workspaceId, reportId, artifact, signal) => downloadWorkspaceReportArtifact(workspaceId, reportId, artifact, { signal }),
 };
 
@@ -69,13 +68,13 @@ export function WorkspaceReportRoute({ workspaceId, reportId, clients = liveClie
   const canManage = workspace.role === 'MANAGER' && workspace.archivedAt === null && Boolean(csrfToken);
   const loadReport = (id: string, signal?: AbortSignal) => clients.loadReport(workspaceId, id, signal);
   const regenerate = canManage ? (id: string, input: ReportRegenerationRequest, signal?: AbortSignal) => clients.regenerateReport(workspaceId, id, input, csrfToken!, signal) : undefined;
-  const shareToSlack = canManage ? (id: string, signal?: AbortSignal) => clients.shareReport(workspaceId, id, csrfToken!, signal) : undefined;
+
   const download = (id: string, artifact: ReportArtifact, signal?: AbortSignal) => clients.downloadArtifact(workspaceId, id, artifact, signal);
 
   return <div className="workspace-report-detail">
     <div className="workspace-report-context"><div><span className="eyebrow">Workspace report</span><h2>{workspace.name}</h2></div><Link href="/workspaces">Back to workspaces</Link></div>
     {workspace.role === 'MANAGER' && !csrfToken ? <div className="inline-alert error" role="alert">Your security session expired. Refresh the page before using report actions; read-only report access remains available.</div> : null}
     {workspace.archivedAt ? <div className="inline-alert" role="status">This workspace is archived. Historical reports remain available, but changes are disabled.</div> : null}
-    <ReportDetailView reportId={reportId} loadReport={loadReport} regenerateReport={regenerate} shareToSlack={shareToSlack} downloadArtifact={download} />
+    <ReportDetailView reportId={reportId} loadReport={loadReport} regenerateReport={regenerate} downloadArtifact={download} />
   </div>;
 }

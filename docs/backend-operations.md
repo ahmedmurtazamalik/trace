@@ -13,8 +13,8 @@ Required backend values:
 | `DATABASE_URL` | migration, API, worker | PostgreSQL URL using the Compose hostname `postgres` when using this topology |
 | `REDIS_URL` | API, worker | Redis URL using the Compose hostname `redis` |
 | `SESSION_SECRET` | API | At least 32 random, non-placeholder characters |
-| `FRONTEND_ORIGIN` | API | Public HTTPS frontend origin |
-| `SLACK_REPORT_WEBHOOK_URL` | API (optional) | Secret incoming-webhook URL for the single managers-only report channel |
+| `FRONTEND_ORIGIN` | API, worker | Public HTTPS frontend origin used for authenticated report links |
+| `SLACK_REPORT_WEBHOOK_URL` | worker (optional) | Secret incoming-webhook URL for automatic personal and workspace report notifications in one managers-only channel |
 | `GITHUB_APP_ID`, `GITHUB_APP_SLUG` | API/worker | GitHub App identity |
 | `GITHUB_APP_PRIVATE_KEY` | API/worker | PEM with literal newlines or escaped `\\n`; store only in a secret manager |
 | `GITHUB_APP_CLIENT_ID`, `GITHUB_APP_CLIENT_SECRET` | API | OAuth credentials for account and installation verification |
@@ -32,6 +32,8 @@ Required backend values:
 Optional controls include `LOG_LEVEL`, `REPORT_WORKER_CONCURRENCY`, `REPORT_LATEX_TIMEOUT_MS`, and `TRACE_API_PORT`.
 
 Use restrictive file permissions (`0600`) for environment files. Rotate the session secret, GitHub OAuth secret, webhook secret, App private key, dedicated Codex CLI authentication, and database password through the deployment platform. A rotation that changes connectivity requires a controlled restart.
+
+Automatic Slack delivery runs only after the report and current PDF artifact commit successfully. Revision-scoped audit records serialize delivery claims, record attempts and outcomes, and suppress posts after a recorded success. Definitive failures and ambiguous attempted-only outcomes use the report job's bounded retries without reverting the report's completed status. Slack incoming webhooks do not accept an idempotency key, so a worker crash after Slack accepts a message but before Trace records success can cause a duplicate on retry; the boundary intentionally favors eventual delivery over silently dropping a finalized report.
 
 ## Build and deploy
 

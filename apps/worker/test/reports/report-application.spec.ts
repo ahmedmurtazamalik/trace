@@ -45,7 +45,19 @@ describe('report worker application', () => {
       REPORT_LLM_PROVIDER: 'fake',
       REPORT_LATEX_WORK_ROOT: '/var/lib/trace/latex-work',
     };
-    expect(reportWorkerConfiguration(base)).toMatchObject({ latexWorkRoot: '/var/lib/trace/latex-work' });
+    expect(reportWorkerConfiguration(base)).toMatchObject({ latexWorkRoot: '/var/lib/trace/latex-work', frontendOrigin: 'http://localhost:3000' });
+    expect(reportWorkerConfiguration({
+      ...base,
+      FRONTEND_ORIGIN: 'https://trace.example',
+      SLACK_REPORT_WEBHOOK_URL: 'https://hooks.slack.com/services/T000/B000/secret',
+    })).toMatchObject({
+      frontendOrigin: 'https://trace.example',
+      slackWebhookUrl: 'https://hooks.slack.com/services/T000/B000/secret',
+    });
+    expect(() => reportWorkerConfiguration({ ...base, SLACK_REPORT_WEBHOOK_URL: 'https://example.com/services/T000/B000/secret' }))
+      .toThrow('Invalid report worker configuration.');
+    expect(() => reportWorkerConfiguration({ ...base, SLACK_REPORT_WEBHOOK_URL: 'https://hooks.slack.com/services/T000/B000/secret?leak=1' }))
+      .toThrow('Invalid report worker configuration.');
     expect(() => reportWorkerConfiguration({ ...base, REPORT_LATEX_WORK_ROOT: 'relative/path' }))
       .toThrow('Invalid report worker configuration.');
     expect(() => reportWorkerConfiguration({ ...base, WORKER_SHUTDOWN_TIMEOUT_MS: '9999' }))
@@ -55,7 +67,15 @@ describe('report worker application', () => {
       NODE_ENV: 'production',
       REPORT_LLM_PROVIDER: 'codex',
       REPORT_LATEX_IMAGE: `sha256:${'a'.repeat(64)}`,
+      FRONTEND_ORIGIN: 'https://trace.example',
     })).toMatchObject({ latexImage: `sha256:${'a'.repeat(64)}` });
+    expect(() => reportWorkerConfiguration({
+      ...base,
+      NODE_ENV: 'production',
+      REPORT_LLM_PROVIDER: 'codex',
+      REPORT_LATEX_IMAGE: `sha256:${'a'.repeat(64)}`,
+      FRONTEND_ORIGIN: 'http://trace.example',
+    })).toThrow('Invalid report worker configuration.');
     expect(() => reportWorkerConfiguration({
       ...base,
       NODE_ENV: 'production',

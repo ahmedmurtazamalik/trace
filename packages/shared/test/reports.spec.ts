@@ -10,7 +10,7 @@ import {
   reportListResponseSchema,
   reportRegenerationRequestSchema,
   reportRegenerationResponseSchema,
-  reportSlackShareResponseSchema,
+
   reportRevisionUpdateRequestSchema,
   reportRevisionUpdateResponseSchema,
 } from '../src';
@@ -124,7 +124,7 @@ describe('Frozen Day 8-10 report contract', () => {
     expect(reportCreateResponseSchema.parse({ report: summary })).toEqual({ report: summary });
     expect(reportRevisionUpdateResponseSchema.parse(detailFixture)).toEqual(detailFixture);
     expect(reportRegenerationResponseSchema.parse(detailFixture)).toEqual(detailFixture);
-    expect(reportSlackShareResponseSchema.parse({ sent: true })).toEqual({ sent: true });
+
     expect(reportDownloadQuerySchema.parse({ artifactId: 'artifact_pdf_1' })).toEqual({ artifactId: 'artifact_pdf_1' });
     expect(reportErrorCodeSchema.options).toEqual([
       'REPORT_NOT_FOUND',
@@ -133,8 +133,6 @@ describe('Frozen Day 8-10 report contract', () => {
       'REPORT_REVISION_CONFLICT',
       'REPORT_ARTIFACT_NOT_FOUND',
       'REPORT_GENERATION_UNAVAILABLE',
-      'SLACK_NOT_CONFIGURED',
-      'SLACK_DELIVERY_FAILED',
     ]);
     expect(reportDownloadQuerySchema.safeParse({ artifactId: '../secret' }).success).toBe(false);
   });

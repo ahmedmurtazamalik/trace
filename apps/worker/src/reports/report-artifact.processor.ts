@@ -5,6 +5,7 @@ import { reportContentSchema } from '@trace/shared';
 import { MAX_LATEX_BYTES, MAX_PDF_BYTES, validateCompiledPdf, type LatexCompiler } from '../latex/latex-compiler';
 import { renderReportLatex } from '../latex/report-latex-renderer';
 import { DIRECT_REPORT_DELIVERY, type ReportDeliveryContext } from './report-delivery';
+import type { ReportCompletionNotifier } from './report-slack-notifier';
 import {
   markWorkspaceReportCompleted,
   markWorkspaceReportFailed,
@@ -14,6 +15,16 @@ import {
 const RENDER_FAILED = 'Report rendering failed.';
 const RENDER_RETRY = 'REPORT_RENDER_RETRY';
 const DEFAULT_STORAGE_WRITE_TIMEOUT_MS = 30_000;
+const NOOP_COMPLETION_NOTIFIER: ReportCompletionNotifier = { notify: () => Promise.resolve('delivered') };
+
+interface CompletionClaim {
+  reportId: string;
+  revisionId: string;
+  reportDate: Date;
+  content: Prisma.JsonValue;
+  workspaceId: string | null;
+  workspaceName: string | null;
+}
 
 export interface ReportGenerationProcessor { process(reportId: string, delivery?: ReportDeliveryContext): Promise<void> }
 
@@ -25,6 +36,7 @@ export class ReportArtifactProcessor {
     private readonly storage: ArtifactStorage,
     private readonly leaseDurationMs = 180_000,
     private readonly storageWriteTimeoutMs = DEFAULT_STORAGE_WRITE_TIMEOUT_MS,
+    private readonly completionNotifier: ReportCompletionNotifier = NOOP_COMPLETION_NOTIFIER,
   ) {
     if (!Number.isInteger(leaseDurationMs) || leaseDurationMs < 30_000 || leaseDurationMs > 600_000) {
       throw new Error('REPORT_RENDER_CONFIG');
@@ -39,6 +51,10 @@ export class ReportArtifactProcessor {
     const token = randomUUID();
     const claim = await this.claim(reportId, token);
     if (claim.kind === 'done') return;
+    if (claim.kind === 'completed') {
+      await this.notifyCompletion({ ...claim, reportId });
+      return;
+    }
     if (claim.kind === 'busy') throw new Error(RENDER_RETRY);
 
     const generationBaseKey = `users/${claim.userId}/reports/${reportId}/revisions/${claim.revision}/generations/${claim.generation}/attempts/${token}`;
@@ -100,16 +116,32 @@ export class ReportArtifactProcessor {
         latex: storedLatex === null ? stagedLatexKey : claim.artifactKeys.latex ?? stagedLatexKey,
         pdf: storedPdf === null ? stagedPdfKey : claim.artifactKeys.pdf ?? stagedPdfKey,
       });
+      await this.notifyCompletion({ ...claim, reportId });
     } catch {
       await this.release(reportId, token, claim).catch(() => undefined);
       throw new Error(RENDER_RETRY);
     }
   }
 
+  private async notifyCompletion(claim: CompletionClaim): Promise<void> {
+    const content = reportContentSchema.safeParse(claim.content);
+    if (!content.success) return;
+    const outcome = await this.completionNotifier.notify({
+      reportId: claim.reportId,
+      revisionId: claim.revisionId,
+      reportDate: claim.reportDate.toISOString().slice(0, 10),
+      executiveSummary: content.data.executiveSummary,
+      workspaceId: claim.workspaceId,
+      workspaceName: claim.workspaceName,
+    }).catch(() => 'retry' as const);
+    if (outcome === 'retry') throw new Error(RENDER_RETRY);
+  }
+
   private async claim(reportId: string, token: string): Promise<
     | { kind: 'done' }
+    | ({ kind: 'completed' } & Omit<CompletionClaim, 'reportId'>)
     | { kind: 'busy' }
-    | { kind: 'claimed'; userId: string; revisionId: string; revision: number; generation: number; content: Prisma.JsonValue; inputSnapshot: Prisma.JsonValue; latexSource: string | null; artifactKeys: { latex: string | null; pdf: string | null } }
+    | { kind: 'claimed'; userId: string; workspaceId: string | null; workspaceName: string | null; reportDate: Date; revisionId: string; revision: number; generation: number; content: Prisma.JsonValue; inputSnapshot: Prisma.JsonValue; latexSource: string | null; artifactKeys: { latex: string | null; pdf: string | null } }
   > {
     return this.prisma.$transaction(async (transaction) => {
       await transaction.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${reportId}, 0))`;
@@ -117,6 +149,9 @@ export class ReportArtifactProcessor {
         where: { id: reportId },
         select: {
           userId: true,
+          workspaceId: true,
+          reportDate: true,
+          workspace: { select: { name: true } },
           status: true,
           inputSnapshot: true,
           processingToken: true,
@@ -128,6 +163,16 @@ export class ReportArtifactProcessor {
       });
       const revision = report?.currentRevision;
       if (report === null || revision === null || revision === undefined) return { kind: 'done' } as const;
+      if (report.status === 'completed' && revision.artifacts.some(({ kind }) => kind === 'pdf')) {
+        return {
+          kind: 'completed',
+          revisionId: revision.id,
+          reportDate: report.reportDate,
+          content: revision.content,
+          workspaceId: report.workspaceId,
+          workspaceName: report.workspace?.name ?? null,
+        } as const;
+      }
       if (report.status !== 'processing') return { kind: 'done' } as const;
       const busy = await transaction.$queryRaw<Array<{ busy: boolean }>>`
         SELECT EXISTS (
@@ -156,6 +201,9 @@ export class ReportArtifactProcessor {
       return {
         kind: 'claimed',
         userId: report.userId,
+        workspaceId: report.workspaceId,
+        workspaceName: report.workspace?.name ?? null,
+        reportDate: report.reportDate,
         revisionId: revision.id,
         revision: revision.revision,
         generation: report.renderGeneration,

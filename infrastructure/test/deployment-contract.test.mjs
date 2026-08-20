@@ -163,7 +163,11 @@ test('production-like backend Compose gates startup on migration and dependency 
     assert.match(migration, new RegExp(hardening.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
   }
   const workerService = serviceBlock(compose, 'worker');
+  const apiService = serviceBlock(compose, 'api');
   assert.match(workerService, /WORKER_SHUTDOWN_TIMEOUT_MS: \$\{WORKER_SHUTDOWN_TIMEOUT_MS:-210000\}/);
+  assert.match(workerService, /FRONTEND_ORIGIN: \$\{FRONTEND_ORIGIN:\?/);
+  assert.match(workerService, /SLACK_REPORT_WEBHOOK_URL: \$\{SLACK_REPORT_WEBHOOK_URL:-\}/);
+  assert.doesNotMatch(apiService, /SLACK_REPORT_WEBHOOK_URL/);
   assert.match(workerService, /REPORT_LLM_PROVIDER: codex/);
   assert.match(workerService, /REPORT_CODEX_COMMAND: \/app\/node_modules\/\.bin\/codex/);
   assert.match(workerService, /REPORT_CODEX_MODEL: \$\{REPORT_CODEX_MODEL:-gpt-5\.6-sol\}/);

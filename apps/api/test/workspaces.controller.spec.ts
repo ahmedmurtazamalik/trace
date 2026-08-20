@@ -14,8 +14,7 @@ describe('WorkspacesController paid-work limits', () => {
     regenerate: jest.fn().mockResolvedValue({}),
   };
   const rateLimits = { consume: jest.fn().mockResolvedValue(undefined) };
-  const slackReports = { share: jest.fn().mockResolvedValue({ sent: true }) };
-  const controller = new WorkspacesController(workspaces, analysis as never, reports as never, slackReports as never, rateLimits as never);
+  const controller = new WorkspacesController(workspaces, analysis as never, reports as never, rateLimits as never);
 
   beforeEach(() => jest.clearAllMocks());
 
@@ -57,16 +56,6 @@ describe('WorkspacesController paid-work limits', () => {
     expect(reports.regenerate).not.toHaveBeenCalled();
   });
 
-  it('bounds fixed-channel Slack sharing before invoking the Manager-authorized service', async () => {
-    await controller.shareReportToSlack(session, request, 'workspace-1', 'report-1');
-
-    expect(rateLimits.consume.mock.calls).toEqual([
-      ['workspace-report-slack-share', 'user-1', 20, 3_600_000],
-      ['workspace-report-slack-share:address', '203.0.113.7', 100, 3_600_000],
-      ['workspace-report-slack-share:deployment', 'all', 500, 3_600_000],
-    ]);
-    expect(slackReports.share).toHaveBeenCalledWith('user-1', 'workspace-1', 'report-1');
-  });
 
   it('bounds baseline collection more tightly before starting GitHub work', async () => {
     await controller.startAnalysis(session, 'workspace-1', 'repository-1', request);

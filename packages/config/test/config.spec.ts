@@ -88,19 +88,6 @@ describe('loadConfig', () => {
     expect(config.github.clientSecret).toBeUndefined();
   });
 
-  it('loads only a Slack incoming-webhook URL from the trusted Slack host', () => {
-    const base = {
-      NODE_ENV: 'development',
-      DATABASE_URL: 'postgresql://trace:***@localhost:5432/trace',
-      REDIS_URL: 'redis://localhost:6379',
-    };
-    const config = loadConfig({ ...base, SLACK_REPORT_WEBHOOK_URL: 'https://hooks.slack.com/services/T000/B000/secret' });
-
-    expect(config.slack.reportWebhookUrl).toBe('https://hooks.slack.com/services/T000/B000/secret');
-    expect(() => loadConfig({ ...base, SLACK_REPORT_WEBHOOK_URL: 'https://example.com/services/T000/B000/secret' })).toThrow(/SLACK_REPORT_WEBHOOK_URL/);
-    expect(() => loadConfig({ ...base, SLACK_REPORT_WEBHOOK_URL: 'https://user@hooks.slack.com/services/T000/B000/secret' })).toThrow(/SLACK_REPORT_WEBHOOK_URL/);
-    expect(() => loadConfig({ ...base, SLACK_REPORT_WEBHOOK_URL: 'https://hooks.slack.com/services/T000/B000/secret?forward=true' })).toThrow(/SLACK_REPORT_WEBHOOK_URL/);
-  });
 
   it('normalizes escaped newlines in the GitHub App private key', () => {
     const config = loadConfig({

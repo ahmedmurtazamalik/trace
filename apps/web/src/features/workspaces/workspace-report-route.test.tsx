@@ -31,7 +31,7 @@ function renderRoute(role: 'MANAGER' | 'DEVELOPER', reportResponse: WorkspaceRep
     loadReport: vi.fn().mockResolvedValue(reportResponse),
     saveRevision: vi.fn().mockResolvedValue(report),
     regenerateReport: vi.fn().mockResolvedValue(report),
-    shareReport: vi.fn().mockResolvedValue({ sent: true }),
+
     downloadArtifact: vi.fn().mockResolvedValue({ blob: new Blob(['pdf']), fileName: 'workspace-report.pdf' }),
   };
   render(<AuthSessionProvider initialSession={session}><WorkspaceReportRoute workspaceId="workspace/1" reportId="report/1" clients={clients} /></AuthSessionProvider>);
@@ -50,13 +50,12 @@ describe('workspace report route', () => {
     expect(screen.queryByRole('heading', { name: 'Frozen report evidence' })).not.toBeInTheDocument();
     expect(screen.queryByText(/manager-1|idempotency|provider failure/i)).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Regenerate report' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Send to Slack' })).not.toBeInTheDocument();
     expect(screen.queryByLabelText('Structured report editor')).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Download PDF' }));
     await waitFor(() => expect(clients.downloadArtifact).toHaveBeenCalled());
   });
 
-  it('hides Slack sharing while a report with an older PDF is processing', async () => {
+  it('keeps report actions unavailable while a report with an older PDF is processing', async () => {
     const processing: WorkspaceReportDetailResponse = {
       ...report,
       report: { ...report.report, status: 'processing', completedAt: null },
@@ -64,7 +63,7 @@ describe('workspace report route', () => {
     renderRoute('MANAGER', processing);
 
     expect(await screen.findByText('Building your report')).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Send to Slack' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Regenerate report' })).toBeDisabled();
   });
 
   it('provides Manager-only regeneration and read-only report content without exposing the removed narrative editor', async () => {
@@ -72,10 +71,8 @@ describe('workspace report route', () => {
     await screen.findByRole('heading', { name: 'Code analysis' });
     expect(screen.getByLabelText('Executive summary')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Save revision' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Send to Slack' })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Regenerate report' }));
     await waitFor(() => expect(clients.regenerateReport).toHaveBeenCalledWith('workspace/1', 'report/1', { expectedRevision: 1 }, 'csrf-live', expect.any(AbortSignal)));
-    fireEvent.click(screen.getByRole('button', { name: 'Send to Slack' }));
-    await waitFor(() => expect(clients.shareReport).toHaveBeenCalledWith('workspace/1', 'report/1', 'csrf-live', expect.any(AbortSignal)));
-    expect(await screen.findByText('Report sent to Slack.')).toBeInTheDocument();
   });
 });

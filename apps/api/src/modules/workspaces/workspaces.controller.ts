@@ -17,7 +17,7 @@ import type {
   WorkspaceReportDetailResponse,
   ReportDetailResponse,
   ReportListResponse,
-  ReportSlackShareResponse,
+
 } from '@trace/shared';
 import type { Request, Response } from 'express';
 import { CurrentSession } from '../auth/current-session.decorator';
@@ -28,7 +28,7 @@ import { SessionAuthGuard } from '../auth/session-auth.guard';
 import { WorkspacesService } from './workspaces.service';
 import { WorkspaceAnalysisService } from './workspace-analysis.service';
 import { WorkspaceReportsService } from './workspace-reports.service';
-import { WorkspaceReportSlackService } from './workspace-report-slack.service';
+
 
 @Controller('workspaces')
 @UseGuards(SessionAuthGuard)
@@ -37,7 +37,7 @@ export class WorkspacesController {
     private readonly workspaces: WorkspacesService,
     private readonly analysis: WorkspaceAnalysisService,
     private readonly reports: WorkspaceReportsService,
-    private readonly slackReports: WorkspaceReportSlackService,
+
     private readonly rateLimits: AuthRateLimitService,
   ) {}
 
@@ -183,18 +183,6 @@ export class WorkspacesController {
     return this.reports.regenerate(session.user.id, id, reportId, body);
   }
 
-  @Post(':id/reports/:reportId/share/slack')
-  @HttpCode(HttpStatus.OK)
-  @UseGuards(CsrfGuard)
-  async shareReportToSlack(
-    @CurrentSession() session: AuthenticatedSession,
-    @Req() request: Request,
-    @Param('id') id: string,
-    @Param('reportId') reportId: string,
-  ): Promise<ReportSlackShareResponse> {
-    await this.consumePaidWork('workspace-report-slack-share', session.user.id, request, 20, 100, 500);
-    return this.slackReports.share(session.user.id, id, reportId);
-  }
 
   @Get(':id/reports/:reportId/download')
   async downloadReport(
