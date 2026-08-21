@@ -28,6 +28,16 @@ describe("Editorial Console visual system", () => {
     expect(css).toMatch(/html\[data-theme="night"\] \.trace-card[\s\S]*?box-shadow:\s*none;/);
   });
 
+  it("themes every native data-entry surface in night mode", () => {
+    const night = css.slice(css.indexOf("/* Terminal night mode: approved Preview 01 */"));
+    expect(night).toContain('html[data-theme="night"] :where(input:not([type="checkbox"]):not([type="radio"])');
+    expect(night).toContain('textarea, select)');
+    expect(night).toContain('html[data-theme="night"] input:-webkit-autofill');
+    expect(night).toContain('html[data-theme="night"] input:disabled');
+    expect(night).toContain('html[data-theme="night"] .manager-tool-grid form');
+    expect(night).toContain('html[data-theme="night"] .workspace-invitation-tool');
+  });
+
   it("keeps the Activity empty-state action in normal document flow", () => {
     expect(css).toMatch(/\.activity-state-card\s*\{[^}]*display:\s*grid;[^}]*gap:/s);
     expect(css).toMatch(/\.activity-state-card\s+\.trace-button\s*\{[^}]*position:\s*static;/s);

@@ -1214,6 +1214,61 @@ html[data-theme="night"] .trace-input:focus,
 html[data-theme="night"] .report-editor textarea:focus { border-color: var(--signal); box-shadow: 0 0 0 3px color-mix(in srgb, var(--signal) 15%, transparent); }
 html[data-theme="night"] .trace-input::placeholder,
 html[data-theme="night"] .report-editor textarea::placeholder { color: var(--muted); }
+
+/* Keep every native data-entry surface inside the Terminal Noir palette. */
+html[data-theme="night"] :where(input:not([type="checkbox"]):not([type="radio"]):not([type="button"]):not([type="submit"]):not([type="reset"]), textarea, select) {
+  color: var(--ink);
+  caret-color: var(--signal);
+  background-color: var(--night-canvas);
+  border-color: var(--line-strong);
+}
+html[data-theme="night"] input::placeholder,
+html[data-theme="night"] textarea::placeholder { color: var(--muted); opacity: 1; }
+html[data-theme="night"] select option {
+  color: var(--ink);
+  background: var(--night-panel);
+}
+html[data-theme="night"] input:focus-visible,
+html[data-theme="night"] textarea:focus-visible,
+html[data-theme="night"] select:focus-visible {
+  border-color: var(--signal);
+  outline: 3px solid color-mix(in srgb, var(--signal) 24%, transparent);
+  outline-offset: 2px;
+  box-shadow: none;
+}
+html[data-theme="night"] input:disabled,
+html[data-theme="night"] input:read-only,
+html[data-theme="night"] textarea:disabled,
+html[data-theme="night"] textarea:read-only,
+html[data-theme="night"] select:disabled {
+  color: var(--muted);
+  background: var(--night-ghost);
+  border-color: var(--line);
+  opacity: 1;
+}
+html[data-theme="night"] input[type="checkbox"],
+html[data-theme="night"] input[type="radio"] { accent-color: var(--signal); }
+html[data-theme="night"] input:-webkit-autofill,
+html[data-theme="night"] input:-webkit-autofill:hover,
+html[data-theme="night"] input:-webkit-autofill:focus {
+  -webkit-text-fill-color: var(--ink);
+  caret-color: var(--signal);
+  -webkit-box-shadow: 0 0 0 1000px var(--night-canvas) inset;
+  transition: background-color 9999s ease-out 0s;
+}
+html[data-theme="night"] .manager-tool-grid form,
+html[data-theme="night"] .workspace-invitation-tool,
+html[data-theme="night"] .reporting-summary-grid > section,
+html[data-theme="night"] .report-manager-grid form,
+html[data-theme="night"] .report-contributor-editor,
+html[data-theme="night"] .analysis-card,
+html[data-theme="night"] .occurrence-card {
+  color: var(--ink);
+  background: var(--night-panel);
+  border-color: var(--line);
+}
+html[data-theme="night"] .report-timezone strong { background: var(--night-canvas); border-color: var(--line-strong); color: var(--ink); }
+
 html[data-theme="night"] .trace-button,
 html[data-theme="night"] .auth-form button,
 html[data-theme="night"] .centered-state button {
