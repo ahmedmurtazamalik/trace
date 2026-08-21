@@ -9,7 +9,7 @@
     "dev": "node --env-file-if-exists=../../.env --import tsx --watch src/main.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "eslint src test",
-    "test": "jest --runInBand test/api-exception.filter.spec.ts test/dependency-health.service.spec.ts test/integration-environment.spec.ts test/operation-rate-limits.spec.ts test/password-reset-delivery.spec.ts test/report-publisher.spec.ts test/report-queue.spec.ts test/reports-workspace-authorization-race.spec.ts test/repositories.service.spec.ts test/request-logging.middleware.spec.ts test/workspace-analysis-queue.spec.ts test/workspace-protected-read-races.spec.ts test/workspace-report-scheduler.spec.ts test/workspace-reports.service.spec.ts test/workspaces.controller.spec.ts",
+    "test": "jest --runInBand test/api-exception.filter.spec.ts test/dependency-health.service.spec.ts test/integration-environment.spec.ts test/operation-rate-limits.spec.ts test/password-reset-delivery.spec.ts test/report-publisher.spec.ts test/report-queue.spec.ts test/reports-workspace-authorization-race.spec.ts test/repositories.service.spec.ts test/request-logging.middleware.spec.ts test/workspace-analysis-publisher.spec.ts test/workspace-analysis-queue.spec.ts test/workspace-protected-read-races.spec.ts test/workspace-report-scheduler.spec.ts test/workspace-reports.service.spec.ts test/workspaces.controller.spec.ts",
     "test:coverage": "jest --runInBand --coverage",
     "test:integration": "jest --runInBand --testPathPattern=integration.spec.ts"
   },

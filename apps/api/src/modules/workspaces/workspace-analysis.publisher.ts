@@ -23,14 +23,18 @@ export class WorkspaceAnalysisPublisher implements OnApplicationBootstrap, OnMod
   }
 
   async publishOwed(): Promise<void> {
-    if (this.active !== undefined) return this.active;
-    this.active = (async () => {
-      await this.recoverExpired();
-      const rows = await this.prisma.workspaceAnalysisRun.findMany({ where: { status: 'PENDING' }, orderBy: [{ publishedAt: { sort: 'asc', nulls: 'first' } }, { createdAt: 'asc' }], take: 100, select: { id: true } });
-      for (const row of rows) await this.publishOne(row.id);
-    })();
-    try { await this.active; } catch { this.logger.error('Workspace analysis reconciliation failed.'); }
-    finally { this.active = undefined; }
+    if (this.active === undefined) {
+      const reconciliation = (async () => {
+        await this.recoverExpired();
+        const rows = await this.prisma.workspaceAnalysisRun.findMany({ where: { status: 'PENDING' }, orderBy: [{ publishedAt: { sort: 'asc', nulls: 'first' } }, { createdAt: 'asc' }], take: 100, select: { id: true } });
+        for (const row of rows) await this.publishOne(row.id);
+      })();
+      const guarded = reconciliation
+        .catch(() => { this.logger.error('Workspace analysis reconciliation failed.'); })
+        .finally(() => { if (this.active === guarded) this.active = undefined; });
+      this.active = guarded;
+    }
+    await this.active;
   }
 
   private async recoverExpired(): Promise<void> {
