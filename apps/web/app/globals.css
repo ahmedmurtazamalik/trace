@@ -1170,6 +1170,108 @@ html[data-theme="night"] .github-hero-icon {
   border-color: var(--line);
   box-shadow: none;
 }
+html[data-theme="night"] .repository-card-heading h2,
+html[data-theme="night"] .repository-state-card h2 { color: var(--ink); }
+html[data-theme="night"] .repository-disclosure {
+  color: var(--ink-soft);
+  background: var(--night-panel);
+  border-color: var(--line);
+  box-shadow: inset 3px 0 var(--signal);
+}
+html[data-theme="night"] .repository-disclosure strong { color: var(--signal); }
+html[data-theme="night"] .repository-disclosure span,
+html[data-theme="night"] .repository-search,
+html[data-theme="night"] .repository-summary { color: var(--muted); }
+html[data-theme="night"] .repository-summary strong { color: var(--ink); }
+html[data-theme="night"] .repository-card-heading .eyebrow,
+html[data-theme="night"] .repository-label-grid small,
+html[data-theme="night"] .repository-state-card { color: var(--muted); }
+html[data-theme="night"] .repository-metadata dt { color: var(--muted); }
+html[data-theme="night"] .repository-label-grid strong { color: var(--ink-soft); }
+html[data-theme="night"] .repository-metadata dd { color: var(--ink-soft); }
+html[data-theme="night"] .repository-metadata div {
+  background: var(--night-ghost);
+  border-color: var(--signal);
+}
+html[data-theme="night"] .repository-tracking-dot { border-color: var(--muted); }
+html[data-theme="night"] .repository-tracking-dot.is-active {
+  border-color: var(--signal);
+  background: var(--signal);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--signal) 15%, transparent);
+}
+html[data-theme="night"] .repository-notice-error {
+  color: #fecaca;
+  background: #2a1115;
+  border-color: #7f1d1d;
+}
+html[data-theme="night"] .activity-disclosure {
+  color: var(--ink-soft);
+  background: var(--night-panel);
+  border-color: var(--line);
+  box-shadow: inset 3px 0 var(--signal);
+}
+html[data-theme="night"] .activity-disclosure strong { color: var(--signal); }
+html[data-theme="night"] .activity-disclosure span,
+html[data-theme="night"] .activity-day-group > h2,
+html[data-theme="night"] .activity-event-heading > span:last-child,
+html[data-theme="night"] .activity-contributor,
+html[data-theme="night"] .activity-contributor-identity small,
+html[data-theme="night"] .activity-event-card time,
+html[data-theme="night"] .activity-state-card { color: var(--muted); }
+html[data-theme="night"] .activity-timeline::before {
+  background: linear-gradient(var(--signal), var(--line));
+}
+html[data-theme="night"] .activity-event-card::before {
+  border-color: var(--night-panel);
+  background: var(--signal);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--signal) 45%, transparent);
+}
+html[data-theme="night"] .activity-event-icon {
+  color: var(--signal);
+  background: var(--night-soft);
+  border-color: var(--line);
+}
+html[data-theme="night"] .activity-event-body h2,
+html[data-theme="night"] .activity-contributor-identity strong { color: var(--ink-soft); }
+html[data-theme="night"] .activity-contributor-avatar {
+  background: var(--night-ghost);
+  border-color: var(--line);
+}
+html[data-theme="night"] .activity-contributor-fallback { color: var(--signal); }
+html[data-theme="night"] .activity-contributor-link:hover .activity-contributor-identity strong { color: var(--signal); }
+html[data-theme="night"] .activity-contributor-link:focus-visible { outline-color: var(--signal); }
+html[data-theme="night"] .activity-facts span {
+  color: var(--ink-soft);
+  background: var(--night-ghost);
+  border: 1px solid var(--line);
+}
+html[data-theme="night"] .activity-facts .activity-additions {
+  color: #6ff3b8;
+  background: var(--night-soft);
+  border-color: color-mix(in srgb, var(--signal) 35%, var(--line));
+}
+html[data-theme="night"] .activity-facts .activity-deletions {
+  color: #fca5a5;
+  background: #2a1115;
+  border-color: #7f1d1d;
+}
+html[data-theme="night"] .activity-notice-error {
+  color: #fecaca;
+  background: #2a1115;
+  border-color: #7f1d1d;
+}
+html[data-theme="night"] .report-disclosure {
+  color: var(--ink-soft);
+  background: var(--night-panel);
+  border-color: var(--line);
+  box-shadow: inset 3px 0 var(--signal);
+}
+html[data-theme="night"] .report-disclosure strong {
+  color: var(--signal);
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+html[data-theme="night"] .report-disclosure span { color: var(--ink-soft); }
 html[data-theme="night"] .auth-page { background: var(--night-canvas); }
 html[data-theme="night"] .auth-aside {
   color: var(--ink);

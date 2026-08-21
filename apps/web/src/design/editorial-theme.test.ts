@@ -35,6 +35,23 @@ describe("Editorial Console visual system", () => {
     expect(css).toMatch(/html\[data-theme="night"\] :is\(input, textarea, select\):focus-visible[\s\S]*?outline:\s*3px solid color-mix\(in srgb, var\(--signal\) 42%, transparent\)/);
   });
 
+  it("themes repository metadata and activity fact chips without light surfaces", () => {
+    expect(css).toMatch(/html\[data-theme="night"\] \.repository-metadata div\s*\{[^}]*background:\s*var\(--night-ghost\);/s);
+    expect(css).toMatch(/html\[data-theme="night"\] \.repository-metadata dt\s*\{[^}]*color:\s*var\(--muted\);/s);
+    expect(css).toMatch(/html\[data-theme="night"\] \.repository-metadata dd\s*\{[^}]*color:\s*var\(--ink-soft\);/s);
+    expect(css).toMatch(/html\[data-theme="night"\] \.repository-disclosure\s*\{[^}]*background:\s*var\(--night-panel\);/s);
+    expect(css).toMatch(/html\[data-theme="night"\] \.repository-summary strong\s*\{[^}]*color:\s*var\(--ink\);/s);
+    expect(css).toMatch(/html\[data-theme="night"\] \.activity-disclosure\s*\{[^}]*background:\s*var\(--night-panel\);/s);
+    expect(css).toMatch(/html\[data-theme="night"\] \.activity-event-icon\s*\{[^}]*background:\s*var\(--night-soft\);/s);
+    expect(css).toMatch(/html\[data-theme="night"\] \.activity-facts span\s*\{[^}]*background:\s*var\(--night-ghost\);/s);
+    expect(css).toMatch(/html\[data-theme="night"\] \.activity-facts \.activity-additions\s*\{[^}]*background:\s*var\(--night-soft\);/s);
+    expect(css).toMatch(/html\[data-theme="night"\] \.activity-facts \.activity-deletions\s*\{[^}]*background:\s*#2a1115;/s);
+    expect(css).toMatch(/html\[data-theme="night"\] \.activity-notice-error\s*\{[^}]*background:\s*#2a1115;/s);
+    expect(css).toMatch(/html\[data-theme="night"\] \.report-disclosure\s*\{[^}]*background:\s*var\(--night-panel\);/s);
+    expect(css).toMatch(/html\[data-theme="night"\] \.report-disclosure strong\s*\{[^}]*color:\s*var\(--signal\);/s);
+    expect(css).toMatch(/html\[data-theme="night"\] \.report-disclosure span\s*\{[^}]*color:\s*var\(--ink-soft\);/s);
+  });
+
   it("keeps autofilled credentials coherent with Terminal Noir", () => {
     expect(css).toMatch(/html\[data-theme="night"\] \.trace-input:-webkit-autofill[\s\S]*?-webkit-text-fill-color:\s*var\(--ink\)[\s\S]*?-webkit-box-shadow:\s*0 0 0 1000px var\(--night-field\) inset/);
   });
