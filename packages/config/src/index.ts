@@ -112,7 +112,7 @@ export function loadConfig(environment: NodeJS.ProcessEnv | Record<string, strin
     logLevel: value.LOG_LEVEL,
     frontendOrigin: value.FRONTEND_ORIGIN,
     publicRegistrationEnabled: value.PUBLIC_REGISTRATION_ENABLED === undefined
-      ? value.NODE_ENV === 'test'
+      ? value.NODE_ENV !== 'production'
       : value.PUBLIC_REGISTRATION_ENABLED === 'true',
     github: {
       appId: value.GITHUB_APP_ID,

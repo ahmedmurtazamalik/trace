@@ -45,12 +45,18 @@ test("login renders safe disabled-account feedback without exposing backend deta
   await expect(page.getByRole("button", { name: "Sign in" })).toBeEnabled();
 });
 
-test("public registration stays closed until GitHub signup replaces it", async ({ page }) => {
+test("registration validates locally and creates a session", async ({ page }) => {
   await anonymous(page);
+  await page.route("**/api/v1/auth/register", (route) => route.fulfill({ status: 201, contentType: "application/json", body: JSON.stringify(session) }));
   await page.goto("/register");
-  await expect(page.getByRole("heading", { level: 1, name: "Account creation is closed." })).toBeVisible();
-  await expect(page.getByRole("status")).toHaveText("Public username registration is disabled. GitHub signup will replace it.");
-  await expect(page.getByRole("link", { name: "Sign in with an existing account" })).toHaveAttribute("href", "/login");
+  await page.getByLabel("Username").fill("bad!");
+  await page.getByLabel("Password").fill("short");
+  await page.getByRole("button", { name: "Create account" }).click();
+  await expect(page.getByText("Use 3–39 letters, numbers, dots, underscores, or hyphens.")).toBeVisible();
+  await page.getByLabel("Username").fill("alice.dev");
+  await page.getByLabel("Password").fill("correct-horse-battery-staple");
+  await page.getByRole("button", { name: "Create account" }).click();
+  await expect(page).toHaveURL(/\/dashboard$/);
 });
 
 test("password recovery preserves account privacy", async ({ page }) => {

@@ -20,6 +20,6 @@ export function LoginRoute() {
         : "";
       router.replace(`${returnTo}${invitationHash}`);
     }} />
-    <div className="auth-links"><Link href="/forgot-password">Forgot password?</Link></div>
+    <div className="auth-links"><Link href="/forgot-password">Forgot password?</Link><Link href="/register">Create an account</Link></div>
   </AuthShell>;
 }
