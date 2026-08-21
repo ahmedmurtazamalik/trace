@@ -1004,6 +1004,9 @@ main#main-content { max-width: 1600px; }
   --night-soft: #0b241b;
   --night-glow: #19df9155;
   --night-ghost: #101820;
+  --night-field: #0d141b;
+  --night-form-surface: #0c1117;
+  --night-field-disabled: #090d12;
 }
 
 .topbar-actions { display: flex; align-items: center; gap: .65rem; }
@@ -1167,6 +1170,108 @@ html[data-theme="night"] .github-hero-icon {
   border-color: var(--line);
   box-shadow: none;
 }
+html[data-theme="night"] .repository-card-heading h2,
+html[data-theme="night"] .repository-state-card h2 { color: var(--ink); }
+html[data-theme="night"] .repository-disclosure {
+  color: var(--ink-soft);
+  background: var(--night-panel);
+  border-color: var(--line);
+  box-shadow: inset 3px 0 var(--signal);
+}
+html[data-theme="night"] .repository-disclosure strong { color: var(--signal); }
+html[data-theme="night"] .repository-disclosure span,
+html[data-theme="night"] .repository-search,
+html[data-theme="night"] .repository-summary { color: var(--muted); }
+html[data-theme="night"] .repository-summary strong { color: var(--ink); }
+html[data-theme="night"] .repository-card-heading .eyebrow,
+html[data-theme="night"] .repository-label-grid small,
+html[data-theme="night"] .repository-state-card { color: var(--muted); }
+html[data-theme="night"] .repository-metadata dt { color: var(--muted); }
+html[data-theme="night"] .repository-label-grid strong { color: var(--ink-soft); }
+html[data-theme="night"] .repository-metadata dd { color: var(--ink-soft); }
+html[data-theme="night"] .repository-metadata div {
+  background: var(--night-ghost);
+  border-color: var(--signal);
+}
+html[data-theme="night"] .repository-tracking-dot { border-color: var(--muted); }
+html[data-theme="night"] .repository-tracking-dot.is-active {
+  border-color: var(--signal);
+  background: var(--signal);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--signal) 15%, transparent);
+}
+html[data-theme="night"] .repository-notice-error {
+  color: #fecaca;
+  background: #2a1115;
+  border-color: #7f1d1d;
+}
+html[data-theme="night"] .activity-disclosure {
+  color: var(--ink-soft);
+  background: var(--night-panel);
+  border-color: var(--line);
+  box-shadow: inset 3px 0 var(--signal);
+}
+html[data-theme="night"] .activity-disclosure strong { color: var(--signal); }
+html[data-theme="night"] .activity-disclosure span,
+html[data-theme="night"] .activity-day-group > h2,
+html[data-theme="night"] .activity-event-heading > span:last-child,
+html[data-theme="night"] .activity-contributor,
+html[data-theme="night"] .activity-contributor-identity small,
+html[data-theme="night"] .activity-event-card time,
+html[data-theme="night"] .activity-state-card { color: var(--muted); }
+html[data-theme="night"] .activity-timeline::before {
+  background: linear-gradient(var(--signal), var(--line));
+}
+html[data-theme="night"] .activity-event-card::before {
+  border-color: var(--night-panel);
+  background: var(--signal);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--signal) 45%, transparent);
+}
+html[data-theme="night"] .activity-event-icon {
+  color: var(--signal);
+  background: var(--night-soft);
+  border-color: var(--line);
+}
+html[data-theme="night"] .activity-event-body h2,
+html[data-theme="night"] .activity-contributor-identity strong { color: var(--ink-soft); }
+html[data-theme="night"] .activity-contributor-avatar {
+  background: var(--night-ghost);
+  border-color: var(--line);
+}
+html[data-theme="night"] .activity-contributor-fallback { color: var(--signal); }
+html[data-theme="night"] .activity-contributor-link:hover .activity-contributor-identity strong { color: var(--signal); }
+html[data-theme="night"] .activity-contributor-link:focus-visible { outline-color: var(--signal); }
+html[data-theme="night"] .activity-facts span {
+  color: var(--ink-soft);
+  background: var(--night-ghost);
+  border: 1px solid var(--line);
+}
+html[data-theme="night"] .activity-facts .activity-additions {
+  color: #6ff3b8;
+  background: var(--night-soft);
+  border-color: color-mix(in srgb, var(--signal) 35%, var(--line));
+}
+html[data-theme="night"] .activity-facts .activity-deletions {
+  color: #fca5a5;
+  background: #2a1115;
+  border-color: #7f1d1d;
+}
+html[data-theme="night"] .activity-notice-error {
+  color: #fecaca;
+  background: #2a1115;
+  border-color: #7f1d1d;
+}
+html[data-theme="night"] .report-disclosure {
+  color: var(--ink-soft);
+  background: var(--night-panel);
+  border-color: var(--line);
+  box-shadow: inset 3px 0 var(--signal);
+}
+html[data-theme="night"] .report-disclosure strong {
+  color: var(--signal);
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+html[data-theme="night"] .report-disclosure span { color: var(--ink-soft); }
 html[data-theme="night"] .auth-page { background: var(--night-canvas); }
 html[data-theme="night"] .auth-aside {
   color: var(--ink);
@@ -1198,6 +1303,54 @@ html[data-theme="night"] .nav-link.active {
   box-shadow: inset 2px 0 var(--signal);
 }
 html[data-theme="night"] .nav-link.active .nav-icon { color: var(--signal); border-color: transparent; background: transparent; box-shadow: none; }
+html[data-theme="night"] .manager-tool-grid form,
+html[data-theme="night"] .workspace-invitation-tool,
+html[data-theme="night"] .reporting-summary-grid > section,
+html[data-theme="night"] .report-manager-grid form,
+html[data-theme="night"] .report-contributor-editor,
+html[data-theme="night"] .analysis-card,
+html[data-theme="night"] .occurrence-card {
+  color: var(--ink);
+  background: var(--night-form-surface);
+  border-color: var(--line);
+  box-shadow: none;
+}
+html[data-theme="night"] .workspace-create-band,
+html[data-theme="night"] .manager-tools,
+html[data-theme="night"] .workspace-reporting {
+  color: var(--ink);
+  background: var(--night-panel);
+  border-color: var(--line);
+  box-shadow: inset 3px 0 color-mix(in srgb, var(--signal) 65%, transparent);
+}
+html[data-theme="night"] .workspace-list li,
+html[data-theme="night"] .report-manager-grid fieldset,
+html[data-theme="night"] .workspace-pending-invitations {
+  color: var(--ink-soft);
+  background: var(--night-ghost);
+  border-color: var(--line);
+}
+html[data-theme="night"] .dashboard-toolbar label,
+html[data-theme="night"] .activity-filter-grid label,
+html[data-theme="night"] .report-create-card label,
+html[data-theme="night"] .workspace-create-form label,
+html[data-theme="night"] .manager-tool-grid label,
+html[data-theme="night"] .report-manager-grid label,
+html[data-theme="night"] .report-manager-grid legend {
+  color: var(--ink-soft);
+}
+html[data-theme="night"] .field-help,
+html[data-theme="night"] .analysis-card p,
+html[data-theme="night"] .occurrence-card p,
+html[data-theme="night"] .schedule-summary { color: var(--muted); }
+
+html[data-theme="night"] .activity-filter-grid input,
+html[data-theme="night"] .activity-filter-grid select,
+html[data-theme="night"] .workspace-create-form input,
+html[data-theme="night"] .manager-tool-grid input,
+html[data-theme="night"] .manager-tool-grid select,
+html[data-theme="night"] .workspace-row-actions select,
+html[data-theme="night"] .report-create-card input,
 html[data-theme="night"] .trace-input,
 html[data-theme="night"] .dashboard-toolbar input,
 html[data-theme="night"] .dashboard-toolbar select,
@@ -1207,13 +1360,74 @@ html[data-theme="night"] .report-manager-grid input,
 html[data-theme="night"] .report-manager-grid select,
 html[data-theme="night"] .report-manager-grid textarea {
   color: var(--ink);
-  background: var(--night-canvas);
+  background: var(--night-field);
+  border-color: var(--line-strong);
+  box-shadow: inset 0 1px 0 #ffffff08;
+  caret-color: var(--signal);
+}
+html[data-theme="night"] :is(input, textarea)::placeholder { color: var(--muted); opacity: 1; }
+html[data-theme="night"] select option { color: var(--ink); background: var(--night-field); }
+html[data-theme="night"] input[type="checkbox"] { accent-color: var(--signal); }
+
+html[data-theme="night"] .trace-input:-webkit-autofill,
+html[data-theme="night"] input:-webkit-autofill {
+  -webkit-text-fill-color: var(--ink);
+  caret-color: var(--signal);
+  -webkit-box-shadow: 0 0 0 1000px var(--night-field) inset;
+}
+html[data-theme="night"] input[readonly],
+html[data-theme="night"] textarea[readonly] {
+  color: var(--ink-soft);
+  background: var(--night-ghost);
+  border-color: var(--line-strong);
+  cursor: text;
+}
+html[data-theme="night"] input:-webkit-autofill:read-only {
+  -webkit-text-fill-color: var(--ink-soft);
+  -webkit-box-shadow: 0 0 0 1000px var(--night-ghost) inset;
+}
+html[data-theme="night"] :is(input, textarea, select):focus-visible {
+  border-color: var(--signal);
+  outline: 3px solid color-mix(in srgb, var(--signal) 42%, transparent);
+  outline-offset: 2px;
+  box-shadow: 0 0 0 1px var(--signal), 0 0 18px color-mix(in srgb, var(--signal) 12%, transparent);
+}
+html[data-theme="night"] input:-webkit-autofill:focus-visible {
+  border-color: var(--signal);
+  -webkit-box-shadow: 0 0 0 1000px var(--night-field) inset, 0 0 0 1px var(--signal), 0 0 18px color-mix(in srgb, var(--signal) 12%, transparent);
+}
+html[data-theme="night"] :is(input, textarea, select):disabled {
+  color: #667686;
+  background: var(--night-field-disabled);
+  border-color: var(--line);
+  cursor: not-allowed;
+}
+html[data-theme="night"] input:-webkit-autofill:disabled {
+  -webkit-text-fill-color: #667686;
+  -webkit-box-shadow: 0 0 0 1000px var(--night-field-disabled) inset;
   border-color: var(--line);
 }
-html[data-theme="night"] .trace-input:focus,
-html[data-theme="night"] .report-editor textarea:focus { border-color: var(--signal); box-shadow: 0 0 0 3px color-mix(in srgb, var(--signal) 15%, transparent); }
-html[data-theme="night"] .trace-input::placeholder,
-html[data-theme="night"] .report-editor textarea::placeholder { color: var(--muted); }
+html[data-theme="night"] .auth-field .trace-input[aria-invalid="true"],
+html[data-theme="night"] .auth-field .trace-input[aria-invalid="true"]:-webkit-autofill {
+  border-color: #f87171;
+  box-shadow: 0 0 0 4px #f8717124;
+}
+html[data-theme="night"] .auth-field .trace-input[aria-invalid="true"]:-webkit-autofill {
+  -webkit-box-shadow: 0 0 0 1000px var(--night-field) inset, 0 0 0 4px #f8717124;
+}
+/* Preserve unavailable/read-only surfaces when autofill intersects focus or validation. */
+html[data-theme="night"] input:-webkit-autofill:focus-visible:read-only {
+  -webkit-text-fill-color: var(--ink-soft);
+  -webkit-box-shadow: 0 0 0 1000px var(--night-ghost) inset, 0 0 0 1px var(--signal), 0 0 18px color-mix(in srgb, var(--signal) 12%, transparent);
+}
+html[data-theme="night"] .auth-field .trace-input[aria-invalid="true"]:-webkit-autofill:read-only {
+  -webkit-text-fill-color: var(--ink-soft);
+  -webkit-box-shadow: 0 0 0 1000px var(--night-ghost) inset, 0 0 0 4px #f8717124;
+}
+html[data-theme="night"] .auth-field .trace-input[aria-invalid="true"]:-webkit-autofill:disabled {
+  -webkit-text-fill-color: #667686;
+  -webkit-box-shadow: 0 0 0 1000px var(--night-field-disabled) inset, 0 0 0 4px #f8717124;
+}
 html[data-theme="night"] .trace-button,
 html[data-theme="night"] .auth-form button,
 html[data-theme="night"] .centered-state button {

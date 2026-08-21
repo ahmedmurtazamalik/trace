@@ -28,6 +28,52 @@ describe("Editorial Console visual system", () => {
     expect(css).toMatch(/html\[data-theme="night"\] \.trace-card[\s\S]*?box-shadow:\s*none;/);
   });
 
+  it("themes every native form family and its surrounding surface in night mode", () => {
+    expect(css).toContain("--night-field: #0d141b;");
+    expect(css).toMatch(/html\[data-theme="night"\] \.activity-filter-grid input,[\s\S]*?\.manager-tool-grid select,[\s\S]*?\.report-create-card input[\s\S]*?background:\s*var\(--night-field\)/);
+    expect(css).toMatch(/html\[data-theme="night"\] \.manager-tool-grid form,[\s\S]*?\.report-manager-grid form[\s\S]*?background:\s*var\(--night-form-surface\)/);
+    expect(css).toMatch(/html\[data-theme="night"\] :is\(input, textarea, select\):focus-visible[\s\S]*?outline:\s*3px solid color-mix\(in srgb, var\(--signal\) 42%, transparent\)/);
+  });
+
+  it("themes repository metadata and activity fact chips without light surfaces", () => {
+    expect(css).toMatch(/html\[data-theme="night"\] \.repository-metadata div\s*\{[^}]*background:\s*var\(--night-ghost\);/s);
+    expect(css).toMatch(/html\[data-theme="night"\] \.repository-metadata dt\s*\{[^}]*color:\s*var\(--muted\);/s);
+    expect(css).toMatch(/html\[data-theme="night"\] \.repository-metadata dd\s*\{[^}]*color:\s*var\(--ink-soft\);/s);
+    expect(css).toMatch(/html\[data-theme="night"\] \.repository-disclosure\s*\{[^}]*background:\s*var\(--night-panel\);/s);
+    expect(css).toMatch(/html\[data-theme="night"\] \.repository-summary strong\s*\{[^}]*color:\s*var\(--ink\);/s);
+    expect(css).toMatch(/html\[data-theme="night"\] \.activity-disclosure\s*\{[^}]*background:\s*var\(--night-panel\);/s);
+    expect(css).toMatch(/html\[data-theme="night"\] \.activity-event-icon\s*\{[^}]*background:\s*var\(--night-soft\);/s);
+    expect(css).toMatch(/html\[data-theme="night"\] \.activity-facts span\s*\{[^}]*background:\s*var\(--night-ghost\);/s);
+    expect(css).toMatch(/html\[data-theme="night"\] \.activity-facts \.activity-additions\s*\{[^}]*background:\s*var\(--night-soft\);/s);
+    expect(css).toMatch(/html\[data-theme="night"\] \.activity-facts \.activity-deletions\s*\{[^}]*background:\s*#2a1115;/s);
+    expect(css).toMatch(/html\[data-theme="night"\] \.activity-notice-error\s*\{[^}]*background:\s*#2a1115;/s);
+    expect(css).toMatch(/html\[data-theme="night"\] \.report-disclosure\s*\{[^}]*background:\s*var\(--night-panel\);/s);
+    expect(css).toMatch(/html\[data-theme="night"\] \.report-disclosure strong\s*\{[^}]*color:\s*var\(--signal\);/s);
+    expect(css).toMatch(/html\[data-theme="night"\] \.report-disclosure span\s*\{[^}]*color:\s*var\(--ink-soft\);/s);
+  });
+
+  it("keeps autofilled credentials coherent with Terminal Noir", () => {
+    expect(css).toMatch(/html\[data-theme="night"\] \.trace-input:-webkit-autofill[\s\S]*?-webkit-text-fill-color:\s*var\(--ink\)[\s\S]*?-webkit-box-shadow:\s*0 0 0 1000px var\(--night-field\) inset/);
+  });
+
+  it("keeps night form states readable and semantically ordered", () => {
+    const night = css.slice(css.indexOf('html[data-theme="night"] .activity-filter-grid input'));
+    const autofill = night.indexOf('html[data-theme="night"] .trace-input:-webkit-autofill');
+    const focus = night.indexOf('html[data-theme="night"] :is(input, textarea, select):focus-visible');
+    const disabled = night.indexOf('html[data-theme="night"] :is(input, textarea, select):disabled');
+    const invalid = night.indexOf('html[data-theme="night"] .auth-field .trace-input[aria-invalid="true"]');
+
+    expect(focus).toBeGreaterThan(autofill);
+    expect(disabled).toBeGreaterThan(autofill);
+    expect(invalid).toBeGreaterThan(disabled);
+    expect(css).toMatch(/html\[data-theme="night"\] input\[readonly\],[\s\S]*?html\[data-theme="night"\] textarea\[readonly\]\s*\{[^}]*color:\s*var\(--ink-soft\);[^}]*background:\s*var\(--night-ghost\);[^}]*cursor:\s*text;/);
+    expect(css).toMatch(/html\[data-theme="night"\] input\[type="checkbox"\]\s*\{[^}]*accent-color:\s*var\(--signal\);/s);
+    expect(css).toMatch(/html\[data-theme="night"\] \.auth-field \.trace-input\[aria-invalid="true"\]:-webkit-autofill\s*\{[^}]*border-color:\s*#f87171;/s);
+    expect(css).toMatch(/html\[data-theme="night"\] input:-webkit-autofill:focus-visible:read-only\s*\{[^}]*-webkit-box-shadow:[^;]*var\(--night-ghost\) inset/s);
+    expect(css).toMatch(/html\[data-theme="night"\] \.auth-field \.trace-input\[aria-invalid="true"\]:-webkit-autofill:read-only\s*\{[^}]*-webkit-box-shadow:[^;]*var\(--night-ghost\) inset/s);
+    expect(css).toMatch(/html\[data-theme="night"\] \.auth-field \.trace-input\[aria-invalid="true"\]:-webkit-autofill:disabled\s*\{[^}]*-webkit-box-shadow:[^;]*var\(--night-field-disabled\) inset/s);
+  });
+
   it("keeps the Activity empty-state action in normal document flow", () => {
     expect(css).toMatch(/\.activity-state-card\s*\{[^}]*display:\s*grid;[^}]*gap:/s);
     expect(css).toMatch(/\.activity-state-card\s+\.trace-button\s*\{[^}]*position:\s*static;/s);
