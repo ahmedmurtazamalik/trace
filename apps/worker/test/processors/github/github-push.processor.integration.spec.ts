@@ -134,11 +134,14 @@ describeIntegration('GitHub push processor', () => {
   });
 
   it('persists one canonical push and commit activity across retries', async () => {
+    const transactionSpy = jest.spyOn(prisma, '$transaction');
     const processor = new GithubPushProcessor(prisma);
 
     await processor.process(deliveryId);
     await processor.process(deliveryId);
 
+    expect(transactionSpy).toHaveBeenCalledWith(expect.any(Function), { maxWait: 10_000, timeout: 30_000 });
+    transactionSpy.mockRestore();
     const delivery = await prisma.githubWebhookDelivery.findUniqueOrThrow({ where: { id: deliveryId } });
     const pushes = await prisma.pushEvent.findMany({ where: { repositoryId } });
     const commits = await prisma.commit.findMany({ where: { repositoryId }, include: { files: { orderBy: { path: 'asc' } } } });

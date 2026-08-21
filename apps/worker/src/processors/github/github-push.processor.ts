@@ -226,7 +226,7 @@ export class GithubPushProcessor {
         where: { id: delivery.id },
         data: { status: 'completed', processedAt: new Date(), processingError: null },
       });
-      });
+      }, { maxWait: 10_000, timeout: 30_000 });
     } finally {
       for (const enrichmentKey of enrichmentLeases) {
         const enrichment = this.inFlightEnrichment.get(enrichmentKey);
